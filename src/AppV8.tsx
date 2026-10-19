@@ -1,3 +1,4 @@
+import { withoutPreparationSurfaces, PreparationRetiredError } from './preparationRetirement.js'
 import { isUnreadJob } from './jobReadState.js'
 import { currentAccountCacheSession, isAccountCacheSessionResolved } from './cloud/accountCacheLease.js'
 import { submitWebSemanticCapture, undoWebSemanticChange, type WebSemanticCaptureResult, type LocalSemanticUndoToken } from './webSemanticIntake.js'
@@ -19,10 +20,6 @@ import {
   markLocalJobViewed,
 } from './db.js'
 import { parsePJSDASWorkbook } from './importExcelV2.js'
-import { presentPrepSourceState } from './prepSemantics.js'
-import { compareDeadlines } from './deadlineOrder.js'
-import { buildPrepGraph } from './prepGraph.js'
-import { presentPrepGraphLinkExplanation } from './prepGraphPresentation.js'
 import { presentStageLabel } from './stagePresentation.js'
 import { currentUiLanguage, useUiLanguage } from './uiLanguage.js'
 import TimelineView from './TimelineView.js'
@@ -48,7 +45,6 @@ import {
 } from './cloud/authoritativeCommandClient.js'
 import SearchScope from './jobs/SearchScope.js'
 import type { ReactNode } from 'react'
-import PrepGraphDock from './PrepGraphDock.js'
 import ProcessEventDock from './ProcessEventDock.js'
 import LocalBackupDock from './LocalBackupDock.js'
 import ConnectedMigrationCard from './cloud/ConnectedMigrationCard.js'
@@ -75,7 +71,6 @@ import type {
   DecisionRequest,
   ImportBundle,
   ImportMeta,
-  Prep,
   TimelineRecord,
   ScheduleNodeTemporal,
 } from './model.js'
@@ -90,7 +85,6 @@ import './tsui02.css'
 
 type Surface = 'today' | 'opportunities' | 'schedule' | 'decisions' | 'history' | 'settings'
 type PrimarySurface = 'today' | 'opportunities' | 'schedule'
-type OpportunityTab = 'opportunities' | 'prepare'
 type CompletionFeedback = { id: string; title: string; previousStatus?: Action['status']; commandId?: string; localUndo?: ActionStatusUndo; accountKey?: string; writeLease?: ReturnType<typeof captureWorkspaceWriteLease>; syncMessage?: string; outcome: 'done' | 'no_write' | 'queued' | 'confirmed_pending' | 'error'; error?: string }
 type RouteState = {
   surface: Surface
@@ -170,8 +164,6 @@ export default function AppV8() {
   const [captureReturnPath, setCaptureReturnPath] = useState('/today')
   const [captureContextOpportunityId, setCaptureContextOpportunityId] = useState<string>()
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
-  const [opportunityTab, setOpportunityTab] = useState<OpportunityTab>('opportunities')
-  const [opportunityTabExplicit, setOpportunityTabExplicit] = useState(false)
   const [opportunityView, setOpportunityView] = useState<JobFilter>('all')
   const [jobVisibleCount, setJobVisibleCount] = useState(40)
   const [opportunityQuery, setOpportunityQuery] = useState('')
@@ -203,10 +195,10 @@ export default function AppV8() {
     return () => { observer.disconnect(); shell.style.removeProperty('--ta-header-height') }
   }, [])
 
+  const productSnapshot = useMemo(() => snapshot ? withoutPreparationSurfaces(snapshot) : undefined, [snapshot])
   const opportunities = snapshot?.data.opportunities ?? []
-  const actions = snapshot?.data.actions ?? []
+  const actions = productSnapshot?.data.actions ?? []
   const processes = snapshot?.data.processes ?? []
-  const prep = snapshot?.data.prep ?? []
   const groups = snapshot?.data.applicationGroups ?? []
   const timeline = snapshot?.data.timeline ?? []
   const lastImport = snapshot?.data.meta
@@ -502,7 +494,7 @@ export default function AppV8() {
   const workspaceRevision = snapshot ? [cloud.session?.user.id ? getAccountCheckpoint(cloud.session.user.id).lastSyncedVersion ?? 'pending' : 'local', snapshot.exportedAt].join(':') : ''
   // Cold IDB export and both local/server command kernels already normalize
   // this snapshot. Read-only selectors can share it without cloning entities.
-  const normalizedReadSnapshot = snapshot
+  const normalizedReadSnapshot = productSnapshot
   const todayWeb = useMemo(() => { if (!normalizedReadSnapshot || surface !== 'today') return undefined; const started = performance.now(); const result = selectTodayWebNormalized(normalizedReadSnapshot, {}, { now, timezone, workspaceVersion: workspaceRevision }); interactionMetric('today-selector', started); return result }, [snapshot, surface, now, timezone, workspaceRevision])
   const scheduleProjection = useMemo(() => { if (!normalizedReadSnapshot || (surface !== 'today' && surface !== 'schedule')) return undefined; const started = performance.now(); const source = surface === 'today' ? todayScheduleSnapshot(normalizedReadSnapshot, now, timezone) : normalizedReadSnapshot; const result = buildScheduleStreamNormalized(source, { accountKey, workspaceRevision, timezone, now }); interactionMetric('schedule-selector', started); return result }, [snapshot?.data.actions, snapshot?.data.scheduleNodes, snapshot?.data.timeline, snapshot?.data.processEvents, surface, accountKey, timezone, now])
   const scheduleStream = scheduleProjection && scheduleProjection.workspaceRevision !== workspaceRevision
@@ -518,8 +510,8 @@ export default function AppV8() {
   }, [snapshot, now, timezone, surface])
 
 
-  const decisionRequests = snapshot?.data.decisionRequests ?? []
-  const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0 && prep.length === 0
+  const decisionRequests = productSnapshot?.data.decisionRequests ?? []
+  const workspaceEmpty = opportunities.length === 0 && actions.length === 0 && processes.length === 0
   const selectedOpportunity = selectedOpportunityId ? opportunities.find((item) => item.id === selectedOpportunityId) : undefined
   useEffect(() => {
     if (!selectedOpportunity || !isUnreadJob(selectedOpportunity) || jobWriteBlocked || loading) return
@@ -586,15 +578,7 @@ export default function AppV8() {
         workspaceVersion: `web:${snapshot.exportedAt}`,
       })
     : undefined
-  const selectedRelatedPrep = useMemo(() => {
-    if (!snapshot || !selectedOpportunityId) return []
-    const graph = buildPrepGraph(snapshot.data.prep, snapshot.data.opportunities, snapshot.data.processes, now)
-    return graph.nodes.flatMap((node) => {
-      const link = node.links.find((item) => item.opportunityId === selectedOpportunityId)
-      return link ? [{ id: node.prepId, title: node.title,
-        reason: presentPrepGraphLinkExplanation(link, graph.needs, zh) }] : []
-    })
-  }, [snapshot, selectedOpportunityId, now, zh])
+
 
 
   async function recordJobAction(opportunityId: string, kind: 'today' | 'submission'): Promise<WebSemanticCaptureResult | void> {
@@ -736,10 +720,7 @@ export default function AppV8() {
     }
   }
 
-  function chooseOpportunityTab(tab: OpportunityTab) {
-    setOpportunityTabExplicit(true)
-    setOpportunityTab(tab)
-  }
+
 
   function navigateFromStart() {
     navigate('/settings')
@@ -786,15 +767,8 @@ export default function AppV8() {
       window.open(item.execution.externalUrl, '_blank', 'noopener,noreferrer')
       return
     }
-    if (item.execution.operation === 'start_prep') {
-      setOpportunityTabExplicit(true)
-      setOpportunityTab('prepare')
-      navigate('/library')
-      return
-    }
+    if (item.execution.operation === 'start_prep') throw new PreparationRetiredError()
     if (item.execution.operation === 'open_group_decision') {
-      setOpportunityTabExplicit(true)
-      setOpportunityTab('opportunities')
       navigate('/library')
       return
     }
@@ -927,14 +901,8 @@ export default function AppV8() {
   function navigateFromDetail(destination: OpportunityDetailDestination) {
     if (destination === 'today') navigate('/today')
     if (destination === 'schedule') navigate('/schedule')
-    if (destination === 'prepare') {
-      setOpportunityTabExplicit(true)
-      setOpportunityTab('prepare')
-      navigate('/library')
-    }
+
     if (destination === 'opportunities') {
-      setOpportunityTabExplicit(true)
-      setOpportunityTab('opportunities')
       navigate('/opportunities')
     }
   }
@@ -948,7 +916,7 @@ export default function AppV8() {
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
           {primarySurfaces.map((item) => {
             const label = surfaceLabels[item]
-            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => { if (item === 'opportunities') setOpportunityTab('opportunities'); navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library') }}>{zh ? label.zh : label.en}</button>
+            return <button key={item} type="button" className={surface === item ? 'active' : ''} aria-current={surface === item ? 'page' : undefined} onClick={() => { navigate(item === 'today' ? '/today' : item === 'schedule' ? '/schedule' : '/library') }}>{zh ? label.zh : label.en}</button>
           })}
         </nav>
         <div className="tsui-top-actions">
@@ -992,7 +960,7 @@ export default function AppV8() {
 
         {readError && (!selectedOpportunity || selectedOpportunity.id === readError.id) ? <p role="status">{zh ? '已读状态尚未确认：' : 'Read state is not yet confirmed: '}{readError.message}{selectedOpportunity ? <button type="button" onClick={() => { setReadError(undefined); setReadRetry(value => value + 1) }}>{zh ? '重试' : 'Retry'}</button> : null}</p> : null}
         {!loading && surface === 'opportunities' && opportunityDecisionList && !selectedOpportunityId ? (
-          <OpportunitiesSurface searchScope={<SearchScope key={accountKey} profile={snapshot?.data.discoveryProfile} blocked={jobWriteBlocked} onChanged={reload} />} read={opportunityDecisionList} opportunities={opportunities} prep={prep} tab={opportunityTab} onTabChange={chooseOpportunityTab}
+          <OpportunitiesSurface searchScope={<SearchScope key={accountKey} profile={snapshot?.data.discoveryProfile} blocked={jobWriteBlocked} onChanged={reload} />} read={opportunityDecisionList} opportunities={opportunities}
             retainedNewIds={retainedNewIds} view={opportunityView} onViewChange={value => { setRetainedNewIds([]); setOpportunityView(value) }} query={opportunityQuery} onQueryChange={value => { setRetainedNewIds([]); setOpportunityQuery(value) }}
             visibleCount={jobVisibleCount} onVisibleCountChange={setJobVisibleCount} onOpenOpportunity={openOpportunity} />
         ) : null}
@@ -1007,7 +975,7 @@ export default function AppV8() {
           <OpportunityDetailDrawer asPage
             returnLabel={detailOrigin.current?.path.startsWith('/today') ? (zh ? '返回今天' : 'Back to Today') : detailOrigin.current?.path.startsWith('/schedule') ? (zh ? '返回日程' : 'Back to Schedule') : (zh ? '返回岗位库' : 'Back to jobs')}
             opportunity={selectedOpportunity} decision={selectedOpportunityDecision} process={selectedProcess}
-            actions={selectedActions} scheduleNodes={snapshot?.data.scheduleNodes} decisionRequests={selectedDecisionRequests} relatedPrep={selectedRelatedPrep}
+            actions={selectedActions} scheduleNodes={snapshot?.data.scheduleNodes} decisionRequests={selectedDecisionRequests}
             applicationGroup={selectedGroup} timeline={selectedTimeline} onClose={closeOpportunity}
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
@@ -1015,7 +983,7 @@ export default function AppV8() {
             onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY} writeBlocked={jobWriteBlocked}
           />
         ) : null}
-        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} scheduleNodes={snapshot?.data.scheduleNodes ?? []} reminderIntents={snapshot?.data.reminderIntents ?? []} focusRequestId={route.decisionRequestId}
+        {!loading && surface === 'decisions' ? <DecisionRequestsView requests={decisionRequests} opportunities={opportunities} scheduleNodes={productSnapshot?.data.scheduleNodes ?? []} reminderIntents={productSnapshot?.data.reminderIntents ?? []} focusRequestId={route.decisionRequestId}
           onShowAll={() => navigate('/decisions')}
           onReturnOpportunity={route.returnOpportunityId ? () => navigate('/library/' + encodeURIComponent(route.returnOpportunityId!)) : undefined}
           onChanged={reload} /> : null}
@@ -1048,16 +1016,13 @@ export default function AppV8() {
 }
 
 function OpportunitiesSurface({
-  read, opportunities, prep, tab, onTabChange, view, onViewChange, query, onQueryChange,
+  read, opportunities, view, onViewChange, query, onQueryChange,
   visibleCount, onVisibleCountChange, onOpenOpportunity, retainedNewIds, searchScope,
 }: {
   searchScope: ReactNode
   retainedNewIds: string[]
   read: OpportunityDecisionListRead
   opportunities: PJSDASSnapshot['data']['opportunities']
-  prep: Prep[]
-  tab: OpportunityTab
-  onTabChange: (tab: OpportunityTab) => void
   view: JobFilter
   onViewChange: (view: JobFilter) => void
   query: string
@@ -1066,33 +1031,11 @@ function OpportunitiesSurface({
   onVisibleCountChange: (count: number) => void
   onOpenOpportunity: (id: string, opener?: HTMLElement) => void
 }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
   return <section className="opportunities-surface">
-    {tab === 'opportunities' ? <>
-      <JobLibrary searchScope={searchScope} retainedNewIds={retainedNewIds} read={read} opportunities={opportunities} filter={view} onFilterChange={onViewChange}
-        query={query} onQueryChange={onQueryChange} visibleCount={visibleCount}
-        onVisibleCountChange={onVisibleCountChange} onOpenOpportunity={onOpenOpportunity} />
-      <div className="tsui-library-secondary">
-        <button type="button" onClick={() => onTabChange('prepare')}>{zh ? '准备资产' : 'Preparation'} · {prep.length}</button>
-      </div>
-    </> : <>
-      <button className="tsui-library-back" type="button" onClick={() => onTabChange('opportunities')}>← {zh ? '返回岗位库' : 'Back to jobs'}</button>
-      <PreparePanel prep={prep} />
-    </>}
+    <JobLibrary searchScope={searchScope} retainedNewIds={retainedNewIds} read={read} opportunities={opportunities} filter={view} onFilterChange={onViewChange}
+      query={query} onQueryChange={onQueryChange} visibleCount={visibleCount}
+      onVisibleCountChange={onVisibleCountChange} onOpenOpportunity={onOpenOpportunity} />
   </section>
-}
-
-function PreparePanel({ prep }: { prep: Prep[] }) {
-  const { lang } = useUiLanguage()
-  const zh = lang === 'zh'
-  const sorted = [...prep].sort((a, b) => compareDeadlines({ id: a.id, deadline: a.recentNodeAt }, { id: b.id, deadline: b.recentNodeAt }))
-  return (
-    <div className="prepare-context">
-      <div className="surface-tool-strip"><div><strong>{zh ? '准备图谱' : 'Prep Graph'}</strong><span>{zh ? '查看一个准备任务覆盖哪些岗位、命中哪些真实缺口。' : 'See which opportunities a prep item supports and which real needs it covers.'}</span></div><div className="surface-tool-row"><PrepGraphDock /></div></div>
-      <section className="surface-panel"><div className="surface-panel-head"><div><div className="eyebrow">PREP INVENTORY</div><h2>{zh ? '准备资产' : 'Preparation inventory'}</h2></div><span>{prep.length}</span></div>{sorted.length ? <div className="surface-prep-grid">{sorted.map((item) => <article key={item.id}><div><span>{presentPrepSourceState(item.sourceStatus, zh)}</span></div><h3>{item.title}</h3><p>{item.minimumOutput ?? (zh ? '暂无最小产出定义' : 'No minimum output defined')}</p><small>{formatMinutes(item.estimatedMinutes)} · {item.triggeredBy ?? (zh ? '无显式触发条件' : 'No explicit trigger')}</small></article>)}</div> : <EmptyState title={zh ? '暂无准备任务' : 'No preparation items'} text={zh ? '准备资产不是为了填满列表；只有明确可复用的准备才值得长期保留。' : 'The Prep inventory is not a checklist to fill; keep reusable preparation with a clear purpose.'} />}</section>
-    </div>
-  )
 }
 
 function ActivitySurface({ timeline, onBack }: { timeline: TimelineRecord[]; onBack: () => void }) {

@@ -1,3 +1,4 @@
+import { PreparationRetiredError } from '../src/preparationRetirement.js'
 import { userJobFactsShape } from '../src/userJobFactsSchema.js'
 import { validLatestStartWindow } from './latestStartTemporal.js'
 import { invalidateLegacyProcessEvent } from '../src/legacyProcessCorrection.js'
@@ -109,7 +110,7 @@ function result(body: Record<string, unknown>, isError = false): CallToolResult 
 }
 
 function errorResult(caught: unknown): CallToolResult {
-  if (caught instanceof WorkspaceSourceError) {
+  if (caught instanceof WorkspaceSourceError || caught instanceof PreparationRetiredError) {
     return result({ code: caught.code, message: caught.message, retryable: caught.retryable }, true)
   }
   if (caught instanceof z.ZodError) {

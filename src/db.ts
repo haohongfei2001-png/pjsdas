@@ -1,3 +1,4 @@
+import { isPreparationAction, isPreparationTaskText, PreparationRetiredError } from './preparationRetirement.js'
 import { applyMcpSourceRefreshCommand } from './mcpSourceRefreshCommand.js'
 import { createMcpProposalEnvelope } from './ai/mcpProposal.js'
 import { mergeDiscoveryScope } from './discoveryScopeSchema.js'
@@ -454,6 +455,7 @@ export async function updateActionStatus(id: string, status: Action['status'], e
     const action = actions.find((item) => item.id === id) ?? suppressSupersededActions(
       reconcileProcessEventActions(actions, processEvents), effective).find((item) => item.id === id)
     if (!action) return
+    if (isPreparationAction(action, await tx.objectStore('timeline').getAll())) throw new PreparationRetiredError()
     if (expectedStatus !== undefined && action.status !== expectedStatus) throw new Error('Action changed before the transaction; no status change written.')
     if (action.status === status) return
     const beforeContract = { opportunities, processes, processEvents,
@@ -604,6 +606,7 @@ async function upsertLocalProcess(
 export async function applyProgressUpdate(operations: ProgressOperation[], assertCurrent?: () => void) {
   assertCurrent?.()
   const executable = operations.filter((item) => item.kind !== 'unresolved' && item.kind !== 'ignored')
+  if (executable.some(operation => operation.kind === 'manual_action' && (isPreparationTaskText(operation.sourceText) || isPreparationTaskText(operation.title)))) throw new PreparationRetiredError()
   if (executable.length === 0) return { applied: 0 }
 
   const db = await dbPromise
@@ -746,6 +749,7 @@ export async function applyProgressUpdate(operations: ProgressOperation[], asser
       }
 
       if (operation.kind === 'manual_action') {
+        if (isPreparationTaskText(operation.sourceText) || isPreparationTaskText(operation.title)) throw new PreparationRetiredError()
         const id = `progress-action:${operation.id}`
         const previous = await actionStore.get(id)
         const action: Action = {
@@ -801,6 +805,7 @@ export async function applyActionStatusChangeSet(actionId: string, status: Actio
   const db = await dbPromise
   const action = await db.get('actions', actionId) ?? (await getAllActions()).find((item) => item.id === actionId)
   if (!action) return undefined
+  if (isPreparationAction(action, await db.getAll('timeline'))) throw new PreparationRetiredError()
   const changeSet = createActionStatusChangeSet(action, status)
   if (!changeSet) return undefined
   await savePendingChangeSet(changeSet, assertCurrent)
@@ -933,6 +938,21 @@ export async function applyChangeSet(id: string, assertCurrent?: () => void): Pr
     if (operation.kind === 'add_discovered_opportunity') assertNoNewOpportunityRating(operation.opportunity)
   }
 
+  // Reject every retired target before this legacy mixed-operation loop starts.
+  // Individual transaction guards below still recheck against concurrent changes.
+  const actionOperations = changeSet.operations.filter(operation => operation.kind === 'set_action_status')
+  const timeline = actionOperations.length ? await db.getAll('timeline') : []
+  for (const operation of changeSet.operations) {
+    if (operation.kind === 'set_action_status') {
+      const action = await db.get('actions', operation.actionId)
+      if (action && isPreparationAction(action, timeline)) throw new PreparationRetiredError()
+    }
+    if (operation.kind === 'progress_update') {
+      const restored = restoreProgressOperation(operation, changeSet.id)
+      if (restored.kind === 'manual_action' && (isPreparationTaskText(restored.sourceText) || isPreparationTaskText(restored.title))) throw new PreparationRetiredError()
+    }
+  }
+  assertCurrent?.()
   const actionCompensations: ActionStatusUndo[] = []
   try {
     const discoveredOperations = changeSet.operations.filter((operation): operation is DiscoveredChangeOperation => operation.kind === 'add_discovered_opportunity')

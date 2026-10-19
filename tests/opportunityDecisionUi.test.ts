@@ -28,7 +28,7 @@ describe('UU-05 frozen opportunity product contract', () => {
   it('keeps factual evidence and history behind the conclusion-first layer', () => {
     expect(detail).toContain('<RichOpportunityFactsSummary')
     expect(detail).toContain("zh ? '申请约束' : 'Application constraints'")
-    expect(detail).toContain("zh ? '准备与相关待办' : 'Preparation & related actions'")
+    expect(detail).toContain("zh ? '进展与行动' : 'Progress & actions'")
     expect(detail).toContain("zh ? '来源证据' : 'Source evidence'")
     expect(detail).not.toContain('OpportunityAssessmentSummary')
     expect(detail).toContain("zh ? '完整历史' : 'Full history'")

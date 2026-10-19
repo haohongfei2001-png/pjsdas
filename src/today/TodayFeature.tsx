@@ -53,7 +53,7 @@ function timeLabel(item: TodayBriefAction, zh: boolean, displayTimezone: string)
 }
 function actionLabel(item: TodayBriefAction, zh: boolean) {
   if (item.execution.operation === 'open_application') return item.execution.externalUrl ? (zh ? '打开申请' : 'Open application') : (zh ? '查看岗位' : 'View job')
-  if (item.execution.operation === 'start_prep') return zh ? '开始准备' : 'Start prep'
+  if (item.execution.operation === 'start_prep') return zh ? '功能已停用' : 'Feature retired'
   if (item.execution.operation === 'open_process') return zh ? '查看流程' : 'View process'
   return !item.opportunityId && item.execution.operation === 'open_action' ? (zh ? '开始' : 'Start') : (zh ? '查看' : 'Open')
 }

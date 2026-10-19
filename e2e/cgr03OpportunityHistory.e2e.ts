@@ -80,7 +80,7 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
           fitScore: 80, importedAt: now,
         })
         tx.objectStore('actions').put({
-          id: 'cgr03-complete-action', kind: 'manual', title: '准备合成面试',
+          id: 'cgr03-complete-action', kind: 'manual', title: '提交合成报销单',
           opportunityId: 'cgr03-complete-opportunity', processStage: 'interview',
           estimatedMinutes: 30, leverage: 80, delayCost: 80, status: 'todo',
           createdAt: now, updatedAt: now,
@@ -92,10 +92,10 @@ test('CGR-03 detail completion uses the shared action command and updates the pe
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库|Jobs/ }).click()
   await page.getByRole('button', { name: /合成行动科技/ }).click()
   const detail = page.locator('.job-detail-page')
-  const preparation = detail.locator('.opportunity-detail-section').filter({ has: page.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' }) })
+  const preparation = detail.locator('.opportunity-detail-section').filter({ has: page.locator('.opportunity-detail-action-list article', { hasText: '提交合成报销单' }) })
   await preparation.getByRole('button', { name: /标记完成|Mark done/ }).click()
-  await expect(page.locator('.action-undo-toast')).toContainText('准备合成面试')
-  await expect(detail.locator('.opportunity-detail-action-list article', { hasText: '准备合成面试' })).toHaveCount(0)
+  await expect(page.locator('.action-undo-toast')).toContainText('提交合成报销单')
+  await expect(detail.locator('.opportunity-detail-action-list article', { hasText: '提交合成报销单' })).toHaveCount(0)
   await expect.poll(async () => page.evaluate(async () => {
     const request = indexedDB.open('pjsdas')
     return new Promise<string | undefined>((resolve, reject) => {

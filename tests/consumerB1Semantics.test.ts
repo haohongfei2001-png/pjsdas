@@ -151,7 +151,7 @@ describe('B1 job, task and calendar ownership', () => {
     expect(entries(result.snapshot)).toHaveLength(0)
   })
   it('A05 one explicit start produces one task/occurrence, not an invented end', () => {
-    const result = applied(empty(), { commandId: 'timed-task', kind: 'add_manual_action', title: '准备材料', scheduledTemporal: arrangement, plannedDate: '2026-10-08' })
+    const result = applied(empty(), { commandId: 'timed-task', kind: 'add_manual_action', title: '填写报销单', scheduledTemporal: arrangement, plannedDate: '2026-10-08' })
     expect(result.snapshot.data.actions).toHaveLength(1)
     expect(result.snapshot.data.scheduleNodes).toHaveLength(1)
     expect(entries(result.snapshot)).toHaveLength(1)
@@ -261,14 +261,14 @@ describe('B1 job, task and calendar ownership', () => {
     }
   })
   it('A05 first-party interpretation retains exact chosen local time instead of a due-by timestamp', () => {
-    const parsed = buildWebSemanticInterpretation('明天 15:00 准备材料', [], empty(), [], now, 'Asia/Shanghai')
+    const parsed = buildWebSemanticInterpretation('明天 15:00 填写报销单', [], empty(), [], now, 'Asia/Shanghai')
     expect(parsed.candidates).toHaveLength(1)
     expect(parsed.candidates[0]).toMatchObject({ kind: 'manual_action', plannedDate: '2026-10-08', scheduledTemporal: arrangement })
     expect(parsed.candidates[0]).not.toHaveProperty('dueAt')
   })
 
   it('rescheduling an explicit task moves its chosen day and exact time together, and rejects day-only replacement', () => {
-    const first = applied(empty(), { commandId: 'reschedule-task', kind: 'add_manual_action', title: 'Prepare', scheduledTemporal: arrangement })
+    const first = applied(empty(), { commandId: 'reschedule-task', kind: 'add_manual_action', title: 'Return visitor badge', scheduledTemporal: arrangement })
     const occurrenceId = first.snapshot.data.scheduleNodes![0].occurrenceId
     const before = structuredClone(first.snapshot)
     expect(() => applyUserDomainCommand(first.snapshot, { commandId: 'erase-time', kind: 'reschedule_occurrence', occurrenceId,
@@ -286,7 +286,7 @@ describe('B1 job, task and calendar ownership', () => {
   })
 
   it('a timed task counts once in Today capacity, Web and external plans without a negative deferred count', () => {
-    const result = applied(empty(), { commandId: 'one-hour', kind: 'add_manual_action', title: 'Prepare', estimatedMinutes: 60,
+    const result = applied(empty(), { commandId: 'one-hour', kind: 'add_manual_action', title: 'Return visitor badge', estimatedMinutes: 60,
       scheduledTemporal: { ...arrangement, startAt: '2026-10-07T15:00:00+08:00', endAt: '2026-10-07T16:00:00+08:00' } })
     expect(result.snapshot.data.actions).toHaveLength(1)
     expect(entries(result.snapshot)).toHaveLength(1)

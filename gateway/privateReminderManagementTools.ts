@@ -1,3 +1,4 @@
+import { PreparationRetiredError } from '../src/preparationRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { privateReminderManagementSchema, readPrivateReminderManagement, privateReminderManagementReadSchema, PrivateReminderManagementError } from '../src/privateReminderManagement.js'
@@ -58,7 +59,7 @@ export function createPrivateReminderManagementTools(options: {
       if (executed.outcome !== 'COMMITTED') await authorize(admitted)
       return result({ outcome: executed.outcome, workspaceVersion: `txn:${executed.revision}`, commandId: submittedCommandId, result: executed.result, conflict: executed.conflict })
     } catch (error) {
-      const data = error instanceof WorkspaceSourceError || error instanceof PrivateReminderManagementError ? { code: error.code, message: error.message, retryable: error instanceof WorkspaceSourceError ? error.retryable : false }
+      const data = error instanceof WorkspaceSourceError || error instanceof PrivateReminderManagementError || error instanceof PreparationRetiredError ? { code: error.code, message: error.message, retryable: error instanceof WorkspaceSourceError ? error.retryable : false }
         : error instanceof z.ZodError ? { code: 'INVALID_ARGUMENT', message: 'Arguments do not match the bounded private-reminder-management schema.', retryable: false }
           : { code: 'MANAGEMENT_FAILED', message: 'No result was confirmed. Read current state before retrying the same command ID.', retryable: false }
       return { ...result(data), isError: true }

@@ -361,7 +361,7 @@ test('confirmed anonymous unbound workspace still supports local capture and Und
   await page.goto('/pjsdas/today/capture')
   await expect.poll(() => admission(page)).toEqual({ resolved: true, account: null, owner: null })
   const before = await localSnapshot(page)
-  const text = '明天 15:00 准备材料'
+  const text = '明天 15:00 填写报销单'
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill(text)
   await page.getByRole('button', { name: '确认并保存', exact: true }).click()
   await expect(page.locator('.cgr-capture-receipt')).toContainText('已记录明确事实')

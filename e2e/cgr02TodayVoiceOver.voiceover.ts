@@ -38,7 +38,7 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
   }
   expect(foundInput, inputPhrases.join(' | ')).toBe(true)
 
-  await input.fill('事项：整理面试材料')
+  await input.fill('事项：填写报销单')
   await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
   await dialog.getByRole('button', { name: '确认并保存' }).click()
   await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
@@ -93,7 +93,7 @@ test('real VoiceOver identifies Opportunities and Settings primary-route semanti
     const spoken = await voiceOver.lastSpokenPhrase()
     const item = await voiceOver.itemText()
     detailPhrases.push(`${spoken} / ${item}`)
-    foundDetailSemantics = /结论|继续推进当前流程|阶段|面试|流程结果|准备与相关待办/.test(`${spoken} ${item}`)
+    foundDetailSemantics = /结论|继续推进当前流程|阶段|面试|流程结果|进展与行动/.test(`${spoken} ${item}`)
   }
   expect(foundDetailSemantics, detailPhrases.join(' | ')).toBe(true)
 

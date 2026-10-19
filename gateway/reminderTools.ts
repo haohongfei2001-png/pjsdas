@@ -1,3 +1,4 @@
+import { isPreparationNode } from '../src/preparationRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import type { ExternalCapabilityId, ExternalCapabilityState } from '../src/model.js'
@@ -83,10 +84,11 @@ export async function invokeListReminderIntents(
   try {
     const parsed = listReminderIntentsSchema.parse(rawArgs)
     const workspace = await source.read()
-    const reminders = (workspace.snapshot.data.reminderIntents ?? [])
+    const eligible = (workspace.snapshot.data.reminderIntents ?? [])
+      .filter(item => item.purpose !== 'prep' && !workspace.snapshot.data.scheduleNodes?.some(node => node.id === item.scheduleNodeId && isPreparationNode(node, workspace.snapshot.data)))
       .filter((item) => !parsed.state || item.state === parsed.state)
       .sort((a, b) => a.triggerAt.localeCompare(b.triggerAt) || a.id.localeCompare(b.id))
-      .slice(0, parsed.limit)
+    const reminders = eligible.slice(0, parsed.limit)
     const outboxByIntent = new Map(
       (workspace.snapshot.data.reminderOutbox ?? [])
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -114,7 +116,7 @@ export async function invokeListReminderIntents(
             }
           : undefined,
       })),
-      truncated: (workspace.snapshot.data.reminderIntents ?? []).length > reminders.length,
+      truncated: eligible.length > reminders.length,
     })
   } catch (caught) {
     return failure(caught)

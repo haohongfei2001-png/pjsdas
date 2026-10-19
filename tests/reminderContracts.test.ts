@@ -54,7 +54,7 @@ describe('UU-07 ReminderIntent contract', () => {
   it('keeps exactly one delivery owner and degrades unsupported external task delivery truthfully', () => {
     const built = buildReminderIntent({
       node,
-      purpose: 'prep',
+      purpose: 'upcoming',
       triggerAt: '2026-09-25T00:00:00.000Z',
       deliveryOwner: 'external_task',
       channel: 'task',
@@ -76,7 +76,7 @@ describe('UU-07 ReminderIntent contract', () => {
     })
     expect(() => buildReminderIntent({
       node,
-      purpose: 'prep',
+      purpose: 'upcoming',
       triggerAt: '2026-09-25T00:00:00.000Z',
       deliveryOwner: 'external_task',
       channel: 'calendar',

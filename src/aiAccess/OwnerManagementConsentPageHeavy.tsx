@@ -305,7 +305,9 @@ export default function OwnerManagementConsentPageHeavy() {
                 ) : null}
               </div>
             ) : null}
-            <h2>权限范围 · v{view.consent.version}</h2>
+            <h2>当前权限范围</h2>
+            <p>支持独立手动行动、投递组及相关撤销。准备功能与准备待办已停用。</p>
+            <details><summary>查看 v{view.consent.version} 授权原文</summary>
             <ul>
               {view.consent.scope.map((text) => (
                 <li key={text}>{text}</li>
@@ -317,6 +319,8 @@ export default function OwnerManagementConsentPageHeavy() {
                 <li key={text}>{text}</li>
               ))}
             </ul>
+            <p>{view.consent.duration}</p>
+            </details>
             <p>{view.consent.duration}</p>
             <label
               style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}

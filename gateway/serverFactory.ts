@@ -101,12 +101,12 @@ export interface PjsdasMcpServerOptions {
 function registerConsumerBusinessTools(server: McpServer, business: NonNullable<ScopedManagementRuntime['business']>) {
     server.registerTool('get_consumer_business_management', {
       title: 'Read explicitly authorized business objects',
-      description: 'Read current own-account version 7 consumer business access and bounded preparation, action or application-group objects. Requires its separate exact consent; existing owner v2 grants do not authorize this tool.',
+      description: 'Read current own-account version 7 consumer business access and bounded manual action or application-group objects. Requires its separate exact consent; existing owner v2 grants do not authorize this tool.',
       inputSchema: getBusinessManagementSchema, annotations: readOnlyAnnotations,
     }, args => business.invoke('get_consumer_business_management', args))
     server.registerTool('execute_consumer_business_management', {
       title: 'Apply reversible consumer business edits',
-      description: 'Apply a user-requested bounded atomic batch to independent preparation, independent manual actions or application groups at the observed revision. Separate version 7 consent is required. Preserves unrelated raw facts. No permanent deletion, external messages, applications or security changes.',
+      description: 'Apply a user-requested bounded atomic batch to independent manual actions or application groups at the observed revision. Separate version 7 consent is required. Preserves unrelated raw facts. No permanent deletion, external messages, applications or security changes.',
       inputSchema: executeBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
     }, args => business.invoke('execute_consumer_business_management', args))
     server.registerTool('undo_consumer_business_management', {
@@ -123,7 +123,7 @@ export function createPjsdasMcpServer(
   if (options.consumerBusinessOnly || options.scopedManagement?.business) {
     const server = new McpServer(
       { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
-      { instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: independent preparation, manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable. If consent is missing, direct the user to https://todayaction.com/?connect=1 to sign in and initialize or connect their own workspace, then https://todayaction.com/?scoped_access=1 to choose business permission for this plugin. The same permission page supports revocation; never grant permission on the user\'s behalf.' },
+      { instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable. If consent is missing, direct the user to https://todayaction.com/?connect=1 to sign in and initialize or connect their own workspace, then https://todayaction.com/?scoped_access=1 to choose business permission for this plugin. The same permission page supports revocation; never grant permission on the user\'s behalf.' },
     )
     if (options.scopedManagement?.business) registerConsumerBusinessTools(server, options.scopedManagement.business)
     return server
@@ -152,7 +152,7 @@ export function createPjsdasMcpServer(
     'New job inputs contain source facts and deadlines only. Scoring fields and score policies are retired and are rejected.',
     'Use get_opportunity_detail for source facts, current process state, next operation and ScheduleNode. get_opportunity_assessment, get_decision_rules and explain_priority return SCORING_RETIRED.',
     'Use get_application_portfolio for factual application-group quotas and candidates in deadline order. Contract version 2 does not score, recommend or automatically fill slots.',
-    'Use get_prep_graph for explicit preparation links, upcoming dates and uncovered stated requirements.',
+    'Preparation and preparation-related tasks are retired. Do not create, update or recommend Prep, preparation-only tasks or preparation reminders. get_prep_graph is a compatibility endpoint returning PREPARATION_RETIRED. Existing archival records and Undo are retained; application planning and actual interview/test appointments remain supported.',
     'Use get_coverage_status when the user asks whether automated sources missed anything. A green result means every currently enabled Source Registry entry is fresh and balanced with no active unresolved input. Lifetime unresolved audit history is preserved separately and does not by itself block green Coverage; this still does not claim that the public internet contains no other jobs.',
     'Use get_workspace_integrity when the user asks whether the TodayAction workspace itself is structurally healthy. This audit is read-only and never repairs or deletes data.',
     'Use get_external_capabilities before assuming an external Task or Calendar delivery channel exists. Host-side ChatGPT features are not callable merely because they exist in the host product.',
@@ -286,8 +286,8 @@ export function createPjsdasMcpServer(
   }, async (args) => invokeReadTool(source, 'get_application_portfolio', args))
 
   server.registerTool('get_prep_graph', {
-    title: 'Get TodayAction Prep Graph',
-    description: 'Read deterministic links from Prep to current opportunities, structured requirements/gaps, and process-prep needs.',
+    title: 'Retired preparation compatibility endpoint',
+    description: 'Preparation has been retired. This compatibility endpoint returns PREPARATION_RETIRED without reading or changing records; it does not return a current preparation graph.',
     inputSchema: getPrepGraphSchema, annotations: readOnlyAnnotations,
   }, async (args) => invokeReadTool(source, 'get_prep_graph', args))
 
@@ -345,12 +345,12 @@ export function createPjsdasMcpServer(
   if (options.businessManagement) {
     server.registerTool('get_business_management', {
       title: 'Read own-account management access and objects',
-      description: 'Read explicit v2 management authorization, current workspace version and optional bounded preparation, manual action or application-group objects. Does not grant access.',
+      description: 'Read explicit v2 management authorization, current workspace version and optional bounded manual action or application-group objects. Does not grant access.',
       inputSchema: getBusinessManagementSchema, annotations: readOnlyAnnotations,
     }, async args => options.businessManagement!.invoke('get_business_management', args))
     server.registerTool('execute_business_management', {
       title: 'Apply reversible own-account business edits',
-      description: 'Apply the user-requested bounded atomic batch to independent preparation, manual actions or application groups. Requires explicit current account/client v2 consent and an observed base revision. Archive is recoverable with undo; permanent deletion, security settings and external sharing are unsupported. Reuse the same command ID only for retries of the same intent.',
+      description: 'Apply the user-requested bounded atomic batch to manual actions or application groups. Requires explicit current account/client v2 consent and an observed base revision. Archive is recoverable with undo; permanent deletion, security settings and external sharing are unsupported. Reuse the same command ID only for retries of the same intent.',
       inputSchema: executeBusinessManagementSchema, annotations: { ...directWriteAnnotations, destructiveHint: true },
     }, async args => options.businessManagement!.invoke('execute_business_management', args))
     server.registerTool('undo_business_management', {

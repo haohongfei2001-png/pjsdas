@@ -15,7 +15,7 @@
       "interface": {
         "displayName": "TodayAction",
         "shortDescription": "Job-search tasks and actions",
-        "longDescription": "Use your connected TodayAction workspace to understand preparation and next actions. Existing access remains restricted. The controlled consumer candidate is limited to two approved test accounts and separately selected business version 7 permission for preparation items, manual actions and application groups. Planning, opportunity profiles, discovery profiles and private-reminder management are outside this test and require a separate future decision. Consumer management is not publicly enabled. Installing this package grants no business permission. It does not send applications, deliver external reminders, permanently delete history or authorize paid discovery.",
+        "longDescription": "Use your connected TodayAction workspace to understand job progress and next actions. Existing access remains restricted. The controlled consumer candidate is limited to two approved test accounts and separately selected business version 7 permission for manual actions and application groups. Planning, opportunity profiles, discovery profiles and private-reminder management are outside this test and require a separate future decision. Consumer management is not publicly enabled. Installing this package grants no business permission. It does not send applications, deliver external reminders, permanently delete history or authorize paid discovery.",
         "category": "Productivity",
         "capabilities": [
           "Read",
@@ -38,10 +38,10 @@
               "expected_behavior": "Query type action in the current account. Return only its independent manual actions and the observed workspace version; do not include other accounts or infer deadlines."
             },
             {
-              "description": "Create one preparation item in the dedicated synthetic workspace; repeat delivery of the identical request to verify one receipt.",
-              "prompt": "Add an independent preparation item called Practice my introduction, estimated at 15 minutes, then show it to me.",
+              "description": "Create one independent manual action in the dedicated synthetic workspace; repeat delivery of the identical request to verify one receipt.",
+              "prompt": "Add an independent manual action called Return visitor badge, estimated at 15 minutes, then show it to me.",
               "tools_triggered": "get_consumer_business_management, execute_consumer_business_management",
-              "expected_behavior": "Read the current revision, then create_prep with the requested title and estimatedMinutes 15. Read back exactly one item. Retransmission of identical arguments uses the same command ID and returns ALREADY_APPLIED without a second item."
+              "expected_behavior": "Read the current revision, then create_manual_action with the requested title and estimatedMinutes 15. Read back exactly one item. Retransmission of identical arguments uses the same command ID and returns ALREADY_APPLIED without a second item."
             },
             {
               "description": "The dedicated workspace contains a synthetic application group named Example Team with total 2 and unrelated notes; change only total.",
@@ -50,14 +50,14 @@
               "expected_behavior": "Read type application_group, resolve one exact group, and update_application_group with only total 3 at the observed revision. Preserve notes, other fields, unrelated objects and ordering. Read back total 3."
             },
             {
-              "description": "Immediately follow the preparation-creation case without intervening edits to its target. Separate conflict coverage belongs in execution notes.",
-              "prompt": "Undo the preparation item you just created for me.",
+              "description": "Immediately follow the manual-action-creation case without intervening edits to its target. Separate conflict coverage belongs in execution notes.",
+              "prompt": "Undo the manual action you just created for me.",
               "tools_triggered": "undo_consumer_business_management, get_consumer_business_management",
               "expected_behavior": "Use the returned creation command identity and a new undo command ID in the same account. Remove only that unchanged created item while retaining audit receipts. If a later dependent edit exists, return a conflict instead of overwriting it."
             },
             {
-              "description": "The dedicated workspace contains one independent manual action named Practise interview answers, currently estimated at 10 minutes.",
-              "prompt": "Change my independent task Practise interview answers to 20 minutes. Keep its title and status.",
+              "description": "The dedicated workspace contains one independent manual action named Return visitor badge, currently estimated at 10 minutes.",
+              "prompt": "Change my independent task Return visitor badge to 20 minutes. Keep its title and status.",
               "tools_triggered": "get_consumer_business_management, execute_consumer_business_management",
               "expected_behavior": "Read type action, resolve the exact independent manual action, and update_manual_action with only estimatedMinutes 20 at the observed revision. Preserve title, status and unrelated raw fields; read back the updated value."
             }

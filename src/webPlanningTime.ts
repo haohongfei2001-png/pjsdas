@@ -7,14 +7,14 @@ function containsTimeClaim(text: string) {
 }
 
 /** Supported scheduling syntax: optional task label, one source date followed
- * by an optional HH:mm/H时mm clock, then a preparation verb and task text.
+ * by an optional HH:mm/H时mm clock, then a supported task verb and task text.
  * Other time claims retain their original text and require clarification. */
 export function readWebPlanningTime(text: string, receivedAt: string, timezone?: string) {
   if (!containsTimeClaim(text)) return { kind: 'untimed' as const }
   if (!timezone) return { kind: 'unresolved' as const }
   const date = '(?:20\\d{2}[年/-]\\d{1,2}[月/-]\\d{1,2}日?|大后天|后天|明天|今天|(?:本|下)周[一二三四五六日天]|day after tomorrow|tomorrow|today|(?:this|next)\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))'
   const clock = '(?:\\d{1,2}(?:[:：]|时)\\d{2}分?)'
-  const pattern = new RegExp(`^\\s*(?:(?:事项|待办|其他事项|个人事项|非求职)\\s*[:：]\\s*)?(${date})(?:\\s*(${clock}))?\\s*((?:准备|整理|复习|练习|修改|prepare\\b|practice\\b|revise\\b).+?)\\s*[。.!！]?\\s*$`, 'i')
+  const pattern = new RegExp(`^\\s*(?:(?:事项|待办|其他事项|个人事项|非求职)\\s*[:：]\\s*)?(${date})(?:\\s*(${clock}))?\\s*((?:填写|提交|处理|准备|整理|复习|练习|修改|prepare\\b|practice\\b|revise\\b).+?)\\s*[。.!！]?\\s*$`, 'i')
   const match = pattern.exec(text)
   if (!match || containsTimeClaim(match[3]!)) return { kind: 'unresolved' as const }
   // Keep the whole-input resolver's existing zone/offset guards. A source zone

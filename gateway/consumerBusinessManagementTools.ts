@@ -1,3 +1,4 @@
+import { PreparationRetiredError } from '../src/preparationRetirement.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { assertNoScoringInput, ScoringRetiredError } from '../src/scoringRetirement.js'
@@ -45,7 +46,7 @@ export function createConsumerBusinessManagementTools(options: {
           const fresh = await authorize()
           if (fresh.id !== admitted.id || fresh.revision !== admitted.revision) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management authorization changed during the read. Start a new request.', false)
           return result({ authorized: true, consentVersion: 7, capability: 'workspace.business.manage', workspaceVersion: current.context.workspaceVersion,
-            domains: ['independent_prep', 'independent_manual_action', 'application_group'],
+            domains: ['independent_manual_action', 'application_group'],
             permanentDeletion: false, externalEffects: false,
             ...(parsed.query ? { data: readBusinessManagement(current.snapshot, parsed.query) } : {}) })
         }
@@ -76,7 +77,7 @@ export function createConsumerBusinessManagementTools(options: {
         // Do not return the entire workspace or stored compensation through MCP.
         return result({ outcome: executed.outcome, workspaceVersion: `txn:${executed.revision}`, commandId: submittedCommandId, result: executed.result, conflict: executed.conflict })
       } catch (caught) {
-        const data = caught instanceof WorkspaceSourceError || caught instanceof ScoringRetiredError
+        const data = caught instanceof WorkspaceSourceError || caught instanceof ScoringRetiredError || caught instanceof PreparationRetiredError
           ? { code: caught.code, message: caught.message, retryable: caught.retryable }
           : caught instanceof z.ZodError
             ? { code: 'INVALID_ARGUMENT', message: 'Management arguments do not match the supported bounded command schema.', retryable: false }

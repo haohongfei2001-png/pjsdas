@@ -1,3 +1,4 @@
+import { isPreparationTaskText, PreparationRetiredError } from './preparationRetirement.js'
 import { restoreProgressOperation } from './changeSet.js'
 import { actionForProcessEvent } from './processEvents.js'
 import { progressSubmissionProofId } from './progressUpdate.js'
@@ -118,6 +119,7 @@ export function applyMcpProgressCommand(snapshot: PJSDASSnapshot, proposal: McpP
         data.actions = [...data.actions.filter((item) => item.id !== action.id), action]
       }
     } else if (operation.kind === 'manual_action') {
+      if (isPreparationTaskText(operation.sourceText) || isPreparationTaskText(operation.title)) throw new PreparationRetiredError()
       const actionId = `progress-action:${operation.id}`
       const prior = data.actions.find((action) => action.id === actionId)
       const action: Action = {

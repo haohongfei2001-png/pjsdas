@@ -60,21 +60,10 @@ function jsonFrom(result: Awaited<ReturnType<typeof invokeReadTool>>) {
   return JSON.parse(item.text) as Record<string, any>
 }
 
-describe('v1.6 Round 2 Prep Graph read tool', () => {
-  it('returns deterministic prep coverage and trigger suggestions without mutation', async () => {
-    const result = await invokeReadTool(source, 'get_prep_graph', { prepId: 'prep:sql' })
-    expect(result.isError).not.toBe(true)
-    const data = jsonFrom(result)
-    expect(data.meta).toMatchObject({ source: 'pjsdas', workspaceVersion: 'drive:21', timezone: 'Asia/Shanghai' })
-    expect(data.nodes).toHaveLength(1)
-    expect(data.nodes[0]).toMatchObject({ prepId: 'prep:sql', coverageCount: 1, triggerSuggested: true })
-    expect(data.nodes[0].links.some((link: any) => link.source === 'explicit_trigger')).toBe(true)
-    expect(data.policy).toMatchObject({ explicitOrExactOnly: true, fuzzySemanticLinks: false, automaticTaskCreation: false })
-  })
-
-  it('returns NOT_FOUND for an exact unknown Prep id', async () => {
-    const result = await invokeReadTool(source, 'get_prep_graph', { prepId: 'prep:missing' })
+describe('retired preparation read compatibility', () => {
+  it.each([{}, { prepId: 'prep:sql' }, { prepId: 'prep:missing' }])('returns the same explicit retirement for every old selector %#', async input => {
+    const result = await invokeReadTool(source, 'get_prep_graph', input)
     expect(result.isError).toBe(true)
-    expect(jsonFrom(result)).toMatchObject({ code: 'NOT_FOUND', retryable: false })
+    expect(jsonFrom(result)).toMatchObject({ code: 'PREPARATION_RETIRED', retryable: false })
   })
 })

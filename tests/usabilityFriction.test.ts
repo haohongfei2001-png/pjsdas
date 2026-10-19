@@ -43,9 +43,9 @@ describe('UU-04 Web friction rules', () => {
   })
 
   it('keeps Opportunities decision-first without creating Pipeline or Review maintenance tabs', () => {
-    expect(app).toContain("type OpportunityTab = 'opportunities' | 'prepare'")
+    expect(app).not.toContain('OpportunityTab')
     expect(app).toContain('OpportunityDecisionList')
-    expect(app).toContain("setOpportunityTabExplicit(true)")
+    expect(app).not.toContain('PreparePanel')
     expect(app).not.toContain("'review' | 'opportunities'")
     expect(app).not.toContain("'pipeline' | 'prepare'")
   })

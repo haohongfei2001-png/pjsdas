@@ -14,7 +14,7 @@ const fn=version=>version===7?'pjsdas_commit_consumer_business_workspace_v1':'pj
 const state=async()=>(await observer.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1',[owner])).rows[0]
 const proof=async version=>(await observer.query('select revision from public.pjsdas_business_management_grants where id=$1',[grants[version]])).rows[0].revision
 async function body(version,id,undoTarget){
- const current=await state(),change={operations:[{kind:'create_prep',value:{title:'Synthetic family proof',estimatedMinutes:30}}]}
+ const current=await state(),change={operations:[{kind:'create_manual_action',value:{title:'Synthetic family proof',estimatedMinutes:30}}]}
  const target=undoTarget?(await observer.query('select compensation from public.pjsdas_command_ledger where user_id=$1 and command_id=$2',[owner,undoTarget])).rows[0]:undefined
  const evaluated=undoTarget?{snapshot:restoreBusinessManagement(current.snapshot,target.compensation),compensation:{}}:applyBusinessManagement(current.snapshot,change,id)
  const operation=undoTarget?'undo_command':'business_management',hashOperation=version===7?(undoTarget?'consumer_business_management_undo_v7':'consumer_business_management_v7'):operation

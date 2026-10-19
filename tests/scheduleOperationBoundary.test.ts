@@ -349,7 +349,8 @@ describe('schedule event / operation boundary', () => {
     const stream = buildScheduleStream(snapshot, context)
     expect(stream.sections.undated.map(item => item.id)).toEqual(['node:unknown'])
     expect(stream.sections.undated[0].occurredAt).toBeUndefined()
-    expect(stream.sections.history.map(item => item.id)).toEqual(['node:prep'])
+    expect(stream.sections.history.map(item => item.id)).toEqual([])
+    expect(snapshot.data.scheduleNodes?.find(item => item.id === 'prep')?.completedAt).toBe(eventTime)
     expect(stream.completedActions?.map(item => item.actionId)).toEqual(['plain'])
   })
 

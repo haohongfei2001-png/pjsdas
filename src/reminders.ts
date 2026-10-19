@@ -1,3 +1,4 @@
+import { PreparationRetiredError } from './preparationRetirement.js'
 import type {
   ExternalCapabilityId,
   ExternalCapabilityState,
@@ -88,6 +89,7 @@ export function buildReminderIntent(input: {
   existing?: ReminderIntent
   now: string
 }) {
+  if (input.purpose === 'prep' || input.node.kind === 'prep_trigger') throw new PreparationRetiredError()
   const owner = input.deliveryOwner ?? 'pjsdas'
   const expectedChannel = reminderChannelForOwner(owner)
   const channel = input.channel ?? expectedChannel

@@ -54,7 +54,7 @@ describe('Prep canonical semantics', () => {
     expect(presentPrepSourceState('进行中', false)).toBe('Active')
   })
 
-  it('never activates waiting Prep and retains English/Chinese priority labels without creating action scores', async () => {
+  it('retains all legacy Prep facts but never generates preparation actions', async () => {
     const bundle = await parsePJSDASWorkbook(prepWorkbook())
 
     expect(bundle.prep.map((item) => [item.title, item.priorityLabel, item.sourceStatus])).toEqual([
@@ -65,13 +65,6 @@ describe('Prep canonical semantics', () => {
     ])
 
     const prepActions = bundle.actions.filter((item) => item.kind === 'prep')
-    expect(prepActions.map((item) => item.prepId)).toEqual([
-      'prep:中文进行中',
-      'prep:英文进行中',
-    ])
-    expect(prepActions.map((item) => [item.leverage, item.delayCost])).toEqual([
-      [0, 0],
-      [0, 0],
-    ])
+    expect(prepActions).toEqual([])
   })
 })

@@ -319,7 +319,7 @@ export default function ScopedManagementConsentPageHeavy() {
               const grant = target?.grants.find(item => item.domain === descriptor.domain)
               const revocable = Boolean(grant && !grant.revoked_at)
               const active = revocable && grant?.consent_text_hash === descriptor.consentTextHash
-              const title = descriptor.domain === 'planning' ? '时间偏好' : descriptor.consent.title
+              const title = descriptor.domain === 'planning' ? '时间偏好' : descriptor.domain === 'business' ? '手动行动与投递组' : descriptor.consent.title
               const boundText = <>
                 <ul>{descriptor.consent.scope.map(text => <li key={text}>{text}</li>)}</ul>
                 <p>不包含：</p>
@@ -339,6 +339,10 @@ export default function ScopedManagementConsentPageHeavy() {
                     {boundText}
                   </details>
                   <p>{descriptor.consent.duration}</p>
+                </> : descriptor.domain === 'business' ? <>
+                  <p>当前仅支持独立手动行动、投递组及相关撤销。准备功能与准备待办已停用。</p>
+                  <details><summary>查看 v7 授权原文</summary>{boundText}</details>
+                  <p>{descriptor.consent.duration}</p>
                 </> : boundText}
                 <label>本次选择
                   <select aria-label={`本次选择：${title}`} value={selections[descriptor.domain] ?? ''} onChange={event => {
@@ -355,7 +359,7 @@ export default function ScopedManagementConsentPageHeavy() {
               </fieldset>
             })}
             <h2>本次变更</h2>
-            {Object.keys(selections).length ? <ul>{view.descriptors.filter(d => selections[d.domain]).map(d => <li key={d.domain}>{d.domain === 'planning' ? '时间偏好' : d.consent.title}：{selections[d.domain] === 'approve' ? '授权' : '撤销'}</li>)}</ul> : <p>尚未选择任何变更。</p>}
+            {Object.keys(selections).length ? <ul>{view.descriptors.filter(d => selections[d.domain]).map(d => <li key={d.domain}>{d.domain === 'planning' ? '时间偏好' : d.domain === 'business' ? '手动行动与投递组' : d.consent.title}：{selections[d.domain] === 'approve' ? '授权' : '撤销'}</li>)}</ul> : <p>尚未选择任何变更。</p>}
             <p>未选择的权限保持原状。现有基础管理授权不会自动扩展。</p>
             <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <input type="checkbox" checked={confirmed} disabled={busy || Boolean(pending) || !target || !Object.keys(selections).length} onChange={event => setConfirmed(event.target.checked)} />

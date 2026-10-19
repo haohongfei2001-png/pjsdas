@@ -194,10 +194,10 @@ for (const { width, deferredBootstrap } of [
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(0)
   await page.goto('/pjsdas/today/capture')
-  await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('明天 15:00 准备材料')
+  await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('明天 15:00 填写报销单')
   await page.getByRole('button', { name: '确认并保存', exact: true }).click()
   await expect(page.locator('.cgr-capture-receipt')).toContainText('已记录明确事实')
-  const timed = snapshot.data.actions.find(item => item.title === '明天 15:00 准备材料')!
+  const timed = snapshot.data.actions.find(item => item.title === '明天 15:00 填写报销单')!
   expect(timed.scheduledTemporal?.startAt).toBe('2026-10-08T15:00:00+08:00')
   expect(snapshot.data.scheduleNodes).toHaveLength(1)
   expect(snapshot.data.scheduleNodes![0].relatedActionIds).toEqual([timed.id])
@@ -205,7 +205,7 @@ for (const { width, deferredBootstrap } of [
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)
-  await expect(page.locator('.tsui-schedule-row')).toContainText('准备材料')
+  await expect(page.locator('.tsui-schedule-row')).toContainText('填写报销单')
   await expect(page.locator('.tsui-schedule-date')).toHaveText('2026-10-08')
   await visual(page, `SCHEDULE_${width}`)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)

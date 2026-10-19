@@ -107,7 +107,7 @@ export default function OpportunityDecisionSummary({
         <div><small>{zh ? '流程结果' : 'Result'}</small><strong>{process?.result ? resultLabels[process.result][zh ? 0 : 1] : (zh ? '结果未定' : 'Pending')}</strong></div>
       </section>
 
-      {primary ? (
+      {primary && primary.operation !== 'start_prep' ? (
         <section className="opportunity-detail-primary-operation">
           <div>
             <small>{zh ? '下一操作' : 'NEXT OPERATION'}</small>
@@ -116,9 +116,7 @@ export default function OpportunityDecisionSummary({
           </div>
           {primary.operation === 'open_application' && primary.externalUrl
             ? <a href={primary.externalUrl} target="_blank" rel="noreferrer">{zh ? '打开申请' : 'Open application'}</a>
-            : primary.operation === 'start_prep'
-              ? <button type="button" onClick={() => onNavigate('prepare')}>{zh ? '开始准备' : 'Start prep'}</button>
-              : primary.operation === 'compare_group'
+            : primary.operation === 'compare_group'
                 ? <button type="button" onClick={() => onNavigate('opportunities')}>{zh ? '比较机会' : 'Compare opportunities'}</button>
                 : <button type="button" onClick={() => onNavigate('today')}>{zh ? '在 Today 处理' : 'Handle in Today'}</button>}
         </section>

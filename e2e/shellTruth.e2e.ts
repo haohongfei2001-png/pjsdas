@@ -22,7 +22,7 @@ test('shell hides stale version copy and Jobs uses the approved library with sec
   await expect(page.getByRole('button', { name: '已投递' })).toBeVisible()
   await expect(page.getByRole('button', { name: '流程结束' })).toBeVisible()
   await expect(page.locator('.tsui-library-secondary').getByRole('button', { name: /发现箱/ })).toHaveCount(0)
-  await expect(page.locator('.tsui-library-secondary').getByRole('button', { name: /准备资产/ })).toBeVisible()
+  await expect(page.locator('.tsui-library-secondary').getByRole('button', { name: /准备资产/ })).toHaveCount(0)
   const first = await filters.nth(0).boundingBox()
   const second = await filters.nth(1).boundingBox()
   expect(first).not.toBeNull()

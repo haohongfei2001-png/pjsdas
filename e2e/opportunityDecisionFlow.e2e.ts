@@ -123,7 +123,7 @@ test('TSUI-03 Jobs shows one filter group and a conclusion-first routed detail',
       {
         id: 'uu05-interview-action',
         kind: 'manual',
-        title: '准备推进科技面试',
+        title: '填写推进科技出访记录',
         opportunityId: 'uu05-interview',
         processStage: 'interview',
         estimatedMinutes: 30,

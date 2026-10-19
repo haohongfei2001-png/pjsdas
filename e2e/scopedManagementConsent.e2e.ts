@@ -137,15 +137,15 @@ test('account switch during POST never displays the old receipt as the new accou
 
 test('consumer business permission is an explicit separate choice and revoked in the same bounded batch',async({page})=>{
  const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ await expect(page.getByLabel('本次选择：手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('approve')
  await page.getByLabel('本次选择：时间偏好').selectOption('approve')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
  expect(f.posts[0].choices.map((c:any)=>c.domain)).toEqual(['business','planning'])
  expect(f.posts[0].choices[0]).toMatchObject({consentVersion:7,expectedGrant:null})
  expect(f.state.clients[0].grants.map(g=>g.domain).sort()).toEqual(['business','planning'])
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1].choices.every((c:any)=>c.decision==='revoke'&&c.expectedGrant.revision===1)).toBe(true)
 })
@@ -156,8 +156,8 @@ test('stale business consent text is not shown as current authority and remains 
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  await expect(page.getByText('当前状态：授权文本已变更，需要重新明确确认；仍可撤销旧授权')).toBeVisible()
  await expect(page.getByText('最近读取的状态：0 项有效授权')).toBeVisible()
- await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect(page.getByLabel('本次选择：手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
 })
 
@@ -172,7 +172,7 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  await expect(page.getByText('当前不能新增管理授权；已有权限仍可查看和撤销。')).toBeVisible()
  await expect(page.getByText('第一次使用 TodayAction')).toHaveCount(0)
- const choice=page.getByLabel('本次选择：独立准备、手动行动与投递组')
+ const choice=page.getByLabel('本次选择：手动行动与投递组')
  await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toHaveJSProperty('disabled',true)
  await expect(choice.getByRole('option',{name:'撤销此项授权',exact:true})).toHaveJSProperty('disabled',false)
  await testInfo.attach(`revocation-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
@@ -192,7 +192,7 @@ test('controlled consumer screen permits business v7 only and sends exactly one 
   const option=page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
   await expect(option).toHaveJSProperty('disabled',d.domain!=='business')
  }
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('approve')
  for(const width of [1280,390]){
   await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
   await testInfo.attach(`controlled-v7-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
