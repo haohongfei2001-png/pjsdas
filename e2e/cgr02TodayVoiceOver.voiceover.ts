@@ -39,9 +39,9 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
   expect(foundInput, inputPhrases.join(' | ')).toBe(true)
 
   await input.fill('事项：填写报销单')
-  await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
   await dialog.getByRole('button', { name: '确认并保存' }).click()
-  await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
+  await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
   // Saving removes the focused submit button. VoiceOver returns to the
   // modal container; enter it before traversing the real saved-result speech.
   await voiceOver.interact()
@@ -51,7 +51,7 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     await voiceOver.next()
     const spoken = await voiceOver.lastSpokenPhrase()
     receiptPhrases.push(spoken)
-    foundReceipt = spoken.includes('已记录') && spoken.includes('整理面试材料')
+    foundReceipt = spoken.includes('已记录') && spoken.includes('填写报销单')
   }
   expect(foundReceipt, receiptPhrases.join(' | ')).toBe(true)
 })

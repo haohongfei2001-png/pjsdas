@@ -59,6 +59,50 @@ never mutate the authoritative rows or receipt fingerprints.
   Local browser execution is unavailable in this environment; browser success is
   only claimed from the official workflow result, never from test discovery.
 
+## Official first-head evidence and test-only closure
+
+The first published head was `7829b235963f6b19955b8dee209a151caaa2df97`
+(tree `0d4ba25f69500db80052817f19eb3e5989fd9532`). Its original results remain:
+
+- [CI](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179855257),
+  [strict secondary visual](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179819000),
+  Brand, UI Review, read-only rollback and draft recovery passed.
+- [Chromium](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179855200):
+  281 passed / 7 failed. Four failures retained an old preparation task title after
+  the input had changed to an ordinary task; three queried the historical consent
+  descriptor title rather than the current business display label.
+- [Firefox/WebKit](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179855236):
+  284 passed / 6 failed, all the same three consent selectors in both browsers.
+  Dense journeys and the performance tail were skipped after those failures;
+  these skips are not performance acceptance.
+- [VoiceOver](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179855279):
+  two journeys passed, one retained the old task-title expectation. The separate
+  macOS offline visual job passed.
+- [SQL](https://github.com/haohongfei2001-png/pjsdas/actions/runs/39179855154):
+  fresh preparation writes correctly returned `PREPARATION_RETIRED`, but old
+  raw-gateway fixtures still expected successful new preparation creation.
+
+The follow-up changes only tests and this evidence document. Production source
+remains byte-identical to the 4317-test/build candidate. Browser task-name and
+display-label selectors were corrected without changing assertions, timeouts,
+consent descriptors/hashes, fixed before-phase evidence or pixel thresholds.
+Independent browser review found the final delta clean.
+
+SQL fixtures now require exact fresh preparation rejection with unchanged
+snapshot, revision, RPC count and ledger. Six complete historical preparation
+create/update/archive fixtures retain real replay, payload-reuse rejection,
+precise Undo and post-Undo replay coverage across v2/v7. Each fixture was compared
+field-for-field with the actual pre-retirement executor, including compensation,
+payload hash, receipt context, provenance and grant proof. Active CAS/revocation
+tests use supported manual actions while keeping historical preparation arrays.
+
+Both author and independent reviewer passed the six historical differential
+comparisons and actual serial PGlite SQL: v2 raw (14 scenarios), v7 raw (19),
+consumer flow and the complete eight-stage migration chain. Another 60 focused
+unit tests passed. Real PostgreSQL multi-session locking and the complete final
+browser/performance gates still require the new exact-head official CI; PGlite
+and static browser review do not replace them.
+
 ## Deployment and rollback
 
 Use the existing CI, repository merge and deployment paths. No new service,

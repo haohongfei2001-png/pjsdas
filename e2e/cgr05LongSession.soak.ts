@@ -18,29 +18,29 @@ test('CGR-05 connected Today survives a real multi-hour browser session', async 
 
   while (performance.now() - started < durationMs) {
     await page.goto('/pjsdas/today')
-    await expect(page.getByRole('heading', { name: captured ? '整理面试材料' : 'A第一任务' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: captured ? '填写报销单' : 'A第一任务' })).toBeVisible()
 
     if (!captured && performance.now() - started >= durationMs / 2) {
       await page.locator('.cgr-global-capture').click()
       const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
       await dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('事项：填写报销单')
-      await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+      await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
       await dialog.getByRole('button', { name: '确认并保存' }).click()
-      await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
+      await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
       await dialog.getByRole('button', { name: '关闭' }).click()
       await expect(dialog).toBeHidden()
       captured = true
     }
 
     if (captured) {
-      await expect(page.getByText('整理面试材料').first()).toBeVisible()
+      await expect(page.getByText('填写报销单').first()).toBeVisible()
       expect(server.commandCount()).toBe(1)
     }
 
     await page.locator('.surface-nav').getByRole('button', { name: /机会|Opportunities/ }).click()
     await expect(page).toHaveURL(/\/pjsdas\/opportunities/)
     await page.locator('.surface-nav').getByRole('button', { name: /今天|Today/ }).click()
-    await expect(page.getByRole('heading', { name: captured ? '整理面试材料' : 'A第一任务' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: captured ? '填写报销单' : 'A第一任务' })).toBeVisible()
     checks += 1
 
     const remainingMs = durationMs - (performance.now() - started)
@@ -48,8 +48,8 @@ test('CGR-05 connected Today survives a real multi-hour browser session', async 
   }
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: '整理面试材料' })).toBeVisible()
-  await expect(page.getByText('整理面试材料').first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '填写报销单' })).toBeVisible()
+  await expect(page.getByText('填写报销单').first()).toBeVisible()
   expect(server.commandCount()).toBe(1)
   expect(captured).toBe(true)
   expect(checks).toBeGreaterThanOrEqual(durationMinutes < 5 ? 1 : 20)
