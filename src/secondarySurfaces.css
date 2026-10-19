@@ -119,7 +119,7 @@
 .cgr-capture-sheet .cgr-capture-input-hint { margin: 12px 0 0; color: #5d6b82; font-size: .75rem; line-height: 1.6; }
 .cgr-capture-sheet .cgr-capture-footer { justify-content: space-between; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid #edf0f5; }
 .cgr-capture-sheet .cgr-capture-secondary { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
-.cgr-capture-sheet .cgr-capture-secondary > button { margin: 0; padding: 8px 0; border: 0; border-radius: 4px; background: transparent; color: #5d6b82; font-size: .8125rem; font-weight: 500; box-shadow: none; }
+.cgr-capture-sheet .cgr-capture-secondary > button { flex-basis: auto; margin: 0; padding: 8px 0; border: 0; border-radius: 4px; background: transparent; color: #5d6b82; font-size: .8125rem; font-weight: 500; box-shadow: none; }
 .cgr-capture-sheet .cgr-capture-secondary > button:hover { color: #315ec5; text-decoration: underline; text-underline-offset: 4px; }
 .cgr-capture-sheet > .cgr-correction-toggle { margin-top: 20px; }
 .cgr-capture-sheet :is(.cgr-understanding, .cgr-capture-receipt, .cgr-capture-error) { border-radius: 10px; overflow-wrap: anywhere; }

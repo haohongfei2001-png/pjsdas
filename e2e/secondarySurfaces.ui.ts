@@ -400,6 +400,9 @@ test('refined capture preserves drafts through both secondary entries without wr
   await capture(page, 'CAPTURE_MANUAL', 390)
   await page.getByRole('button', { name: '用自然语言添加', exact: true }).click()
   await expect(input).toHaveValue('今天提交周报')
+  // Real editing leaves the footer pointer target; fill() alone preserves its
+  // previous click position and intentionally keeps async preview layout held.
+  await input.click()
   await input.fill('周五下午开个会')
   await expect(page.locator('.cgr-understanding-warning')).toContainText('仍需补充或确认')
   await capture(page, 'CAPTURE_CLARIFICATION', 390)
