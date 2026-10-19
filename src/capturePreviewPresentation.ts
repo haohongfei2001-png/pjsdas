@@ -32,3 +32,9 @@ export function createCapturePreviewPresentation() {
     },
   }
 }
+
+/** Recovery locks an exact input; only reuse a settled preview of that input. */
+export function canRetainRecoveryPreview(locked: boolean, current: readonly unknown[], settled: readonly unknown[] | undefined): boolean {
+  return locked && settled !== undefined && current.length === settled.length
+    && current.every((value, index) => Object.is(value, settled[index]))
+}

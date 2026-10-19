@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCapturePreviewPresentation } from '../src/capturePreviewPresentation.js'
+import { createCapturePreviewPresentation, canRetainRecoveryPreview } from '../src/capturePreviewPresentation.js'
 
 describe('capture preview presentation cannot move an occupied confirmation target', () => {
   it('publishes immediately when no interaction owns the target', () => {
@@ -50,5 +50,28 @@ describe('capture preview presentation cannot move an occupied confirmation targ
     const request = gate.begin(); request.publish(old); request.publish(latest)
     gate.hold('pointer', false); gate.hold('pointer', false)
     expect(old).not.toHaveBeenCalled(); expect(latest).toHaveBeenCalledOnce()
+  })
+})
+
+describe('recovery retains only the exact settled preview', () => {
+  const session = { account: 'a' }
+  const identity = [true, '事项：离线整理材料', false, false, session, 0]
+  it('retains the settled input under locked recovery without releasing pointer/focus', () => {
+    const gate = createCapturePreviewPresentation(), show = vi.fn()
+    gate.begin().publish(show)
+    gate.hold('pointer', true); gate.hold('focus', true)
+    expect(canRetainRecoveryPreview(true, [...identity], identity)).toBe(true)
+    expect(show).toHaveBeenCalledOnce()
+    const different = vi.fn(); gate.begin().publish(different)
+    gate.hold('pointer', false); expect(different).not.toHaveBeenCalled()
+    gate.hold('focus', false); expect(different).toHaveBeenCalledOnce()
+  })
+  it('does not reuse before a result or during an editable state', () => {
+    expect(canRetainRecoveryPreview(true, identity, undefined)).toBe(false)
+    expect(canRetainRecoveryPreview(false, identity, identity)).toBe(false)
+  })
+  it.each([false, 'new body', true, true, { account: 'a' }, 1].map((value, index) => [value, index] as const))('rejects a changed identity component %#', (value, index) => {
+    const next = [...identity]; next[index] = value
+    expect(canRetainRecoveryPreview(true, next, identity)).toBe(false)
   })
 })

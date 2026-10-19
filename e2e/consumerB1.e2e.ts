@@ -205,6 +205,7 @@ for (const { width, deferredBootstrap } of [
   expect(snapshot.data.scheduleNodes).toHaveLength(1)
   expect(snapshot.data.scheduleNodes![0].relatedActionIds).toEqual([timed.id])
   expect(snapshot.data.scheduleNodes![0].temporal.endAt).toBeUndefined()
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto('/pjsdas/schedule')
   await expect(page.locator('.tsui-schedule-row')).toHaveCount(1)

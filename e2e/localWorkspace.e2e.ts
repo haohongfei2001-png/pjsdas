@@ -119,6 +119,7 @@ test('primary navigation, language, recovery, and global Tell TodayAction stay c
   await expect(capture).toHaveAttribute('aria-modal', 'false')
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.locator('.cgr-capture-input')).toBeVisible()
+  await capture.getByRole('button', { name: 'More options', exact: true }).click()
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()

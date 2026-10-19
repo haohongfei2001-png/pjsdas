@@ -367,7 +367,7 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   if (phase === 'after') {
     await expect(page.locator('#tell-pjsdas-description')).toHaveCount(0)
     await expect(page.locator('.cgr-capture-eyebrow, .cgr-capture-prompt')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: '语音输入，正在开发中' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: '语音输入，正在开发中' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: '整理输入内容并预览' })).toBeDisabled()
     await expect(page.locator('.cgr-capture-input')).toHaveAttribute('placeholder', '说说你的任务或日程…')
     await expect(page.locator('.cgr-capture-more')).toHaveAttribute('aria-expanded', 'false')
@@ -376,6 +376,12 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
     await expect(page.locator('.cgr-capture-header')).toHaveCount(0)
     await expect(page.locator('.cgr-capture-backdrop')).toHaveCount(0)
     expect(await page.locator('.cgr-capture-sheet').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    if (scale === 100) {
+      const composer = (await page.locator('.cgr-capture-composer').boundingBox())!
+      expect(composer.height).toBeLessThanOrEqual(60)
+      expect((await page.locator('.cgr-capture-input').boundingBox())!.width).toBeGreaterThanOrEqual(composer.width / 2)
+      for (const control of await page.locator('.cgr-capture-tools button').all()) expect((await control.boundingBox())!.width).toBeGreaterThanOrEqual(44)
+    }
   }
   await page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' }).fill('例如：明天下午准备面试。')
   await expect(page.locator('.cgr-understanding')).toBeVisible()
@@ -395,15 +401,15 @@ test('refined capture preserves drafts through both secondary entries without wr
   await input.fill('今天提交周报')
   await expect(page.locator('.cgr-understanding')).toContainText('今天提交周报')
   await input.press('Tab')
-  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeFocused()
-  expect(await page.locator('.cgr-capture-tool').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
+  await expect(page.locator('.cgr-capture-more')).toBeFocused()
+  expect(await page.locator('.cgr-capture-more').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '语音输入，正在开发中' })).toBeDisabled()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: '整理输入内容并预览' })).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(page.locator('.cgr-capture-more')).toBeFocused()
-  await page.keyboard.press('Enter')
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: '添加文本文件（.txt、.md）' })).toBeFocused()
+  expect(await page.locator('.cgr-capture-tool').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: '核实已有记录', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
@@ -503,7 +509,7 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
     const footerButtons = page.locator(phase === 'after' ? '.cgr-capture-secondary button' : '.cgr-capture-footer button')
     // Empty composer keeps confirmation out of the initial state. Both secondary entries remain.
-    await expect(footerButtons).toHaveCount(phase === 'after' ? 2 : 1)
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 5 : 1)
     for (const button of await footerButtons.all()) {
       await expect(button).toBeInViewport()
       if (phase === 'after') expect(await button.evaluate(element => {
@@ -698,13 +704,18 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   const mobile = (await page.locator('.cgr-capture-popover').boundingBox())!
   expect(mobile.x).toBe(12)
   expect(mobile.width).toBe(366)
-  await page.locator('.tsui-settings-button').click()
+  const outsideTarget = page.locator('.tsui-job-open').last()
+  const outsideBox = (await outsideTarget.boundingBox())!
+  const occupied = (await page.locator('.cgr-capture-popover').boundingBox())!
+  expect(outsideBox.y).toBeGreaterThan(occupied.y + occupied.height)
+  await outsideTarget.click()
   await expect(panel).toHaveCount(0)
-  await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible()
-  await expect(page.locator('.tsui-settings-button')).toBeFocused()
+  await expect(page.locator('.job-detail-page h1')).toBeVisible()
+  expect(await page.evaluate(() => document.activeElement?.closest('.cgr-capture-popover'))).toBeNull()
+  const detailUrl = page.url()
   await opener.click()
   await expect(input).toHaveValue('今天提交周报')
-  await expect(page).toHaveURL(/\/pjsdas\/settings$/)
+  await expect(page).toHaveURL(detailUrl)
   await input.fill('较长的输入内容。'.repeat(20))
   expect((await input.boundingBox())!.height).toBeGreaterThan(44)
   expect((await input.boundingBox())!.height).toBeLessThanOrEqual(160)
@@ -743,6 +754,7 @@ test('local file reads cannot overwrite edits or reopen a closed composer', asyn
       return result
     }
   })
+  await page.locator('.cgr-capture-more').click()
   const files = page.locator('.cgr-capture-tools input[type=file]')
   await files.setInputFiles({ name: 'held.txt', mimeType: 'text/plain', buffer: Buffer.from('stale imported text') })
   await expect(page.locator('.cgr-capture-file-note')).toContainText('正在本地读取')

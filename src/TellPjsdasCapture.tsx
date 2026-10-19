@@ -1,4 +1,4 @@
-import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
+import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
 import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
 import { capturePopoverLayout } from './capture/popoverLayout.js'
@@ -179,12 +179,15 @@ export default function TellPjsdasCapture({
 
   const previewPresentation = useRef(createCapturePreviewPresentation())
   const previewIdentity = useRef<unknown[]>([])
+  const settledPreviewIdentity = useRef<readonly unknown[] | undefined>(undefined)
   const fileReadIdentity = useRef<unknown[]>([])
   const inputIdentity = [open, text, manualMode, correctionMode, busy, cloud.session, recoveryLocked]
   if (inputIdentity.some((value, index) => value !== fileReadIdentity.current[index])) {
     fileReadEpochRef.current += 1
     fileReadIdentity.current = inputIdentity
   }
+  const parsedIdentity = [open, text, manualMode, correctionMode, cloud.session, previewRequest]
+  if (settledPreviewIdentity.current && parsedIdentity.some((value, index) => value !== settledPreviewIdentity.current![index])) settledPreviewIdentity.current = undefined
   const identity = [...inputIdentity, previewRequest]
   if (identity.some((value, index) => value !== previewIdentity.current[index])) {
     previewPresentation.current.invalidate()
@@ -358,12 +361,18 @@ export default function TellPjsdasCapture({
       if (!text.trim()) setPreview(undefined)
       return
     }
+    // A queued/uncertain command locks this exact input. Keep its settled
+    // preview instead of starting another layout-changing parse under Save.
+    if (canRetainRecoveryPreview(recoveryLocked, parsedIdentity, settledPreviewIdentity.current)) {
+      setPreviewBusy(false)
+      return
+    }
     const presentation = previewPresentation.current.begin()
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
       void previewWebSemanticCapture(text)
         .then((next) => {
-          presentation.publish(() => { setPreview(next); setPreviewBusy(false) })
+          presentation.publish(() => { settledPreviewIdentity.current = parsedIdentity; setPreview(next); setPreviewBusy(false) })
         })
         .catch((caught) => {
           presentation.publish(() => {
@@ -376,7 +385,7 @@ export default function TellPjsdasCapture({
       presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked])
 
   useEffect(() => {
     if (!open) return
@@ -596,10 +605,20 @@ export default function TellPjsdasCapture({
 
 
   const modeNote = preview ? modeExplanation(preview, zh) : undefined
-  const moreActions = <button type="button" className="cgr-capture-more" aria-label={zh ? '更多操作' : 'More options'} aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>···</button>
+  const moreActions = <button type="button" className="cgr-capture-more" aria-label={zh ? '更多操作' : 'More options'} aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>＋</button>
   const secondaryActions = moreOpen ? <div className="cgr-capture-secondary">
+    {!manualMode && !correctionMode ? <>
+          <button ref={fileTriggerRef} type="button" className="cgr-capture-tool" aria-label={zh ? '添加文本文件（.txt、.md）' : 'Add a text file (.txt, .md)'} title={zh ? '仅本地读取文本，最多 32 KB' : 'Read text locally, up to 32 KB'} disabled={busy || recoveryLocked || fileReading} onClick={() => { setFileNotice(zh ? '支持 .txt、.md，最多 32 KB，仅在本地读取。' : 'Text and Markdown (.txt, .md), up to 32 KB. Read locally.'); fileInputRef.current?.click() }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4.25 4.25l-8.5 8.5a5 5 0 0 1-7.07-7.07L12 2.5" /></svg><span>{zh ? '文本文件' : 'Text file'}</span>
+          </button>
+          <button type="button" className="cgr-capture-voice" disabled aria-label={zh ? '语音输入，正在开发中' : 'Voice input, in development'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" /></svg>
+            <span>{zh ? '语音 · 开发中' : 'Voice · Coming soon'}</span>
+          </button>
+    </> : null}
     {!manualMode && !correctionMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
     {!correctionMode ? <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button> : null}
+    {!manualMode && !correctionMode ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>{zh ? '收起' : 'Close'}</button> : null}
   </div> : null
 
 
@@ -635,23 +654,15 @@ export default function TellPjsdasCapture({
           <span title={fileAttachment.name}>{fileAttachment.name}</span>
           <small>{zh ? '本地文本' : 'Local text'}</small>
           <button type="button" disabled={busy || recoveryLocked} onClick={addFileQuote}>{zh ? '加入引用' : 'Add as quote'}</button>
-          <button type="button" aria-label={zh ? `移除文件 ${fileAttachment.name}` : `Remove file ${fileAttachment.name}`} disabled={busy || recoveryLocked} onClick={() => { setFileAttachment(undefined); setFileError(''); (fileTriggerRef.current?.disabled ? textareaRef.current : fileTriggerRef.current)?.focus() }}>×</button>
+          <button type="button" aria-label={zh ? `移除文件 ${fileAttachment.name}` : `Remove file ${fileAttachment.name}`} disabled={busy || recoveryLocked} onClick={() => { setFileAttachment(undefined); setFileError(''); (fileTriggerRef.current && !fileTriggerRef.current.disabled ? fileTriggerRef.current : textareaRef.current)?.focus() }}>×</button>
         </div> : null}
         <div className="cgr-capture-tools">
           <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
             onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
-          <button ref={fileTriggerRef} type="button" className="cgr-capture-tool" aria-label={zh ? '添加文本文件（.txt、.md）' : 'Add a text file (.txt, .md)'} title={zh ? '仅本地读取文本，最多 32 KB' : 'Read text locally, up to 32 KB'} disabled={busy || recoveryLocked || fileReading} onClick={() => { setFileNotice(zh ? '支持 .txt、.md，最多 32 KB，仅在本地读取。' : 'Text and Markdown (.txt, .md), up to 32 KB. Read locally.'); fileInputRef.current?.click() }}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 6-6a3 3 0 0 1 4.25 4.25l-8.5 8.5a5 5 0 0 1-7.07-7.07L12 2.5" /></svg>
-          </button>
-          <button type="button" className="cgr-capture-voice" disabled aria-label={zh ? '语音输入，正在开发中' : 'Voice input, in development'}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6" /></svg>
-            <span>{zh ? '开发中' : 'Coming soon'}</span>
-          </button>
+          {moreActions}
           <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
           </button>
-          {moreActions}
-          <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </div>
         </div>
         {fileReading || fileNotice ? <p className="cgr-capture-file-note" role="status">{fileReading ? (zh ? '正在本地读取…' : 'Reading locally…') : fileNotice}</p> : null}

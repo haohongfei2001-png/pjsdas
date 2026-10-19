@@ -1,57 +1,74 @@
 import { test } from './support/voiceoverMockTest.js'
-import { expect } from '@playwright/test'
+import { expect, type Locator } from '@playwright/test'
 import { prepareJourney } from './support/cgr02Journey.js'
 
 test('real VoiceOver can find Today, Tell TodayAction and the authoritative saved result', async ({ page, voiceOver }) => {
+  const synchronizeFocusedSpeech = async (target: Locator, name: string) => {
+    const compact = (value: string) => value.replace(/\s+/g, '')
+    await expect(target).toBeFocused()
+    // DOM focus can settle before the macOS accessibility cursor. Re-align
+    // that cursor until it speaks this control; do not navigate away or repair
+    // application focus with target.focus(), which could conceal a regression.
+    await expect.poll(async () => {
+      const focusedBefore = await target.evaluate(element => document.activeElement === element)
+      if (!focusedBefore) return { focusedBefore }
+      await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
+      return {
+        focusedBefore,
+        focusedAfter: await target.evaluate(element => document.activeElement === element),
+        spoken: compact(await voiceOver.lastSpokenPhrase()),
+        item: compact(await voiceOver.itemText()),
+      }
+    }, { message: `VoiceOver must speak the focused control: ${name}`, timeout: 8_000, intervals: [100, 250, 500] }).toMatchObject({
+      focusedBefore: true,
+      focusedAfter: true,
+      spoken: expect.stringContaining(compact(name)),
+      item: expect.stringContaining(compact(name)),
+    })
+  }
+
   await prepareJourney(page)
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
 
   await page.bringToFront()
   await page.locator('.tsui-brand').focus()
-  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
+  await synchronizeFocusedSpeech(page.locator('.tsui-brand'), 'TodayAction，今天')
+  const headingPhrases: string[] = []
   let foundTodayTask = false
   for (let i = 0; i < 24; i += 1) {
     await voiceOver.nextHeading()
-    if ((await voiceOver.lastSpokenPhrase()).includes('A第一任务')) {
+    const spoken = await voiceOver.lastSpokenPhrase()
+    headingPhrases.push(spoken)
+    if (spoken.includes('A第一任务')) {
       foundTodayTask = true
       break
     }
   }
-  expect(foundTodayTask).toBe(true)
+  expect(foundTodayTask, headingPhrases.join(' | ')).toBe(true)
 
   await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction|Tell TodayAction/ }).click()
   const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
+  await expect(dialog).toHaveAttribute('aria-modal', 'false')
   const input = dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
-  await expect(input).toBeFocused()
-  const inputPhrases: string[] = []
-  // The dialog focuses the textarea. Align the VoiceOver cursor with that
-  // keyboard focus before checking its actual spoken accessible name.
-  await voiceOver.perform(voiceOver.keyboardCommands.moveCursorToKeyboardFocus)
-  let foundInput = false
-  for (let i = 0; i < 4 && !foundInput; i += 1) {
-    if (i) await voiceOver.perform(voiceOver.keyboardCommands.findNextControl)
-    const spoken = await voiceOver.lastSpokenPhrase()
-    const item = await voiceOver.itemText()
-    inputPhrases.push(`${spoken} / ${item}`)
-    foundInput = /TodayAction/.test(`${spoken} ${item}`) && /内容|告诉/.test(`${spoken} ${item}`)
-  }
-  expect(foundInput, inputPhrases.join(' | ')).toBe(true)
+  await synchronizeFocusedSpeech(input, '要告诉 TodayAction 的内容')
 
   await input.fill('事项：填写报销单')
   await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
   await dialog.getByRole('button', { name: '确认并保存' }).click()
   await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
-  // Saving removes the focused submit button. VoiceOver returns to the
-  // modal container; enter it before traversing the real saved-result speech.
-  await voiceOver.interact()
-  const receiptPhrases: string[] = []
-  let foundReceipt = (await voiceOver.lastSpokenPhrase()).includes('已记录')
+  // The nonmodal composer restores textarea focus when saving removes submit.
+  // Accept the actual live announcement, or traverse from that verified focus.
+  const receiptPhrases: string[] = [await voiceOver.lastSpokenPhrase()]
+  const isReceipt = (spoken: string) => spoken.includes('已记录') && spoken.includes('填写报销单')
+  let foundReceipt = receiptPhrases.some(isReceipt)
+  await expect(input).toBeFocused()
+  if (!foundReceipt) await synchronizeFocusedSpeech(input, '要告诉 TodayAction 的内容')
   for (let i = 0; i < 32 && !foundReceipt; i += 1) {
     await voiceOver.next()
     const spoken = await voiceOver.lastSpokenPhrase()
     receiptPhrases.push(spoken)
-    foundReceipt = spoken.includes('已记录') && spoken.includes('填写报销单')
+    foundReceipt = isReceipt(spoken)
   }
   expect(foundReceipt, receiptPhrases.join(' | ')).toBe(true)
 })

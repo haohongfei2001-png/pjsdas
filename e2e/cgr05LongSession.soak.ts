@@ -27,6 +27,7 @@ test('CGR-05 connected Today survives a real multi-hour browser session', async 
       await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
       await dialog.getByRole('button', { name: '确认并保存' }).click()
       await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
+      await dialog.getByRole('button', { name: '更多操作', exact: true }).click()
       await dialog.getByRole('button', { name: '关闭' }).click()
       await expect(dialog).toBeHidden()
       captured = true
