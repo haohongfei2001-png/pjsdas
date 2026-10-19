@@ -1,3 +1,4 @@
+import { isPreparationAction } from './preparationRetirement.js'
 import { validSourceDate, validSourceDeadline, validSourceInstant } from './sourceCalendar.js'
 import { actionArrangementDate, isExplicitActionArrangement, isRecruitingAppointment, scheduleNodeEligible } from './scheduleEligibility.js'
 import { applicationDeadlineNodes, deadlineNodeFacts, latestDeadlineCorrection, resolveApplicationDeadline } from './applicationDeadline.js'
@@ -226,7 +227,7 @@ export function scheduleNodeForOpportunityDeadline(
 }
 
 export function scheduleNodeForAction(action: Action): ScheduleNode | undefined {
-  if (action.processEventId || !isExplicitActionArrangement(action.scheduledTemporal)) return undefined
+  if (action.processEventId || isPreparationAction(action) || !isExplicitActionArrangement(action.scheduledTemporal)) return undefined
   return baseNode({
     occurrenceId: `action:${action.id}`,
     opportunityId: action.opportunityId,

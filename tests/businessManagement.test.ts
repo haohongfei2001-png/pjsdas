@@ -5,123 +5,98 @@ import { createAuthoritativeCommandExecutor } from '../gateway/authoritativeComm
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 const now = new Date('2026-10-02T12:00:00Z')
 function snapshot(): PJSDASSnapshot { return { schema:'pjsdas-local-snapshot',version:4,exportedAt:now.toISOString(),data:{opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[],timeline:[],scheduleNodes:[],decisionRequests:[],semanticReceipts:[],reminderIntents:[],reminderOutbox:[]} } }
-const createPrep = {kind:'create_prep',value:{title:'Synthetic preparation',estimatedMinutes:30}}
+const createGroup = {kind:'create_application_group',value:{company:'Synthetic group',total:2}}
 function apply(operations: unknown[], initial = snapshot(), commandId='synthetic-command-1') { return applyBusinessManagement(initial,{operations},commandId,now) }
 
-describe('consumer business management foundation',()=>{
-  it('creates existing prep, manual action and group entities with server-owned IDs',()=>{
-    const result=apply([createPrep,{kind:'create_manual_action',value:{title:'Sample task',estimatedMinutes:20}},{kind:'create_application_group',value:{company:'Synthetic Co',total:2}}])
-    expect(result.snapshot.data.prep[0]).toMatchObject({id:'managed:prep:synthetic-command-1:0',title:'Synthetic preparation'})
+describe('active business management and retained Undo',()=>{
+  it('creates manual actions and groups with server-owned IDs',()=>{
+    const result=apply([createGroup,{kind:'create_manual_action',value:{title:'Sample task',estimatedMinutes:20}}])
+    expect(result.snapshot.data.applicationGroups[0]).toMatchObject({id:'managed:application_group:synthetic-command-1:0',company:'Synthetic group',total:2})
     expect(result.snapshot.data.actions[0]).toMatchObject({kind:'manual',status:'todo',leverage:0})
-    expect(result.snapshot.data.applicationGroups[0]).toMatchObject({company:'Synthetic Co',total:2})
-    expect(result.compensation?.payload.changes).toHaveLength(3)
+    expect(result.compensation?.payload.changes).toHaveLength(2)
     expect(result.snapshot.data.timeline).toHaveLength(1)
   })
-  it('reads exact own-workspace objects and paginates without mutating them',()=>{
-    const first=apply([createPrep,createPrep,createPrep])
-    const page=readBusinessManagement(first.snapshot,{type:'prep',limit:2})
+  it('reads exact objects and paginates without mutating them',()=>{
+    const first=apply([createGroup,createGroup,createGroup])
+    const page=readBusinessManagement(first.snapshot,{type:'application_group',limit:2})
     expect(page.items).toHaveLength(2)
-    expect(readBusinessManagement(first.snapshot,{type:'prep',afterId:page.nextAfterId}).items).toHaveLength(1)
-    expect(readBusinessManagement(first.snapshot,{type:'prep',ids:['foreign-or-missing']}).items).toEqual([])
-    ;(page.items[0] as {title:string}).title='Mutated response'
-    expect(first.snapshot.data.prep[0].title).toBe('Synthetic preparation')
+    expect(readBusinessManagement(first.snapshot,{type:'application_group',afterId:page.nextAfterId}).items).toHaveLength(1)
+    expect(readBusinessManagement(first.snapshot,{type:'application_group',ids:['foreign-or-missing']}).items).toEqual([])
+    ;(page.items[0] as {company:string}).company='Mutated response'
+    expect(first.snapshot.data.applicationGroups[0].company).toBe('Synthetic group')
   })
-  it('rejects injected owner, arbitrary scores, timestamps and permanent deletion',()=>{
+  it('rejects injected owners, timestamps, arbitrary scores and permanent deletion',()=>{
     for(const operation of [
-      {...createPrep,value:{...createPrep.value,ownerId:'another-account'}},
-      {kind:'update_prep',id:'a',patch:{updatedAt:now.toISOString()}},
+      {...createGroup,value:{...createGroup.value,ownerId:'another-account'}},
+      {kind:'update_manual_action',id:'a',patch:{updatedAt:now.toISOString()}},
       {kind:'update_manual_action',id:'a',patch:{status:'done'}},
       {kind:'update_application_group',id:'a',patch:{used:4}},
       {kind:'purge_prep',id:'a'},
     ]) expect(businessManagementSchema.safeParse({operations:[operation]}).success).toBe(false)
   })
-  it('rejects empty changes, unknown domain and oversized batches',()=>{
-    for(const operations of [[],Array(51).fill(createPrep),[{kind:'update_prep',id:'a',patch:{}}],[{kind:'create_material',value:{title:'a'}}]]) expect(businessManagementSchema.safeParse({operations}).success).toBe(false)
+  it('rejects empty changes, unknown domains and oversized batches',()=>{
+    for(const operations of [[],Array(51).fill(createGroup),[{kind:'update_application_group',id:'a',patch:{}}],[{kind:'create_material',value:{title:'a'}}]]) expect(businessManagementSchema.safeParse({operations}).success).toBe(false)
   })
   it('patches and clears optional fields without changing input snapshots',()=>{
-    const first=apply([{...createPrep,value:{...createPrep.value,minimumOutput:'sample'}}])
-    const before=structuredClone(first.snapshot)
-    const result=apply([{kind:'update_prep',id:first.objects[0].id,patch:{minimumOutput:null,title:'Updated'}}],first.snapshot,'synthetic-command-2')
-    expect(result.snapshot.data.prep[0].minimumOutput).toBeUndefined()
-    expect(result.snapshot.data.prep[0].title).toBe('Updated')
+    const first=apply([{...createGroup,value:{...createGroup.value,notes:'sample'}}]),before=structuredClone(first.snapshot)
+    const result=apply([{kind:'update_application_group',id:first.objects[0].id,patch:{notes:null,company:'Updated'}}],first.snapshot,'synthetic-command-2')
+    expect(result.snapshot.data.applicationGroups[0].notes).toBeUndefined()
+    expect(result.snapshot.data.applicationGroups[0].company).toBe('Updated')
     expect(first.snapshot).toEqual(before)
   })
-  it('archives retain the whole object in compensation and restore safely',()=>{
-    const first=apply([createPrep])
-    const removed=apply([{kind:'archive_prep',id:first.objects[0].id}],first.snapshot,'synthetic-command-2')
-    expect(removed.snapshot.data.prep).toEqual([])
-    expect(removed.compensation?.payload.changes[0].before).toEqual(first.snapshot.data.prep[0])
-    const restored=restoreBusinessManagement(removed.snapshot,removed.compensation!,now)
-    expect(restored.data.prep).toEqual(first.snapshot.data.prep)
-    expect(restored.data.timeline).toHaveLength(2)
-  })
-  it('restoration refuses collision instead of clobbering a newer object',()=>{
-    const first=apply([createPrep])
-    const removed=apply([{kind:'archive_prep',id:first.objects[0].id}],first.snapshot,'synthetic-command-2')
-    removed.snapshot.data.prep.push({...first.snapshot.data.prep[0],title:'Newer'})
+  it('archive compensation restores the whole object and detects newer collisions',()=>{
+    const first=apply([createGroup]),removed=apply([{kind:'archive_application_group',id:first.objects[0].id}],first.snapshot,'synthetic-command-2')
+    expect(removed.snapshot.data.applicationGroups).toEqual([])
+    expect(removed.compensation?.payload.changes[0].before).toEqual(first.snapshot.data.applicationGroups[0])
+    expect(restoreBusinessManagement(removed.snapshot,removed.compensation!,now).data.applicationGroups).toEqual(first.snapshot.data.applicationGroups)
+    removed.snapshot.data.applicationGroups.push({...first.snapshot.data.applicationGroups[0],company:'Newer'})
     expect(()=>restoreBusinessManagement(removed.snapshot,removed.compensation!,now)).toThrow(/newer data/)
   })
-  it('undo of update preserves unrelated later objects and detects target edits',()=>{
-    const first=apply([createPrep])
-    const updated=apply([{kind:'update_prep',id:first.objects[0].id,patch:{title:'Updated'}}],first.snapshot,'synthetic-command-2')
-    const later=apply([createPrep],updated.snapshot,'synthetic-command-3')
+  it('Undo preserves unrelated later objects and detects target edits',()=>{
+    const first=apply([createGroup])
+    const updated=apply([{kind:'update_application_group',id:first.objects[0].id,patch:{company:'Updated'}}],first.snapshot,'synthetic-command-2')
+    const later=apply([createGroup],updated.snapshot,'synthetic-command-3')
     const restored=restoreBusinessManagement(later.snapshot,updated.compensation!,now)
-    expect(restored.data.prep.find(item=>item.id===first.objects[0].id)?.title).toBe('Synthetic preparation')
-    expect(restored.data.prep).toHaveLength(2)
-    later.snapshot.data.prep[0].title='Subsequent target edit'
+    expect(restored.data.applicationGroups.find(item=>item.id===first.objects[0].id)?.company).toBe('Synthetic group')
+    expect(restored.data.applicationGroups).toHaveLength(2)
+    later.snapshot.data.applicationGroups[0].company='Subsequent target edit'
     expect(()=>restoreBusinessManagement(later.snapshot,updated.compensation!,now)).toThrow(/newer data/)
   })
-  it('atomic batch leaves the original untouched when the last item is missing',()=>{
+  it('an invalid last item leaves the whole atomic batch unchanged',()=>{
     const original=snapshot()
-    expect(()=>apply([createPrep,{kind:'archive_prep',id:'missing'}],original)).toThrow(/not found/)
-    expect(original.data.prep).toEqual([])
-    expect(original.data.timeline).toEqual([])
+    expect(()=>apply([createGroup,{kind:'archive_application_group',id:'missing'}],original)).toThrow(/not found/)
+    expect(original.data.applicationGroups).toEqual([]);expect(original.data.timeline).toEqual([])
   })
-  it('refuses deleting prep referenced by an action',()=>{
-    const first=apply([createPrep,{kind:'create_manual_action',value:{title:'Task',estimatedMinutes:20}}])
-    first.snapshot.data.actions[0].prepId=first.objects[0].id
-    expect(()=>apply([{kind:'archive_prep',id:first.objects[0].id}],first.snapshot)).toThrow(/referenced/)
+  it('refuses archiving a referenced group and unsafe compensation',()=>{
+    const first=apply([createGroup,{kind:'create_manual_action',value:{title:'Task',estimatedMinutes:20}}])
+    first.snapshot.data.actions[0].applicationGroupId=first.objects[0].id
+    expect(()=>apply([{kind:'archive_application_group',id:first.objects[0].id}],first.snapshot)).toThrow(/referenced/)
+    const created=apply([createGroup]);const later=apply([{kind:'create_manual_action',value:{title:'Task',estimatedMinutes:20}}],created.snapshot,'synthetic-command-2')
+    later.snapshot.data.actions[0].applicationGroupId=created.objects[0].id
+    expect(()=>restoreBusinessManagement(later.snapshot,created.compensation!,now)).toThrow(/referenced/)
   })
-  it('refuses leaving dependent prep action metadata stale',()=>{
-    const first=apply([createPrep,{kind:'create_manual_action',value:{title:'Old task',estimatedMinutes:20}}])
-    first.snapshot.data.actions[0].kind='prep'; first.snapshot.data.actions[0].prepId=first.objects[0].id
-    expect(()=>apply([{kind:'update_prep',id:first.objects[0].id,patch:{title:'New title',estimatedMinutes:50}}],first.snapshot,'synthetic-command-2')).toThrow(/dependent actions/)
-    expect(first.snapshot.data.actions[0].title).toBe('Old task')
-    expect(first.snapshot.data.prep[0].title).toBe('Synthetic preparation')
-  })
-  it('refuses editing derived or scheduled actions through generic management',()=>{
+  it('refuses editing retired preparation or any derived/scheduled action',()=>{
     const first=apply([{kind:'create_manual_action',value:{title:'Task',estimatedMinutes:20}}])
     first.snapshot.data.actions[0].kind='prep'
-    expect(()=>apply([{kind:'update_manual_action',id:first.objects[0].id,patch:{title:'bad'}}],first.snapshot)).toThrow(/governed/)
-    first.snapshot.data.actions[0].kind='manual'; first.snapshot.data.actions[0].dueAt='2026-10-10T10:00:00Z'
+    expect(()=>apply([{kind:'update_manual_action',id:first.objects[0].id,patch:{title:'bad'}}],first.snapshot)).toThrow(/retired/)
+    first.snapshot.data.actions[0].kind='manual';first.snapshot.data.actions[0].dueAt='2026-10-10T10:00:00Z'
     expect(()=>apply([{kind:'archive_manual_action',id:first.objects[0].id}],first.snapshot)).toThrow(/governed/)
   })
-  it('rejects shrinking group capacity below recorded use',()=>{
-    const first=apply([{kind:'create_application_group',value:{company:'Synthetic',total:3}}])
-    first.snapshot.data.applicationGroups[0].used=2
+  it('refuses shrinking group capacity below recorded use',()=>{
+    const first=apply([{kind:'create_application_group',value:{company:'Synthetic',total:3}}]);first.snapshot.data.applicationGroups[0].used=2
     expect(()=>apply([{kind:'update_application_group',id:first.objects[0].id,patch:{total:1}}],first.snapshot)).toThrow(/capacity/)
   })
-  it('preserves original ordering when restoring an archived middle object',()=>{
-    const first=apply([createPrep,createPrep,createPrep])
-    const removed=apply([{kind:'archive_prep',id:first.objects[1].id}],first.snapshot,'synthetic-command-2')
-    expect(restoreBusinessManagement(removed.snapshot,removed.compensation!,now).data.prep).toEqual(first.snapshot.data.prep)
+  it('restores an archived middle object in its original order',()=>{
+    const first=apply([createGroup,createGroup,createGroup]),removed=apply([{kind:'archive_application_group',id:first.objects[1].id}],first.snapshot,'synthetic-command-2')
+    expect(restoreBusinessManagement(removed.snapshot,removed.compensation!,now).data.applicationGroups).toEqual(first.snapshot.data.applicationGroups)
   })
-  it('does not record a new write for an unchanged patch',()=>{
-    const first=apply([createPrep])
-    const same=applyBusinessManagement(first.snapshot,{operations:[{kind:'update_prep',id:first.objects[0].id,patch:{title:'Synthetic preparation'}}]},'synthetic-command-2',new Date('2026-10-03T00:00:00Z'))
-    expect(same.status).toBe('ALREADY_APPLIED')
-    expect(same.snapshot.data.timeline).toHaveLength(1)
+  it('does not write an unchanged patch',()=>{
+    const first=apply([createGroup]),same=apply([{kind:'update_application_group',id:first.objects[0].id,patch:{company:'Synthetic group'}}],first.snapshot,'synthetic-command-2')
+    expect(same.status).toBe('ALREADY_APPLIED');expect(same.snapshot.data.timeline).toHaveLength(1)
   })
   it('rejects forged compensation object identities',()=>{
-    const first=apply([createPrep]); const comp=structuredClone(first.compensation!)
-    comp.payload.changes[0].after!.id='another-id'
+    const first=apply([createGroup]),comp=structuredClone(first.compensation!);comp.payload.changes[0].after!.id='another-id'
     expect(()=>restoreBusinessManagement(first.snapshot,comp,now)).toThrow(/invalid/)
-  })
-  it('compensation cannot remove a newly referenced created object',()=>{
-    const first=apply([createPrep])
-    const later=apply([{kind:'create_manual_action',value:{title:'Task',estimatedMinutes:20}}],first.snapshot,'synthetic-command-2')
-    later.snapshot.data.actions[0].prepId=first.objects[0].id
-    expect(()=>restoreBusinessManagement(later.snapshot,first.compensation!,now)).toThrow(/referenced/)
   })
 })
 
@@ -135,7 +110,7 @@ describe('management consent gate',()=>{
  it('default-denies management before any database fetch',async()=>{
    let reads=0
    const executor=createAuthoritativeCommandExecutor({supabaseUrl:'https://example.invalid',serviceRoleKey:'synthetic',fetchImpl:async()=>{reads++;throw new Error('No network expected')}})
-   await expect(executor.execute(principal,{commandId:'synthetic-command-1',baseRevision:0,command:{type:'business_management',value:{operations:[createPrep]}}})).rejects.toThrow(/authorization/)
+   await expect(executor.execute(principal,{commandId:'synthetic-command-1',baseRevision:0,command:{type:'business_management',value:{operations:[createGroup]}}})).rejects.toThrow(/authorization/)
    expect(reads).toBe(0)
  })
 })

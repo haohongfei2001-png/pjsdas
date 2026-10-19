@@ -1,3 +1,4 @@
+import { withoutPreparationSurfaces } from '../preparationRetirement.js'
 import { inactiveProcessActionIds, todayProcessTimingOwner } from '../fixedEventGuardLogic.js'
 import { buildOpportunityDecisionList } from '../opportunityDecisionRead.js'
 import { resolveApplicationDeadline } from '../applicationDeadline.js'
@@ -361,6 +362,7 @@ export function getTodayPlan(
 ): GetTodayPlanOutput {
   const context = resolvedContext(bridgeContext)
   const workspace = readWorkspace(snapshot)
+  snapshot = withoutPreparationSurfaces(snapshot)
   const now = nowForRequestedDate(input.date, context.now, context.timezone)
   const today = displayDateKey(now, context.timezone)
   const availableMinutes = input.availableMinutes

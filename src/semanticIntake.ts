@@ -1,3 +1,4 @@
+import { isPreparationCandidate, PreparationRetiredError, PREPARATION_RETIRED_MESSAGE } from './preparationRetirement.js'
 import { boundInterviewRescheduleMatches } from './boundInterviewReschedule.js'
 import { normalizedUserJobFacts, userJobIdentity } from './opportunityCreation.js'
 import { dismissedSemanticCandidate } from './decisionDismissal.js'
@@ -718,6 +719,7 @@ function applyCandidate(
   commandInputId = observation.inputId,
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
+  if (isPreparationCandidate(candidate, snapshot.data)) throw new PreparationRetiredError()
   // Recheck at the mutation point too: another candidate or a later decision
   // must not retarget or confirm past the captured authoritative precondition.
   if (!boundInterviewRescheduleMatches(snapshot, candidate)) throw new Error('The expected interview arrangement changed; refresh the notice before recording it.')
@@ -1147,6 +1149,10 @@ export function applySemanticIntake(
       receipt: replay,
       decisionRequests: (base.data.decisionRequests ?? []).filter((item) => replay.decisionRequestIds.includes(item.id)),
     }
+  }
+
+  if (observation.candidates.some(candidate => isPreparationCandidate(candidate, base.data))) {
+    return { status: 'NO_WRITE', snapshot: base, changed: false, summary: PREPARATION_RETIRED_MESSAGE, decisionRequests: [] }
   }
 
   // Reject the entire bound input before any receipt, decision or domain write.

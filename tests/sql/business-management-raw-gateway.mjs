@@ -2,6 +2,7 @@
 // trusts service-role reducer output; this fixture does not claim a new SQL guard.
 import pg from 'pg'
 import assert from 'node:assert/strict'
+import { seedHistoricalPreparationCommand } from './historical-preparation-fixture.mjs'
 import { createOwnerBusinessManagementRuntime } from '../../gateway/businessManagementRuntime.ts'
 import { unknownDeadlineWorkspace } from '../fixtures/unknownDeadlineWorkspace.ts'
 const url = new URL(process.env.TA_MANAGEMENT_SQL_TEST_URL ?? 'http://missing.invalid')
@@ -35,7 +36,7 @@ try {
   globalThis.fetch = async () => { throw new Error('External network is forbidden in this fixture') }
   for (const [index, scenario] of [...operations.map(op => op.kind), 'legacy', 'newer-unrelated', 'newer-target', 'revoke-before-rpc', 'cas-before-rpc'].entries()) {
     const owner = `00000000-0000-4000-8000-${String(3001 + index).padStart(12, '0')}`, grant = `10000000-0000-4000-8000-${String(3001 + index).padStart(12, '0')}`
-    const initial = raw(), op = operations[index] ?? operations[1]
+    const initial = raw(), op = operations[index] ?? operations[4]
     if (scenario === 'legacy') { initial.version = 1; for (const k of ['scheduleNodes', 'decisionRequests', 'semanticReceipts', 'reminderIntents', 'reminderOutbox']) delete initial.data[k] }
     await db.query('reset role'); await db.query('insert into auth.users(id) values($1)', [owner])
     await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,$3)', [owner, JSON.stringify(initial), initial.version])
@@ -84,14 +85,44 @@ try {
     }
     const command = { commandId: `v2-raw-${scenario}`, baseRevision: 0, change: { operations: [op] } }
     const applied = await runtime.invoke('execute_business_management', command)
+    if (op.kind.endsWith('_prep')) {
+      assert.equal(applied.isError, true); assert.equal(applied.structuredContent.code, 'PREPARATION_RETIRED'); assert.equal(applied.structuredContent.retryable, false)
+      // A retry and a mixed batch must also reject without a partial active write.
+      for (const rejectedCommand of [command, { ...command, commandId: `${command.commandId}-mixed`, change: { operations: [operations[3], op] } }]) {
+        const rejected = await runtime.invoke('execute_business_management', rejectedCommand)
+        assert.equal(rejected.structuredContent.code, 'PREPARATION_RETIRED')
+      }
+      assert.equal(posts, 0); assert.equal(await ledgerCount(), 0); assert.deepEqual(await stored(), initial)
+      assert.equal((await db.query('select revision from public.pjsdas_workspaces where user_id=$1', [owner])).rows[0].revision, 0)
+      // Model an already-committed pre-retirement record, not a new Prep write.
+      const historical = await seedHistoricalPreparationCommand(db, { owner, client, grant, consentVersion: 2, initial, command, time })
+      assert.equal((await runtime.invoke('execute_business_management', command)).structuredContent.outcome, 'ALREADY_APPLIED')
+      assert.deepEqual(await stored(), historical.snapshot); assert.equal(posts, 0); assert.equal(await ledgerCount(), 1)
+      const saved = (await db.query('select compensation from public.pjsdas_command_ledger where user_id=$1 and command_id=$2', [owner, command.commandId])).rows[0].compensation
+      assert.deepEqual(saved, historical.compensation)
+      const mismatched = await runtime.invoke('execute_business_management', { ...command, change: { operations: [operations[3]] } })
+      assert.equal(mismatched.structuredContent.code, 'COMMAND_ID_REUSED')
+      assert.deepEqual(await stored(), historical.snapshot); assert.equal(posts, 0); assert.equal(await ledgerCount(), 1)
+      const undo = { commandId: `v2-undo-${scenario}`, targetCommandId: command.commandId }
+      const undone = await runtime.invoke('undo_business_management', undo)
+      assert.equal(undone.structuredContent.outcome, 'COMMITTED', JSON.stringify(undone))
+      assert.equal((await runtime.invoke('undo_business_management', undo)).structuredContent.outcome, 'ALREADY_APPLIED')
+      const restored = await stored()
+      for (const [key, value] of Object.entries(initial.data)) if (key !== 'timeline') assert.deepEqual(restored.data[key], value, `${scenario}: exact historical ${key}`)
+      assert.equal(restored.version, initial.version); assert.equal(posts, 1); assert.equal(await ledgerCount(), 2)
+      assert.equal((await runtime.invoke('execute_business_management', command)).structuredContent.outcome, 'ALREADY_APPLIED')
+      assert.deepEqual(await stored(), restored); assert.equal(posts, 1); assert.equal(await ledgerCount(), 2)
+      console.log(`PASS ${scenario}: fresh/retry/mixed Prep rejected without writes; historical receipt replay and exact raw Undo retained`)
+      continue
+    }
     if (scenario === 'revoke-before-rpc' || scenario === 'cas-before-rpc') {
-      assert.ok(applied.isError || applied.structuredContent.outcome === 'CONFLICT'); assert.deepEqual(await stored(), initial); assert.equal(await ledgerCount(), 0)
+      assert.ok(applied.isError || applied.structuredContent.outcome === 'CONFLICT'); assert.equal(posts, scenario === 'cas-before-rpc' ? 5 : 1); assert.deepEqual(await stored(), initial); assert.equal(await ledgerCount(), 0)
       console.log(`PASS ${scenario}: SQL retained raw snapshot and appended no ledger receipt`); continue
     }
     assert.equal(applied.structuredContent.outcome, 'COMMITTED', JSON.stringify(applied))
     assert.equal((await runtime.invoke('execute_business_management', command)).structuredContent.outcome, 'ALREADY_APPLIED')
     const changed = await stored(), expected = structuredClone(initial)
-    for (const [key, value] of Object.entries(initial.data)) if (!['timeline', 'prep', 'actions', 'applicationGroups'].includes(key)) assert.deepEqual(changed.data[key], value)
+    for (const [key, value] of Object.entries(initial.data)) if (!['timeline', 'actions', 'applicationGroups'].includes(key)) assert.deepEqual(changed.data[key], value)
     assert.deepEqual(changed.data.actions.slice(0, 2), initial.data.actions.slice(0, 2))
     if (scenario === 'update_manual_action' || scenario === 'archive_manual_action') {
       const compensation = (await db.query('select compensation from public.pjsdas_command_ledger where user_id=$1 and command_id=$2', [owner, command.commandId])).rows[0].compensation
@@ -102,7 +133,7 @@ try {
       assert.equal(actionChange.beforeIndex, initial.data.actions.findIndex(action => action.id === 'manual-b'))
     }
     if (scenario.startsWith('newer-')) {
-      if (scenario === 'newer-target') changed.data.prep[0].title = 'Later owner title'
+      if (scenario === 'newer-target') changed.data.actions.find(action => action.id === 'manual-b').title = 'Later owner title'
       else { changed.data.actions[0].dueAt = '2026-12-31T01:00:00Z'; expected.data.actions[0].dueAt = changed.data.actions[0].dueAt }
       await db.query('update public.pjsdas_workspaces set snapshot=$1,revision=revision+1 where user_id=$2', [JSON.stringify(changed), owner])
     }

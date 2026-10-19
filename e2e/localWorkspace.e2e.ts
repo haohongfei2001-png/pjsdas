@@ -18,7 +18,7 @@ const opportunity = {
 const action = {
   id: 'e2e-action',
   kind: 'manual',
-  title: '准备矩阵科技 AI 产品经理申请材料',
+  title: '填写矩阵科技出访记录',
   opportunityId: 'e2e-opportunity',
   estimatedMinutes: 30,
   leverage: 80,
@@ -49,7 +49,7 @@ async function seedLocalWorkspace(page: Page) {
     })
   }, { opportunity, action })
   await page.reload()
-  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '填写矩阵科技出访记录' })).toBeVisible()
 }
 
 test('empty local workspace routes directly into setup instead of a maintenance queue', async ({ page }) => {
@@ -68,13 +68,13 @@ test('critical local-first action flow survives completion, undo, and browser re
   await expect(page.locator('.tsui-task-row')).toHaveCount(1)
   await page.locator('.tsui-task-row .tsui-done-action').click()
   await expect(page.getByRole('status')).toContainText('已完成')
-  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '填写矩阵科技出访记录' })).toHaveCount(0)
 
   await page.getByRole('button', { name: '撤销' }).click()
-  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '填写矩阵科技出访记录' })).toBeVisible()
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: '准备矩阵科技 AI 产品经理申请材料' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '填写矩阵科技出访记录' })).toBeVisible()
 
   const persistedStatus = await page.evaluate(async () => new Promise<string | undefined>((resolve, reject) => {
     const request = indexedDB.open('pjsdas')

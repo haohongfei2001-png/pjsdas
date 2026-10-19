@@ -1,3 +1,4 @@
+import { isPreparationNode, PreparationRetiredError } from './preparationRetirement.js'
 import * as z from 'zod/v4'
 import type { ReminderIntent, ScheduleNode } from './model.js'
 import { reminderDedupeKey, validateReminderIntent } from './reminders.js'
@@ -69,6 +70,7 @@ export async function applyPrivateReminderManagement(snapshot:PJSDASSnapshot,raw
   if(operation.kind==='create_private_reminder'){
    if(before)throw new PrivateReminderManagementError('RESTORE_CONFLICT','The deterministic reminder identity already exists.')
    node=target(next,operation.scheduleNodeId);activeTarget(next,node)
+   if(operation.purpose==='prep'||isPreparationNode(node,next.data))throw new PreparationRetiredError()
    if(await privateReminderManagementFingerprint(node)!==operation.expectedNodeFingerprint)throw new PrivateReminderManagementError('STALE_TARGET','The schedule target changed. Read its exact fingerprint again.')
    const dedupeKey=reminderDedupeKey(node,operation.purpose)
    if(next.data.reminderIntents!.some(row=>row.dedupeKey===dedupeKey||row.scheduleNodeId===node.id&&row.purpose===operation.purpose))throw new PrivateReminderManagementError('REFERENCE_IN_USE','This target and purpose already have a reminder. Review that exact record instead.')
@@ -80,6 +82,7 @@ export async function applyPrivateReminderManagement(snapshot:PJSDASSnapshot,raw
    after=structuredClone(before)
    if(operation.kind==='cancel_private_reminder')after.state='cancelled'
    else{
+    if(before.purpose==='prep'||isPreparationNode(node,next.data))throw new PreparationRetiredError()
     if(await privateReminderManagementFingerprint(node)!==operation.expectedNodeFingerprint)throw new PrivateReminderManagementError('STALE_TARGET','The schedule target changed. Read its exact fingerprint again.')
     if(operation.patch.triggerAt!==undefined)after.triggerAt=new Date(operation.patch.triggerAt).toISOString()
     if(operation.patch.state!==undefined)after.state=operation.patch.state
@@ -133,13 +136,17 @@ export async function restorePrivateReminderManagement(snapshot:PJSDASSnapshot,c
 export const privateReminderManagementReadSchema=z.object({type:z.enum(['reminders','schedule_targets']),ids:z.array(id).min(1).max(50).optional(),afterId:id.optional(),limit:z.number().int().min(1).max(50).default(25)}).strict().refine(value=>!(value.ids&&value.afterId),'Choose exact IDs or pagination, not both.')
 export async function readPrivateReminderManagement(snapshot:PJSDASSnapshot,raw:unknown){
  const input=privateReminderManagementReadSchema.parse(raw);const next=rawSnapshot(snapshot);const ids=input.ids?new Set(input.ids):undefined
+ const retired = (value: ReminderIntent | ScheduleNode) => input.type === 'reminders'
+  ? (value as ReminderIntent).purpose === 'prep' || isPreparationNode(target(next, (value as ReminderIntent).scheduleNodeId), next.data)
+  : isPreparationNode(value as ScheduleNode, next.data)
  const rows=(input.type==='reminders'?next.data.reminderIntents!.filter(row=>isPrivate(next,row)):next.data.scheduleNodes!)
+  .filter(row => ids || !retired(row))
   .filter(row=>(!ids||ids.has(row.id))&&(!input.afterId||row.id>input.afterId)).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0)
  const selected=rows.slice(0,input.limit)
  const items=await Promise.all(selected.map(async value=>{
-  if(input.type==='reminders'){assertPrivate(next,value as ReminderIntent);return{raw:structuredClone(value),fingerprint:await privateReminderManagementFingerprint(value)}}
+  if(input.type==='reminders'){assertPrivate(next,value as ReminderIntent);return{raw:structuredClone(value),...(retired(value)?{retired:true,allowedOperations:['cancel_private_reminder']}:{}),fingerprint:await privateReminderManagementFingerprint(value)}}
   const node=value as ScheduleNode
-  return{target:{id:node.id,occurrenceId:node.occurrenceId,version:node.version,state:node.state,temporal:structuredClone(node.temporal),opportunityId:node.opportunityId},fingerprint:await privateReminderManagementFingerprint(node),activeLatest:['scheduled','in_progress','elapsed_unresolved'].includes(node.state)&&latestScheduleOccurrence(next.data.scheduleNodes!,node.occurrenceId)?.id===node.id}
+  return{target:{id:node.id,occurrenceId:node.occurrenceId,version:node.version,state:node.state,temporal:structuredClone(node.temporal),opportunityId:node.opportunityId},fingerprint:await privateReminderManagementFingerprint(node),retired:retired(node),activeLatest:!retired(node)&&['scheduled','in_progress','elapsed_unresolved'].includes(node.state)&&latestScheduleOccurrence(next.data.scheduleNodes!,node.occurrenceId)?.id===node.id}
  }))
  const result={type:input.type,items,nextAfterId:rows.length>input.limit?selected.at(-1)!.id:null}
  if(new TextEncoder().encode(JSON.stringify(result)).byteLength>MAX_BYTES)throw new PrivateReminderManagementError('INVALID_CONFIGURATION','The result exceeds 256 KiB; request fewer exact IDs or a smaller page.')

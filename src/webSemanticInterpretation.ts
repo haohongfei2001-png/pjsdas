@@ -1,3 +1,4 @@
+import { isPreparationTaskText } from './preparationRetirement.js'
 import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
 import { resolveSourceTemporal } from './sourceTemporal.js'
 import { readWebPlanningTime } from './webPlanningTime.js'
@@ -428,10 +429,11 @@ export function buildWebSemanticInterpretation(
     return { mode, candidates, unresolved: change ? [] : ['改期通知需要唯一的当前面试、完整原时间及新时间和可靠时区，本次未写入。'],
       ignored: current.excluded ? ['Quoted older thread context was excluded.'] : [] }
   }
+  if (!importedNotice && current.text.split(/[；;。！？!?\n]/).some(isPreparationTaskText)) return { mode, candidates: [], unresolved: ['准备功能及其待办已移除，本次未写入。投递规划和真实面试、笔试安排仍可记录。'], ignored: [] }
   // A first-party task plan is distinct from a recruiting notice or deadline.
   // Reuse the source-time resolver: ambiguous local times remain unresolved.
   let untimedPreparation = false
-  if (!importedNotice && /准备|整理|复习|练习|修改|准备材料|prepare|practice|revise/i.test(current.text)
+  if (!importedNotice && /填写|提交|处理|准备|整理|复习|练习|修改|prepare|practice|revise/i.test(current.text)
     && !/截止|最晚|通知|邀请|收到|deadline|invitation|received/i.test(current.text)) {
     const planningTime = readWebPlanningTime(current.text, now.toISOString(), timezone)
     const temporal = planningTime.kind === 'resolved' ? planningTime.temporal : undefined

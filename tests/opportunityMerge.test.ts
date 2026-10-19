@@ -111,12 +111,15 @@ describe('bounded audited opportunity merge', () => {
     expect(diffCommandObjects(before, first.snapshot)).toContainEqual({ type: 'opportunity_alias', id: 'duplicate' })
     expect(diffCommandFields(before, first.snapshot)).toContainEqual({ type: 'opportunity_alias', id: 'duplicate', field: '*' })
   })
-  it('reads aliased detail/assessment/prep and historical timeline without changing original evidence IDs', async () => {
+  it('reads aliased detail and retired prep contract plus historical timeline without changing original evidence IDs', async () => {
     const result = await merge(); const source = { read: async () => ({ snapshot: result.snapshot, context: { now, timezone: 'UTC' } }) }
     for (const name of ['get_opportunity_detail', 'get_prep_graph'] as const) {
       const args = { opportunityId: 'duplicate' }
       const response = await invokeReadTool(source, name, args)
-      expect(response.isError).not.toBe(true)
+      if (name === 'get_prep_graph') {
+        expect(response.isError).toBe(true)
+        expect(JSON.parse((response.content[0] as {text:string}).text)).toMatchObject({code:'PREPARATION_RETIRED'})
+      } else expect(response.isError).not.toBe(true)
       expect(args.opportunityId).toBe('duplicate')
       if (name === 'get_opportunity_detail') expect(JSON.parse((response.content[0] as {text: string}).text).opportunityId).toBe('canonical')
     }

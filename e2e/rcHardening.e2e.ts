@@ -63,7 +63,7 @@ test('390x844 switches between the task and upcoming node without horizontal cli
     const action = {
       id: 'mobile-gate-action',
       kind: 'manual',
-      title: '准备移动端面试材料',
+      title: '填写移动端报销单',
       opportunityId: opportunity.id,
       estimatedMinutes: 20,
       leverage: 96,
@@ -106,7 +106,7 @@ test('390x844 switches between the task and upcoming node without horizontal cli
   await page.reload()
   const primary = page.locator('.tsui-task-row').first()
   const node = page.locator('.tsui-node-row').filter({ hasText: '移动端科技' }).first()
-  await expect(primary.getByRole('heading', { name: '准备移动端面试材料' })).toBeVisible()
+  await expect(primary.getByRole('heading', { name: '填写移动端报销单' })).toBeVisible()
   await expect(page.locator('.tsui-node-panel')).toBeHidden()
   await expect(page.locator('.tsui-primary-nav').getByRole('button')).toHaveCount(3)
   await expect(page.locator('.tsui-tell-button')).toBeVisible()

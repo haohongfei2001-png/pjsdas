@@ -1,8 +1,11 @@
-import type { DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from './model.js'
+import { isPreparationCandidate } from './preparationRetirement.js'
+import type { Action, TimelineRecord, DecisionRequest, Opportunity, ReminderIntent, ScheduleNode } from './model.js'
 import { resolveOpportunityTarget } from './semanticTargetMatching.js'
 
 export interface DecisionContext {
   opportunities: Opportunity[]
+  actions?: Action[]
+  timeline?: TimelineRecord[]
   scheduleNodes?: ScheduleNode[]
   reminderIntents?: ReminderIntent[]
   now: Date
@@ -54,6 +57,7 @@ function evaluateActionableDecision(request: DecisionRequest, context: DecisionC
     || new Set(request.choices.map(item => item.label.trim())).size !== request.choices.length
     || request.choices.some(item => !item.id.trim())) return false
   const candidate = request.payloadBinding.candidate
+  if (isPreparationCandidate(candidate, context)) return false
   const choices = request.choices
   if (request.reason === 'missing_required_field') {
     if (candidate.kind !== 'reminder_cancelled') return false
@@ -140,6 +144,7 @@ export function partitionDecisions(requests: DecisionRequest[], context: Decisio
   let cached: DecisionContextIndexes | undefined
   const indexes = () => cached ??= indexDecisionContext(context)
   for (const request of requests.filter(item => item.state === 'open')) {
+    if (isPreparationCandidate(request.payloadBinding.candidate, context)) continue
     if (evaluateActionableDecision(request, context, indexes)) actionable.push(request)
     else dataQuality.push(request)
   }

@@ -219,7 +219,7 @@ test('TSUI-03 Today and Schedule detail links restore their exact opener and old
           temporal: { shape: 'date_only', precision: 'date', date: '2026-10-02', timezone: 'UTC', resolutionBasis: 'source_explicit' },
           relatedActionIds: [], relatedPrepIds: [], evidenceRefs: [], sourceVersionRefs: [], createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() })
         tx.objectStore('actions').put({
-          id: 'tsui03-context-action', kind: 'manual', title: '准备上下文申请',
+          id: 'tsui03-context-action', kind: 'manual', title: '填写上下文记录',
           opportunityId: 'tsui03-context-opp',
           estimatedMinutes: 20, leverage: 90, delayCost: 90,
           status: 'todo', plannedDate: '2026-09-30', createdAt: new Date(now - 86400000).toISOString(), updatedAt: new Date(now - 86400000).toISOString(),

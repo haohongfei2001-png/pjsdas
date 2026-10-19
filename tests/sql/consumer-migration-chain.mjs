@@ -158,8 +158,8 @@ try{
  await assert.rejects(commit(b,'shared-command',0,id(101),true),e=>e.code==='42501')
  await assert.rejects(commit(a,'shared-command',3,id(102),true),e=>e.code==='42501')
  await assert.rejects(commit(c,'shared-command',0,id(101),true),e=>e.code==='42501')
- const prep={id:'managed:prep:shared-command:0',title:'A synthetic only',estimatedMinutes:30,createdAt:state(a).exportedAt,updatedAt:state(a).exportedAt},next=state(a);next.data.prep=[prep]
- const comp={operation:'business_management_restore',payload:{changes:[{type:'prep',id:prep.id,before:null,after:prep,beforeIndex:-1}]}}
+ const action={id:'managed:action:shared-command:0',kind:'manual',status:'todo',title:'A synthetic only',estimatedMinutes:30,leverage:0,delayCost:0,createdAt:state(a).exportedAt,updatedAt:state(a).exportedAt},next=state(a);next.data.actions=[action]
+ const comp={operation:'business_management_restore',payload:{changes:[{type:'action',id:action.id,before:null,after:action,beforeIndex:-1}]}}
  assert.equal((await commit(a,'shared-command',3,id(101),true,next,comp)).outcome,'COMMITTED')
  await assert.rejects(commit(b,'cross-undo',0,id(102),true,state(b),{},'undo_command',{undoOf:'shared-command'}),e=>e.code==='42501')
  assert.deepEqual(await protectedRows(),untouched)

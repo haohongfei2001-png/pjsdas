@@ -6,7 +6,7 @@ import type { PJSDASSnapshot } from '../src/snapshot.js'
 const principal = { kind: 'delegated_mcp' as const, userId: 'synthetic-owner', clientId: 'synthetic-client' }
 const grant: BusinessManagementGrant = { id: '00000000-0000-4000-8000-000000000001', revision: 1, ...{ userId: principal.userId, clientId: principal.clientId }, consentVersion: 2, capability: 'workspace.manage', grantedAt: '2026-10-01T00:00:00Z' }
 const snapshot: PJSDASSnapshot = { schema: 'pjsdas-local-snapshot', version: 4, exportedAt: grant.grantedAt, data: { opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [] } }
-const change = { operations: [{ kind: 'create_prep', value: { title: 'Synthetic preparation', estimatedMinutes: 30 } }] }
+const change = { operations: [{ kind: 'create_manual_action', value: { title: 'Synthetic preparation', estimatedMinutes: 30 } }] }
 const args = { commandId: 'synthetic-command-1', baseRevision: 4, change }
 function fixture(currentGrant: BusinessManagementGrant | undefined = grant) {
  const read = vi.fn(async () => ({ snapshot, context: { now: new Date(), timezone: 'UTC', workspaceVersion: 'txn:4', workspaceOwnerUserId: principal.userId } }))
@@ -25,7 +25,7 @@ describe('owner management MCP adapter', () => {
   expect(f.read).not.toHaveBeenCalled()
  })
  it('reads only server-scoped current workspace and bounded entity query', async () => {
-  const f = fixture(); expect((await f.tools.invoke('get_business_management', { query: { type: 'prep', limit: 1 } })).structuredContent).toMatchObject({ authorized: true, workspaceVersion: 'txn:4', data: { items: [] } })
+  const f = fixture(); expect((await f.tools.invoke('get_business_management', { query: { type: 'action', limit: 1 } })).structuredContent).toMatchObject({ authorized: true, workspaceVersion: 'txn:4', data: { items: [] } })
  })
  it('rejects a mismatched source owner', async () => {
   const f = fixture(); f.read.mockResolvedValue({ snapshot, context: { now: new Date(), timezone: 'UTC', workspaceVersion: 'txn:4', workspaceOwnerUserId: 'foreign' } })
@@ -42,7 +42,7 @@ describe('owner management MCP adapter', () => {
    else mutable.id = '00000000-0000-4000-8000-000000000099'
    return { snapshot, context: { now: new Date(), timezone: 'UTC', workspaceVersion: 'txn:4', workspaceOwnerUserId: principal.userId } }
   })
-  const response = await f.tools.invoke('get_business_management', { query: { type: 'prep' } })
+  const response = await f.tools.invoke('get_business_management', { query: { type: 'action' } })
   expect(response.isError).toBe(true); expect(response.structuredContent).toMatchObject({ code: 'AUTH_FORBIDDEN' }); expect(response.structuredContent).not.toHaveProperty('data'); expect(response.structuredContent).not.toHaveProperty('authorized', true)
  })
  it('binds immutable admission and forwards only typed business commands', async () => {

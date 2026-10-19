@@ -1,3 +1,4 @@
+import { isPreparationAction } from './preparationRetirement.js'
 import type { WebSemanticCaptureResult, LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { useEffect, useRef, useState } from 'react'
 import { formatScheduleTemporal } from './scheduleDisplayTime.js'
@@ -21,7 +22,7 @@ import type {
 import './opportunityDetail.css'
 import './jobs/jobDetail.css'
 
-export type OpportunityDetailDestination = 'today' | 'opportunities' | 'prepare' | 'schedule'
+export type OpportunityDetailDestination = 'today' | 'opportunities' | 'schedule'
 
 interface OpportunityDetailDrawerProps {
   opportunity: Opportunity
@@ -30,7 +31,6 @@ interface OpportunityDetailDrawerProps {
   actions: Action[]
   scheduleNodes?: ScheduleNode[]
   decisionRequests: DecisionRequest[]
-  relatedPrep: Array<{ id: string; title: string; reason: string }>
   applicationGroup?: ApplicationGroup
   timeline: TimelineRecord[]
   onClose: () => void
@@ -99,7 +99,6 @@ export default function OpportunityDetailDrawer({
   actions,
   scheduleNodes = [],
   decisionRequests,
-  relatedPrep,
   applicationGroup,
   timeline,
   onClose,
@@ -132,7 +131,7 @@ export default function OpportunityDetailDrawer({
   const ended = effectiveStage === 'closed' || opportunity.participationStatus === 'abandoned'
   const eligibleToApply = !ended && effectiveStage === 'not_applied'
   const hasRetainedStaleActions = ended && actions.some((item) => item.status === 'todo' || item.status === 'doing')
-  const relevantActions = actions
+  const relevantActions = actions.filter(action => !isPreparationAction(action, timeline))
     .filter((item) => !ended && (item.status === 'todo' || item.status === 'doing'))
     .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
   const latestScheduleNodes = latestByOccurrence(scheduleNodes)
@@ -270,19 +269,12 @@ export default function OpportunityDetailDrawer({
             </details>
           ) : null}
 
-          <details className="opportunity-detail-section" open={asPage && (relevantActions.length > 0 || relatedPrep.length > 0)}>
-            <summary>{zh ? '准备与相关待办' : 'Preparation & related actions'}</summary>
+          <details className="opportunity-detail-section" open={asPage && (relevantActions.length > 0)}>
+            <summary>{zh ? '进展与行动' : 'Progress & actions'}</summary>
             <div className="opportunity-detail-process-grid">
               <div><small>{zh ? '最近进展' : 'Last progress'}</small><strong>{formatDate(process?.lastProgressAt, zh)}</strong></div>
               <div><small>{zh ? '下次复核' : 'Next check'}</small><strong>{formatDate(process?.nextCheckAt, zh)}</strong></div>
-              <div><small>{zh ? '准备包' : 'Prep pack'}</small><strong>{process?.prepPack ?? (zh ? '未指定' : 'Not specified')}</strong></div>
             </div>
-            {relatedPrep.length ? (
-              <div className="opportunity-detail-action-list opportunity-detail-related-prep">
-                <strong>{zh ? `已核实的关联准备 · ${relatedPrep.length}` : `Verified related preparation · ${relatedPrep.length}`}</strong>
-                {relatedPrep.map((item) => <article key={item.id}><div><strong>{item.title}</strong><small>{item.reason}</small></div></article>)}
-              </div>
-            ) : <p className="opportunity-detail-muted">{zh ? '当前没有可核实的准备关联；不会凭名称相似强行关联。' : 'No verified preparation link yet; name similarity alone does not create one.'}</p>}
             {relevantActions.length ? (
               <div className="opportunity-detail-action-list">
                 {relevantActions.map((action) => (
@@ -299,7 +291,6 @@ export default function OpportunityDetailDrawer({
             ) : <p className="opportunity-detail-muted">{hasRetainedStaleActions
               ? (zh ? '流程已结束，旧待办不会继续推荐；原记录仍保留。' : 'This process has ended. Old actions are no longer recommended; their records remain available.')
               : (zh ? '当前没有未完成的岗位级待办。' : 'No unfinished opportunity-level action.')}</p>}
-            <button className="text-button" type="button" onClick={() => onNavigate('prepare')}>{zh ? '查看全部准备' : 'Open preparation'}</button>
           </details>
 
           {(posting || postingHistory.length) ? (

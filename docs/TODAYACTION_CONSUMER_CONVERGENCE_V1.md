@@ -5,6 +5,16 @@ Owner decision: **APPROVED — 2026-10-07 (Asia/Shanghai)**
 Implementation status: **NOT STARTED by this documentation change**  
 Next implementation batch: **B1 — business semantics and authoritative boundaries**
 
+## Owner amendment — 2026-10-18
+
+The owner requested removal of Preparation and related tasks throughout TodayAction.
+This supersedes historical preparation requirements in this and earlier packages.
+Remove active UI entries, new preparation operations, automatic preparation tasks,
+and preparation reminders; preserve genuine application planning, recruiting events,
+interview/test appointments, raw archival records, receipts and guarded Undo.
+The implementation and its verification are tracked in
+[Preparation retirement evidence](PREPARATION_RETIREMENT_EVIDENCE.md).
+
 ## 0. Authority, scope, and execution boundary
 
 This is an executable plan for the approved small-scope convergence. Design exploration is closed. The latest Owner amendments in §1 supersede the earlier design report and conflicting historical Discovery/scoring/product proposals. The existing authority, authentication, idempotency, audit, compensation, and release identity rules remain in force.

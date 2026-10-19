@@ -1,8 +1,8 @@
+import { PREPARATION_RETIRED_MESSAGE } from '../src/preparationRetirement.js'
 import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import type { CallToolResult } from '@modelcontextprotocol/server'
 import * as z from 'zod/v4'
 import { getApplicationPortfolio } from '../src/ai/applicationPortfolioRead.js'
-import { readPrepGraph } from '../src/ai/prepGraphRead.js'
 import {
   BridgeReadError,
   getDiscoveryContext,
@@ -164,6 +164,7 @@ export async function invokeReadTool(
   args: unknown = {},
 ): Promise<CallToolResult> {
   try {
+    if (name === 'get_prep_graph') return toolError('PREPARATION_RETIRED', PREPARATION_RETIRED_MESSAGE, false)
     if (name === 'get_decision_rules' || name === 'get_opportunity_assessment' || name === 'explain_priority') {
       return toolError('SCORING_RETIRED', `${name} has been retired. Read factual opportunity deadlines, Today actions or application-group quotas instead; no score is computed or returned.`, false)
     }
@@ -204,16 +205,6 @@ export async function invokeReadTool(
       }
       case 'get_application_portfolio':
         return success(getApplicationPortfolio(snapshot, getApplicationPortfolioSchema.parse(args), context))
-      case 'get_prep_graph': {
-        const parsed = getPrepGraphSchema.parse(args)
-        if (parsed.prepId && !snapshot.data.prep.some((item) => item.id === parsed.prepId)) {
-          return toolError('NOT_FOUND', `Prep ${parsed.prepId} was not found.`, false)
-        }
-        if (parsed.opportunityId && !snapshot.data.opportunities.some((item) => item.id === parsed.opportunityId)) {
-          return toolError('NOT_FOUND', `Opportunity ${parsed.opportunityId} was not found.`, false)
-        }
-        return success({ meta: readMeta(context), ...readPrepGraph(snapshot, parsed, context.now ?? new Date()) })
-      }
       case 'get_pipeline':
         return success(getPipeline(snapshot, getPipelineSchema.parse(args), context))
       case 'get_discovery_context': {

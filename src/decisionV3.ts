@@ -1,9 +1,10 @@
+import { isPreparationAction } from './preparationRetirement.js'
 import { actionNodesById } from './deadlineOrder.js'
 export * from './decisionCoreV3.js'
 
 import { computePriority as computePriorityCore, rankActions as rankActionsCore } from './decisionCoreV3.js'
 import { isUnresolvedPastProcessEvent } from './fixedEventGuardLogic.js'
-import type { Action, Opportunity, ScheduleNode } from './model.js'
+import type { Action, Opportunity, ScheduleNode, TimelineRecord } from './model.js'
 import { type DecisionRules } from './decisionRules.js'
 
 /**
@@ -41,7 +42,7 @@ function normalizeScheduledAssessment(action: Action): Action {
 
 export function rankActions(
   actions: Action[], opportunities: Opportunity[], now = new Date(),
-  rules?: DecisionRules, timezone?: string, nodes: ScheduleNode[] = [],
+  rules?: DecisionRules, timezone?: string, nodes: ScheduleNode[] = [], timeline: TimelineRecord[] = [],
 ) {
   // Follow-up/review reminders are passive observation state, not work the user
   // should repeatedly see in Today. Keep them in Pipeline/history, but do not
@@ -52,7 +53,7 @@ export function rankActions(
   )
   const nodeMap = actionNodesById(nodes, actions, opportunities)
   const actionable = actions
-    .filter((action) => action.kind !== 'follow_up')
+    .filter((action) => action.kind !== 'follow_up' && !isPreparationAction(action, timeline))
     .filter((action) => !(action.kind === 'apply' && opportunities.find(item => item.id === action.opportunityId)?.processStage === 'unknown'))
     .filter((action) => !action.opportunityId || !ended.has(action.opportunityId))
     .filter(action => !isUnresolvedPastProcessEvent(action, now, nodeMap.get(action.id), timezone))

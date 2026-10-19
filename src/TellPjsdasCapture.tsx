@@ -497,8 +497,8 @@ export default function TellPjsdasCapture({
           disabled={busy || recoveryLocked}
           onChange={(event) => editText(event.target.value)}
           placeholder={zh
-            ? '例如：京东笔试做完了。\n这个岗位我不投了。\n明天下午准备小鹏面试。'
-            : 'For example: 京东笔试做完了。\n这个岗位我不投了。\n明天下午准备小鹏面试。'}
+            ? '例如：京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'
+            : 'For example: 京东笔试做完了。\n这个岗位我不投了。\n明天15:00小鹏面试。'}
         />
 
         {text.trim() ? (

@@ -3,10 +3,10 @@ import { freezeTodayFixture } from './support/consumerFixtureClock.js'
 
 test.beforeEach(async ({ page }) => { await freezeTodayFixture(page) })
 
-test('active Today and Prepare surfaces localize presentation without changing stored facts', async ({ page }) => {
+test('active Today localizes timing while retired preparation remains hidden and unchanged', async ({ page }) => {
   await page.goto('/')
 
-  await page.evaluate(async () => {
+  const seeded = await page.evaluate(async () => {
     const now = Date.now()
     const action = {
       id: 'active-presentation-action',
@@ -59,6 +59,7 @@ test('active Today and Prepare surfaces localize presentation without changing s
         for (const item of prepItems) transaction.objectStore('prep').put(item)
       }
     })
+    return { action, prepItems }
   })
 
   await page.reload()
@@ -77,16 +78,29 @@ test('active Today and Prepare surfaces localize presentation without changing s
   await expect(primary).not.toContainText('截止')
 
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
-  await page.locator('.tsui-library-secondary button').filter({ hasText: 'Preparation' }).click()
-  await expect(page.getByRole('heading', { name: 'Preparation inventory' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Job library', exact: true })).toBeVisible()
+  await expect(page.locator('.tsui-library-secondary button').filter({ hasText: /准备|Preparation/ })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Preparation inventory' })).toHaveCount(0)
+  await expect(page.locator('.surface-prep-grid, .prep-graph-dock-trigger, .prep-graph-dialog')).toHaveCount(0)
+  for (const prep of seeded.prepItems) await expect(page.getByText(prep.title, { exact: true })).toHaveCount(0)
 
-  const cards = page.locator('.surface-prep-grid article')
-  await expect(cards).toHaveCount(2)
-  await expect(cards.nth(0).getByRole('heading')).toHaveText('Highest English')
-  await expect(cards.nth(0)).toContainText('Highest')
-  await expect(cards.nth(0)).toContainText('Waiting')
-  await expect(cards.nth(1).getByRole('heading')).toHaveText('Medium-high Chinese')
-  await expect(cards.nth(1)).toContainText('Medium-high')
-  await expect(cards.nth(1)).toContainText('Active')
-  await expect(cards.nth(1)).not.toContainText('中高')
+  await page.locator('.tsui-primary-nav').getByRole('button', { name: /Today/ }).click()
+  await page.reload()
+  await expect(primary.getByRole('heading', { name: 'Timed follow-up' })).toBeVisible()
+  await expect(primary.locator('.tsui-task-copy > span')).toContainText('Due')
+  await expect(primary).not.toContainText('截止')
+  const persisted = await page.evaluate(async ({ action, prepItems }) => new Promise((resolve, reject) => {
+    const request = indexedDB.open('pjsdas')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction(['actions', 'prep'], 'readonly')
+      const task = transaction.objectStore('actions').get(action.id)
+      const items = prepItems.map(item => transaction.objectStore('prep').get(item.id))
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+      transaction.oncomplete = () => { db.close(); resolve({ action: task.result, prepItems: items.map(item => item.result) }) }
+    }
+  }), seeded)
+  expect(persisted).toEqual(seeded)
 })

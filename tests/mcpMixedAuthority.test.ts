@@ -22,12 +22,12 @@ const snapshot = () => createSnapshot({
 }, timestamp)
 const changeSet = () => ({
   ...createProgressChangeSet([{ id: 'new-task', kind: 'manual_action' as const,
-    title: 'Prepare portfolio', estimatedMinutes: 25, occurredAt: timestamp,
+    title: 'Return visitor badge', estimatedMinutes: 25, occurredAt: timestamp,
     sourceText: 'Synthetic review', confidence: 'high' as const }], at),
   source: 'mcp' as const, expectedWorkspaceVersion: 'txn:1',
   operations: [
     ...createProgressChangeSet([{ id: 'new-task', kind: 'manual_action' as const,
-      title: 'Prepare portfolio', estimatedMinutes: 25, occurredAt: timestamp,
+      title: 'Return visitor badge', estimatedMinutes: 25, occurredAt: timestamp,
       sourceText: 'Synthetic review', confidence: 'high' as const }], at).operations,
     { id: 'action:existing-action', kind: 'set_action_status' as const,
       summary: 'Complete reviewed action', actionId: 'existing-action',
@@ -44,7 +44,7 @@ describe('CGR-05 signed mixed proposal authority', () => {
     const result = applyMcpMixedCommand(before, proposal, new Date('2026-09-24T07:01:00.000Z'))
     expect(before.data.actions.find((item) => item.id === 'existing-action')?.status).toBe('todo')
     expect(result.snapshot.data.actions.find((item) => item.id === 'existing-action')?.status).toBe('done')
-    expect(result.snapshot.data.actions.find((item) => item.id === 'progress-action:new-task')?.title).toBe('Prepare portfolio')
+    expect(result.snapshot.data.actions.find((item) => item.id === 'progress-action:new-task')?.title).toBe('Return visitor badge')
     expect(result.snapshot.data.changeSets).toMatchObject([{ id: proposal.changeSet.id, status: 'applied' }])
     expect(result.snapshot.data.timeline?.filter((item) => item.kind === 'change_set_applied')).toHaveLength(1)
   })

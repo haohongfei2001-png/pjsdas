@@ -12,7 +12,6 @@ const view = () => ({
     capability: 'workspace.manage',
     title: '指定业务数据管理',
     scope: [
-      '创建、修改、可恢复归档独立准备任务',
       '创建、修改、可恢复归档独立手动行动',
       '创建、修改、可恢复归档投递组',
       '有冲突时不会覆盖后续修改',
@@ -298,7 +297,7 @@ test('synthetic owner consent layout is readable at desktop and mobile widths', 
   ]) {
     await page.setViewportSize({ width, height })
     await expect(
-      page.getByRole('heading', { name: '权限范围 · v2' }),
+      page.getByRole('heading', { name: '当前权限范围' }),
     ).toBeVisible()
     expect(
       await page.evaluate(
@@ -329,6 +328,7 @@ test('ordinary persisted Back/Forward pageshow clears old consent and freshly re
     ),
   )
   await expect.poll(() => f.reads).toBeGreaterThan(before)
+  await page.getByText('查看 v2 授权原文', { exact: true }).click()
   await expect(
     page.getByText('新读取的范围提示', { exact: true }),
   ).toBeVisible()

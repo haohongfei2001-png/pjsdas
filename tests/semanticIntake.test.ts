@@ -369,7 +369,7 @@ describe('UU-02 source-neutral Semantic Intake', () => {
       snapshot(),
       observation([candidate('reminder_intent', {
         target: { opportunityId: 'opp-1', occurrenceKind: 'written_test' },
-        purpose: 'prep',
+        purpose: 'upcoming',
         offsetMinutesBefore: 120,
         deliveryOwner: 'external_task',
         channel: 'task',

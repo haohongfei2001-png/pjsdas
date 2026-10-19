@@ -102,7 +102,7 @@ function installServer(page: Page, state: State, options: {
       const commandId = String(body.commandId)
       if (!state.receipts.has(commandId)) {
         const candidate = body.command?.value?.candidates?.find((item: any) => item.kind === 'manual_action')
-        const title = candidate?.title ?? '整理面试材料'
+        const title = candidate?.title ?? '填写报销单'
         state.snapshot.data.actions.push(action('capture-action', title, undefined, 99))
         const updatedAt = '2026-09-23T05:10:00.000Z'
         state.snapshot.data.semanticReceipts ??= []
@@ -220,14 +220,14 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
   await expect(pageA.getByText('当前上下文：A公司 · 产品经理')).toBeVisible()
 
   const input = pageA.locator('.cgr-capture-input')
-  await input.fill('事项：整理面试材料')
+  await input.fill('事项：填写报销单')
   await expect(pageA.getByText('TodayAction 理解为')).toBeVisible()
-  await expect(pageA.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await expect(pageA.getByText(/新增行动 · 填写报销单/)).toBeVisible()
   await expect(pageA.getByText('尚未保存')).toBeVisible()
 
   await pageA.getByRole('button', { name: '确认并保存' }).click()
   await expect(pageA.getByText('已保存')).toBeVisible()
-  await expect(pageA.getByRole('status').getByText(/已记录：整理面试材料/)).toBeVisible()
+  await expect(pageA.getByRole('status').getByText(/已记录：填写报销单/)).toBeVisible()
 
   const semanticCommand = state.commandBodies.find((body) => body.action === 'command')
   expect(semanticCommand.command.value.contextRefs).toEqual(['opportunity:A-opp-1'])
@@ -235,11 +235,11 @@ test('CGR-02 golden journey: understand -> authoritative save -> cross-client vi
 
   // Today is the route behind the capture sheet, so the authoritative projection updates
   // immediately without a navigation/reload even while the saved receipt remains available.
-  await expect(pageA.getByRole('heading', { name: '整理面试材料' })).toBeVisible()
+  await expect(pageA.getByRole('heading', { name: '填写报销单' })).toBeVisible()
 
   const propagatedAt = Date.now()
   await pageB.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await expect(pageB.getByRole('heading', { name: '整理面试材料' })).toBeVisible({ timeout: 15_000 })
+  await expect(pageB.getByRole('heading', { name: '填写报销单' })).toBeVisible({ timeout: 15_000 })
   const propagationMs = Date.now() - propagatedAt
   expect(propagationMs).toBeLessThan(15_000)
 
@@ -295,15 +295,15 @@ test('Today capture supports a keyboard-only save with named controls and restor
   await page.keyboard.press('Shift+Tab')
   await expect(input).toBeFocused()
 
-  await page.keyboard.type('事项：整理面试材料')
-  await expect(dialog.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await page.keyboard.type('事项：填写报销单')
+  await expect(dialog.getByText(/新增行动 · 填写报销单/)).toBeVisible()
   await page.keyboard.press('Tab')
   await expect(dialog.getByRole('button', { name: '手动填写岗位', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   const save = dialog.getByRole('button', { name: '确认并保存' })
   await expect(save).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(dialog.getByRole('status')).toContainText('已记录：整理面试材料')
+  await expect(dialog.getByRole('status')).toContainText('已记录：填写报销单')
   await page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()
   await expect(opener).toBeFocused()
@@ -317,7 +317,7 @@ test('unknown semantic save keeps one stable command identity and recovers by re
   await page.goto('/pjsdas/today')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   await page.locator('.tsui-tell-button').click()
-  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await page.locator('.cgr-capture-input').fill('事项：填写报销单')
   await page.getByRole('button', { name: '确认并保存' }).click()
 
   await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
@@ -352,11 +352,11 @@ test('background receipt recovery removes only the matching committed draft', as
 
   await page.goto('/pjsdas/today')
   await page.locator('.tsui-tell-button').click()
-  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await page.locator('.cgr-capture-input').fill('事项：填写报销单')
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
   await page.reload()
-  await expect(page.getByRole('heading', { name: '整理面试材料' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '填写报销单' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-pending:account-a'))).toBeNull()
   expect(await page.evaluate(() => window.localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBeNull()
   await page.getByRole('button', { name: '关闭' }).click()
@@ -372,7 +372,7 @@ test('background receipt recovery preserves a newer draft from another editing c
 
   await page.goto('/pjsdas/today')
   await page.locator('.tsui-tell-button').click()
-  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
+  await page.locator('.cgr-capture-input').fill('事项：填写报销单')
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('保存结果暂时未知')
   await page.evaluate(() => window.localStorage.setItem('pjsdas-cgr01-draft:account-a:tell-pjsdas', '事项：新的未提交想法'))
@@ -440,15 +440,15 @@ test('expired session rejects a connected save before execution and preserves th
   await page.goto('/pjsdas/today/capture')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   const input = page.locator('.cgr-capture-input')
-  await input.fill('事项：整理面试材料')
+  await input.fill('事项：填写报销单')
   await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await expect(page.getByRole('button', { name: '确认并保存' })).toBeEnabled()
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('登录会话已过期')
   await expect(page.getByRole('alert')).toContainText('重新登录后点“重新确认”')
-  await expect(input).toHaveValue('事项：整理面试材料')
+  await expect(input).toHaveValue('事项：填写报销单')
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
-  expect(state.snapshot.data.actions.some((item) => item.title === '整理面试材料')).toBe(false)
+  expect(state.snapshot.data.actions.some((item) => item.title === '填写报销单')).toBe(false)
   expect(state.receipts.size).toBe(0)
 })
 
@@ -459,12 +459,12 @@ test('same-object conflict refreshes connected Today and keeps the unsaved state
   await page.goto('/pjsdas/today/capture')
   await expect(page.getByRole('heading', { name: 'A第一任务' })).toBeVisible()
   const input = page.locator('.cgr-capture-input')
-  await input.fill('事项：整理面试材料')
+  await input.fill('事项：填写报销单')
   await expect(page.getByText('TodayAction 理解为')).toBeVisible()
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByRole('alert')).toContainText('发现具体事实冲突')
   await expect(page.getByRole('alert')).toContainText('请先核对最新事实')
-  await expect(input).toHaveValue('事项：整理面试材料')
+  await expect(input).toHaveValue('事项：填写报销单')
   await expect(page.getByRole('heading', { name: 'A第一任务（另一客户端更新）' })).toBeVisible()
   expect(state.commandBodies.filter((body) => body.action === 'command')).toHaveLength(1)
   expect(state.receipts.size).toBe(0)
@@ -641,8 +641,8 @@ test('pending authoritative save is visibly pending until its receipt arrives', 
 
   await page.goto('/pjsdas/today')
   await page.locator('.tsui-tell-button').click()
-  await page.locator('.cgr-capture-input').fill('事项：整理面试材料')
-  await expect(page.getByText(/新增行动 · 整理面试材料/)).toBeVisible()
+  await page.locator('.cgr-capture-input').fill('事项：填写报销单')
+  await expect(page.getByText(/新增行动 · 填写报销单/)).toBeVisible()
   await page.getByRole('button', { name: '确认并保存' }).click()
   await expect(page.getByText('正在保存')).toBeVisible()
   await expect(page.getByText('已保存')).toHaveCount(0)
@@ -677,7 +677,7 @@ for (const delayedFixture of [false, true]) test(`committed capture with a block
     }
     await page.locator('.tsui-tell-button').click()
     const input = page.locator('.cgr-capture-input')
-    await input.fill('事项：整理面试材料')
+    await input.fill('事项：填写报销单')
     await page.getByRole('button', { name: '确认并保存' }).click()
     await expect(page.getByText('正在保存')).toBeVisible()
     await page.evaluate(async () => {
@@ -688,13 +688,13 @@ for (const delayedFixture of [false, true]) test(`committed capture with a block
     })
     releaseSemantic()
     await expect(page.getByRole('alert')).toContainText('服务器已确认，本机待安全刷新')
-    await expect(input).toHaveValue('事项：整理面试材料')
+    await expect(input).toHaveValue('事项：填写报销单')
     await expect(page.getByText('已保存', { exact: true })).toHaveCount(0)
-    expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('事项：整理面试材料')
+    expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('事项：填写报销单')
     await page.reload()
     await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toBeVisible()
     await expect(page.getByRole('alert')).toContainText('服务器已确认，本机待安全刷新')
-    await expect(page.locator('.cgr-capture-input')).toHaveValue('事项：整理面试材料')
+    await expect(page.locator('.cgr-capture-input')).toHaveValue('事项：填写报销单')
     expect(state.commandBodies.filter(body => body.action === 'command')).toHaveLength(1)
   } finally { releaseFixture(); releaseSemantic() }
 })

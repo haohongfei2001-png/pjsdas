@@ -10,7 +10,6 @@ import type {
   ProcessStage,
   TimelineRecord,
 } from './model.js'
-import { isWaitingPrepStatus, prepPriorityWeights } from './prepSemantics.js'
 import { timelineFromImportedHistory } from './timeline.js'
 
 const MAIN_SHEET = '投递总表'
@@ -173,10 +172,6 @@ function processStage(value: unknown): ProcessStage {
   if (raw.includes('筛选') || raw.includes('流程重启')) return 'screening'
   if (raw.includes('结束') || raw.includes('关闭')) return 'closed'
   return 'screening'
-}
-
-function prepPriority(priority: string) {
-  return prepPriorityWeights(priority)
 }
 
 function findOpportunityId(opportunities: Opportunity[], company: string, role: string) {
@@ -353,23 +348,7 @@ export async function parsePJSDASWorkbook(file: File): Promise<ImportBundle> {
     const recentNodeAt = excelDate(row['最近节点'], true)
     const id = `prep:${title}`
 
-    if (!isWaitingPrepStatus(sourceStatus)) {
-      const priority = prepPriority(priorityLabel ?? '')
-      actions.push({
-        id: `prep-action:${title}`,
-        kind: 'prep',
-        title: `准备｜${title}`,
-        prepId: id,
-        dueAt: recentNodeAt && new Date(recentNodeAt).getTime() > now.getTime() ? recentNodeAt : undefined,
-        estimatedMinutes,
-        leverage: priority.leverage,
-        delayCost: priority.delayCost,
-        status: 'todo',
-        sourceLabel: '准备中心',
-        createdAt: importedAt,
-        updatedAt: importedAt,
-      })
-    }
+    // Retain imported legacy Prep data without recreating retired tasks.
 
     return [{
       id,

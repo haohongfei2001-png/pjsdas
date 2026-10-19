@@ -1,3 +1,4 @@
+import { isPreparationAction, isPreparationNode, isPreparationTaskText, PreparationRetiredError } from './preparationRetirement.js'
 import { applyVerifiedPostingRefreshCommand, type VerifiedPostingRefreshCommand } from './verifiedPostingRefreshCommand.js'
 import { applyVerifiedDiscoveryCommand, type VerifiedDiscoveryCommand } from './verifiedDiscoveryCommand.js'
 import { actionArrangementDate, isExplicitActionArrangement, scheduleNodeEligible } from './scheduleEligibility.js'
@@ -458,6 +459,20 @@ export function applyUserDomainCommand(
       if (!correction || Object.entries(command.correction).some(([key, value]) => correction[key as keyof typeof correction] !== value)) throw new Error('Correction command ID was reused with a different payload.')
     }
     return { status: 'ALREADY_APPLIED', snapshot, summary: `Command ${command.commandId} is already recorded.` }
+  }
+
+  if (command.kind === 'add_manual_action' && isPreparationTaskText(command.title)) throw new PreparationRetiredError()
+  if (command.kind === 'set_action_status') {
+    const target = snapshot.data.actions.find(item => item.id === command.actionId)
+    if (target && isPreparationAction(target, snapshot.data.timeline)) throw new PreparationRetiredError()
+  }
+  if (['complete_occurrence', 'cancel_occurrence', 'reschedule_occurrence'].includes(command.kind) && 'occurrenceId' in command) {
+    const node = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], command.occurrenceId)
+    if (node && isPreparationNode(node, snapshot.data)) throw new PreparationRetiredError()
+  }
+  if (command.kind === 'upsert_reminder_intent') {
+    const node = snapshot.data.scheduleNodes?.find(item => item.id === command.scheduleNodeId)
+    if (command.purpose === 'prep' || node && isPreparationNode(node, snapshot.data)) throw new PreparationRetiredError()
   }
 
   const next = upgradeSnapshotToLatest(snapshot)

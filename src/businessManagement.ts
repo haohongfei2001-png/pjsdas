@@ -1,3 +1,4 @@
+import { assertNoPreparationOperations, isPreparationAction, PreparationRetiredError } from './preparationRetirement.js'
 import { assertNoScoringInput, withoutRetiredScoring } from './scoringRetirement.js'
 import * as z from 'zod/v4'
 import type { Action, ApplicationGroup, Prep } from './model.js'
@@ -14,9 +15,9 @@ const actionFields = z.object({ title: short, estimatedMinutes: minutes }).stric
 const groupFields = z.object({ company: short, coveredRoles: note.nullable().optional(), rule: note.nullable().optional(), total: z.number().int().min(0).max(1000).optional(), currentOrder: note.nullable().optional(), locked: z.boolean().optional(), nextAction: note.nullable().optional(), notes: note.nullable().optional() }).strict()
 const nonempty = (v: object) => Object.keys(v).length > 0
 export const businessManagementOperationSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('create_prep'), value: prepFields }).strict(),
-  z.object({ kind: z.literal('update_prep'), id, patch: prepFields.partial().refine(nonempty, 'A nonempty patch is required.') }).strict(),
-  z.object({ kind: z.literal('archive_prep'), id }).strict(),
+  z.object({ kind: z.literal('create_prep').describe('Retired: historical command replay only; a new request is rejected.'), value: prepFields }).strict(),
+  z.object({ kind: z.literal('update_prep').describe('Retired: historical command replay only; a new request is rejected.'), id, patch: prepFields.partial().refine(nonempty, 'A nonempty patch is required.') }).strict(),
+  z.object({ kind: z.literal('archive_prep').describe('Retired: historical command replay only; a new request is rejected.'), id }).strict(),
   z.object({ kind: z.literal('create_manual_action'), value: actionFields }).strict(),
   z.object({ kind: z.literal('update_manual_action'), id, patch: actionFields.partial().refine(nonempty, 'A nonempty patch is required.') }).strict(),
   z.object({ kind: z.literal('archive_manual_action'), id }).strict(),
@@ -69,6 +70,7 @@ function assertFinalReferences(snapshot: PJSDASSnapshot) {
   }
 }
 function assertEditableAction(snapshot: PJSDASSnapshot, action: Action) {
+  if (isPreparationAction(action, snapshot.data.timeline)) throw new PreparationRetiredError()
   if (action.kind !== 'manual' || action.processEventId || action.prepId || action.applicationGroupId || action.dueAt || (snapshot.data.scheduleNodes ?? []).some(node => node.relatedActionIds.includes(action.id))) {
     throw new BusinessManagementError('DERIVED_OBJECT', 'This action is governed by another business object or schedule. Use its existing domain command instead.')
   }
@@ -84,6 +86,7 @@ function rawBusinessSnapshot(snapshot: PJSDASSnapshot) {
 /** Pure atomic reducer. The gateway must authorize, persist its compensation and perform CAS. */
 export function applyBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown, commandId: string, now = new Date()) {
   assertNoScoringInput(raw)
+  assertNoPreparationOperations(raw)
   const input = businessManagementSchema.parse(raw)
   if (commandId.length < 8 || commandId.length > 160) throw new Error('Invalid business command identity.')
   const original = rawBusinessSnapshot(snapshot)
@@ -168,8 +171,10 @@ export const businessManagementReadSchema = z.object({
 /** Read only from the already owner-scoped workspace supplied by the gateway. */
 export function readBusinessManagement(snapshot: PJSDASSnapshot, raw: unknown) {
   const input = businessManagementReadSchema.parse(raw)
+  if (input.type === 'prep') throw new PreparationRetiredError()
   const requested = input.ids ? new Set(input.ids) : undefined
   const selected = records(snapshot, input.type)
+    .filter(item => input.type !== 'action' || !isPreparationAction(item as Action, snapshot.data.timeline))
     .filter(item => (!requested || requested.has(item.id)) && (!input.afterId || item.id > input.afterId))
     .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   const page = selected.slice(0, input.limit)

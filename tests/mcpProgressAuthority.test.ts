@@ -20,7 +20,7 @@ const snapshot = () => createSnapshot({
 }, occurredAt)
 const changeSet = () => ({
   ...createProgressChangeSet([
-    { id: 'progress-manual-1', kind: 'manual_action' as const, title: 'Prepare portfolio',
+    { id: 'progress-manual-1', kind: 'manual_action' as const, title: 'Return visitor badge',
       estimatedMinutes: 25, occurredAt, sourceText: 'Synthetic review', confidence: 'high' as const },
     { id: 'progress-event-1', kind: 'process_event' as const, opportunityId: 'opp-1',
       company: 'Synthetic', role: 'Designer', eventType: 'interview_invite' as const,

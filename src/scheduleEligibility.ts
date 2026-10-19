@@ -1,3 +1,4 @@
+import { isPreparationNode } from './preparationRetirement.js'
 import type { Action, ProcessEvent, ScheduleNode, ScheduleNodeTemporal, TimelineRecord } from './model.js'
 
 /** Calendar eligibility is a semantic fact, not the presence of a date field. */
@@ -29,7 +30,7 @@ export function isRecruitingAppointment(event: ProcessEvent) {
 }
 
 export function scheduleNodeEligible(node: ScheduleNode, data: { processEvents: ProcessEvent[]; actions: Action[]; timeline?: TimelineRecord[] }) {
-  if (node.kind === 'application_deadline') return false
+  if (node.kind === 'application_deadline' || isPreparationNode(node, data)) return false
   if (['deadline', 'availability_window', 'estimated_date'].includes(node.temporal.shape)) return false
   if (node.temporal.resolutionBasis === 'system_estimate') return false
   if (['interview', 'written_test', 'assessment'].includes(node.kind)) {

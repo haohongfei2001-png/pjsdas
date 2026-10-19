@@ -9,7 +9,6 @@ const dictionary = {
   'nav.discovery': ['发现箱', 'Discovery Inbox'],
   'nav.opportunities': ['机会', 'Opportunities'],
   'nav.pipeline': ['流程', 'Pipeline'],
-  'nav.prep': ['准备', 'Prep'],
   'nav.timeline': ['历程', 'Timeline'],
   'nav.rules': ['规则', 'Rules'],
   'nav.settings': ['导入与设置', 'Import & Settings'],
@@ -56,7 +55,6 @@ const dictionary = {
   'opportunities.priority': ['动态P级', 'Priority'],
   'opportunities.success': ['成功率', 'Success'],
   'opportunities.deadline': ['截止/节点', 'Deadline / node'],
-  'opportunities.prep': ['准备', 'Prep'],
   'opportunities.group': ['申请组', 'Group'],
 
   'pipeline.title': ['在途流程', 'Pipeline'],
@@ -68,8 +66,6 @@ const dictionary = {
   'pipeline.review': ['需复核', 'Review'],
   'pipeline.waiting': ['正常等待', 'Waiting'],
 
-  'prep.title': ['准备中心', 'Prep'],
-  'prep.subtitle': ['只保留能跨岗位复用、并被真实机会或流程触发的准备。', 'Keep reusable preparation that is triggered by real opportunities or active processes.'],
 
   'settings.title': ['导入与设置', 'Import & Settings'],
   'settings.subtitle': ['本地 IndexedDB 始终可独立工作；账号与云端同步用于跨设备恢复和未来 AI 接入。Excel 继续只承担初始导入与恢复。', 'Local IndexedDB always works independently; account and cloud sync support cross-device recovery and future AI access. Excel remains an initialization and recovery path.'],

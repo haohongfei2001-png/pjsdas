@@ -157,22 +157,22 @@ describe('TSUI-01 complete Web read models', () => {
   })
 
   it('dates completed legacy nodes from exact completion facts without creating duplicate history', () => {
-    const completed = node('action:prep-1', '2026-09-24', {
-      state: 'completed', kind: 'prep_trigger', constraintKind: 'user_plan', completedAt: undefined, relatedActionIds: ['prep-1'],
+    const completed = node('action:task-1', '2026-09-24', {
+      state: 'completed', kind: 'follow_up', constraintKind: 'user_plan', completedAt: undefined, relatedActionIds: ['task-1'],
       temporal: { shape: 'fixed_range', precision: 'datetime', timezone: TZ, startAt: '2026-09-24T08:00:00Z', resolutionBasis: 'user_explicit' },
     })
     const log: TimelineRecord = {
-      id: 'prep-done', kind: 'action_status_changed', category: 'action', source: 'user_action',
+      id: 'task-done', kind: 'action_status_changed', category: 'action', source: 'user_action',
       occurredAt: '2026-09-24T08:00:00.000Z', recordedAt: '2026-09-25T03:00:00.000Z',
-      title: 'Completed prep', actionId: 'prep-1', changes: { status: { before: 'todo', after: 'done' } },
+      title: 'Completed task', actionId: 'task-1', changes: { status: { before: 'todo', after: 'done' } },
     }
-    const stream = buildScheduleStream(snapshot([action('prep-1', { status: 'done' })], [completed], [log]), {
+    const stream = buildScheduleStream(snapshot([action('task-1', { status: 'done' })], [completed], [log]), {
       accountKey: 'A', workspaceRevision: 'r1', timezone: TZ, now: NOW,
     })
     expect(stream.sections.history).toHaveLength(1)
-    expect(stream.sections.history[0].id).toBe('node:action:prep-1:v1')
+    expect(stream.sections.history[0].id).toBe('node:action:task-1:v1')
     expect(stream.sections.history[0].occurredAt).toBe(log.occurredAt)
-    expect(stream.sections.history[0].sourceRefs).toContain('timeline:prep-done')
+    expect(stream.sections.history[0].sourceRefs).toContain('timeline:task-done')
     expect(stream.sections.undated).toHaveLength(0)
   })
 

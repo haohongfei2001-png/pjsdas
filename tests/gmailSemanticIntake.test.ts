@@ -1285,7 +1285,7 @@ describe('UU06 shared Gmail intake', () => {
           evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
         },
         ...(withAction ? [{
-          id: 'action', kind: 'manual_action' as const, title: 'Prepare documents',
+          id: 'action', kind: 'manual_action' as const, title: 'Submit reimbursement form',
           objectConfidence: 'high' as const, eventConfidence: 'high' as const,
           evidenceRefs: ['mixed-cross-source'], sourceVersionRefs: ['mixed-cross-source:v1'],
         }] : []),
@@ -1448,7 +1448,7 @@ describe('UU06 shared Gmail intake', () => {
       },
       statementMode: 'assertion' as const,
       candidates: [{
-        id: 'action', kind: 'manual_action' as const, title: 'Prepare portfolio',
+        id: 'action', kind: 'manual_action' as const, title: 'Return visitor badge',
         objectConfidence: confidence, eventConfidence: confidence,
         evidenceRefs: ['confirmed-action'], sourceVersionRefs: [`confirmed-action:${version}`],
       }],
@@ -1844,14 +1844,14 @@ describe('UU06 shared Gmail intake', () => {
     expect(first.decisionRequests).toHaveLength(1)
     const revised = structuredClone(observation)
     revised.candidates.push({
-      id: 'clear-action', kind: 'manual_action', title: '准备材料',
+      id: 'clear-action', kind: 'manual_action', title: '填写报销单',
       objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [],
     })
     const second = applySemanticIntake(first.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 30_000) })
-    expect(second.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+    expect(second.snapshot.data.actions.filter(item => item.title === '填写报销单')).toHaveLength(1)
     expect(second.snapshot.data.decisionRequests?.map(item => item.state)).toEqual(['open'])
     const replay = applySemanticIntake(second.snapshot, revised, { authorized: true, now: new Date(now.getTime() + 60_000) })
-    expect(replay.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+    expect(replay.snapshot.data.actions.filter(item => item.title === '填写报销单')).toHaveLength(1)
   })
   it('quarantines a changed answered Gmail fragment while another fragment remains open', () => {
     const base = snapshot()
@@ -1882,7 +1882,7 @@ describe('UU06 shared Gmail intake', () => {
     mail.payload.headers[0]!.value = '京东 招聘进展'
     const observation = gmailSemanticRecordFromMessage(mail, base.data.opportunities, now)!.observation
     observation.candidates = [{
-      id: 'clear-action', kind: 'manual_action', title: '准备材料',
+      id: 'clear-action', kind: 'manual_action', title: '填写报销单',
       objectConfidence: 'high', eventConfidence: 'high', evidenceRefs: [], sourceVersionRefs: [],
     }, {
       id: 'ambiguous-event', kind: 'process_event', eventType: 'interview_invite',
@@ -1914,7 +1914,7 @@ describe('UU06 shared Gmail intake', () => {
       authorized: true, records: [sourceRecord], reconcileExisting: true,
     })
     expect(settled.run.outcomes.unresolved ?? 0).toBe(0)
-    expect(settled.snapshot.data.actions.filter(item => item.title === '准备材料')).toHaveLength(1)
+    expect(settled.snapshot.data.actions.filter(item => item.title === '填写报销单')).toHaveLength(1)
     second.snapshot.data.opportunities.find(item => item.id === 'jd-analyst')!.processStage = 'closed'
     second.snapshot.data.opportunities.find(item => item.id === 'jd-designer')!.processStage = 'closed'
     const third = applySemanticIntake(second.snapshot, observation, { authorized: true, now: new Date(now.getTime() + 60_000) })

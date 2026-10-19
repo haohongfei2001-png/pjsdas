@@ -39,7 +39,7 @@ async function fixture(page:Page,unknownFirst=false,options:{neverCommitted?:boo
 test('fresh empty workspace and explicit single-domain approve/revoke leave neighbors unchanged',async({page})=>{
  const f=await fixture(page);await page.goto(entry)
  await page.getByLabel('选择已连接客户端').selectOption(clientId)
- for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`)).toHaveValue('')
+ for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.domain==='business'?'手动行动与投递组':d.consent.title}`)).toHaveValue('')
  const planning=page.getByRole('group',{name:'时间偏好',exact:true})
  await expect(planning.getByText('当前仅支持读取、修改、重置时间偏好及撤销相关修改。评分与决策策略已退役。')).toBeVisible()
  await expect(planning.getByText('读取、修改、重置决策规则及时间偏好',{exact:true})).not.toBeVisible()
@@ -117,7 +117,7 @@ test('Close and Back/Forward discard unsubmitted scope choices without issuing g
  await page.getByRole('button',{name:'返回 TodayAction',exact:true}).click();await expect(page).not.toHaveURL(/connect=1|scoped_access=1/)
  await page.goBack();await expect(page.getByRole('heading',{name:'选择这个客户端可以管理什么'})).toBeVisible();await expect(page.getByRole('button',{name:'确认所选变更'})).toBeDisabled()
  await page.goForward();await expect(page).not.toHaveURL(/connect=1|scoped_access=1/);await page.goBack();await page.getByLabel('选择已连接客户端').selectOption(clientId)
- for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`)).toHaveValue('')
+ for(const d of descriptors)await expect(page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.domain==='business'?'手动行动与投递组':d.consent.title}`)).toHaveValue('')
  expect(f.posts).toEqual([])
 })
 test('account switch during POST never displays the old receipt as the new account state',async({page})=>{
@@ -137,15 +137,15 @@ test('account switch during POST never displays the old receipt as the new accou
 
 test('consumer business permission is an explicit separate choice and revoked in the same bounded batch',async({page})=>{
  const f=await fixture(page);await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
- await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ await expect(page.getByLabel('本次选择：手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('approve')
  await page.getByLabel('本次选择：时间偏好').selectOption('approve')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect(page.getByText('这次决定已记录；下方展示重新读取的当前授权状态。')).toBeVisible()
  expect(f.posts[0].choices.map((c:any)=>c.domain)).toEqual(['business','planning'])
  expect(f.posts[0].choices[0]).toMatchObject({consentVersion:7,expectedGrant:null})
  expect(f.state.clients[0].grants.map(g=>g.domain).sort()).toEqual(['business','planning'])
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('revoke');await page.getByLabel('本次选择：时间偏好').selectOption('revoke')
  await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(2);expect(f.posts[1].choices.every((c:any)=>c.decision==='revoke'&&c.expectedGrant.revision===1)).toBe(true)
 })
@@ -156,8 +156,8 @@ test('stale business consent text is not shown as current authority and remains 
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  await expect(page.getByText('当前状态：授权文本已变更，需要重新明确确认；仍可撤销旧授权')).toBeVisible()
  await expect(page.getByText('最近读取的状态：0 项有效授权')).toBeVisible()
- await expect(page.getByLabel('本次选择：独立准备、手动行动与投递组')).toHaveValue('')
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
+ await expect(page.getByLabel('本次选择：手动行动与投递组')).toHaveValue('')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('revoke');await page.getByLabel('我已核对账号、客户端及上方列出的本次变更。').check();await page.getByRole('button',{name:'确认所选变更'}).click()
  await expect.poll(()=>f.posts.length).toBe(1);expect(f.posts[0].choices[0]).toMatchObject({domain:'business',decision:'revoke',expectedGrant:{revision:3}})
 })
 
@@ -172,7 +172,7 @@ for (const width of [1280,390]) test(`all consumer flags off retains owned revoc
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  await expect(page.getByText('当前不能新增管理授权；已有权限仍可查看和撤销。')).toBeVisible()
  await expect(page.getByText('第一次使用 TodayAction')).toHaveCount(0)
- const choice=page.getByLabel('本次选择：独立准备、手动行动与投递组')
+ const choice=page.getByLabel('本次选择：手动行动与投递组')
  await expect(choice.getByRole('option',{name:'明确授权此项',exact:true})).toHaveJSProperty('disabled',true)
  await expect(choice.getByRole('option',{name:'撤销此项授权',exact:true})).toHaveJSProperty('disabled',false)
  await testInfo.attach(`revocation-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})
@@ -189,10 +189,10 @@ test('controlled consumer screen permits business v7 only and sends exactly one 
  for(const d of f.state.descriptors)d.canApprove=d.domain==='business'
  await page.goto(entry);await page.getByLabel('选择已连接客户端').selectOption(clientId)
  for(const d of f.state.descriptors){
-  const option=page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
+  const option=page.getByLabel(`本次选择：${d.domain==='planning'?'时间偏好':d.domain==='business'?'手动行动与投递组':d.consent.title}`).getByRole('option',{name:'明确授权此项',exact:true})
   await expect(option).toHaveJSProperty('disabled',d.domain!=='business')
  }
- await page.getByLabel('本次选择：独立准备、手动行动与投递组').selectOption('approve')
+ await page.getByLabel('本次选择：手动行动与投递组').selectOption('approve')
  for(const width of [1280,390]){
   await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true)
   await testInfo.attach(`controlled-v7-only-${width}`,{body:await page.screenshot({fullPage:true}),contentType:'image/png'})

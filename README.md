@@ -2,7 +2,7 @@
 
 **TodayAction，原 PJSDAS**
 
-TodayAction currently supports an AI-assisted job-search decision and action workspace, with a longer-term direction toward daily task management. It is not primarily an application tracker. Its purpose is to turn opportunities, recruiting-process changes, deadlines, preparation work, application constraints, trusted source updates, and available time into a small set of explainable next decisions and actions.
+TodayAction currently supports an AI-assisted job-search decision and action workspace, with a longer-term direction toward daily task management. It is not primarily an application tracker. Its purpose is to turn opportunities, recruiting-process changes, deadlines, application constraints, trusted source updates, and available time into a small set of explainable next decisions and actions.
 
 > **The system should help answer one question within 30 seconds: _What should I do next for my job search?_**
 
@@ -33,6 +33,8 @@ The new plan supersedes conflicting historical Discovery/scoring and deadline-to
 
 ## Product surface
 
+The owner's 2026-10-18 amendment retires preparation and preparation-related tasks throughout the product. Application planning, recruiting facts, and actual interview/test appointments remain supported. Historical data and guarded Undo remain intact. See [retirement scope and evidence](docs/PREPARATION_RETIREMENT_EVIDENCE.md).
+
 TodayAction has three primary entries:
 
 - **Today / 今天** — browse the complete set of daily actions and upcoming recruiting nodes.
@@ -56,7 +58,7 @@ Core durable concepts include:
 - **Opportunity / Job Posting** — canonical job identity plus source evidence;
 - **Process / Process Event** — effective recruiting state and dated real-world facts;
 - **Action** — concrete next moves;
-- **Prep / Prep Graph** — reusable preparation plus deterministic leverage links;
+- **Legacy Prep** — retained archival records only; preparation features and related tasks are retired;
 - **Application Group** — explicit shared-quota or shared-preference constraints;
 - **Discovery Profile / Discovery Run** — durable search preferences and auditable discovery history;
 - **Timeline / ChangeSet** — factual history and normalized review/apply protocol;

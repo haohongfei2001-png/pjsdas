@@ -46,7 +46,7 @@ try{
  const config={consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000005159',clientId:client},enabled:'enabled',consumerEnabled:'enabled',audienceMode:'allowlist',supabaseUrl:origin,supabasePublishableKey:'synthetic-public',serviceRoleKey:'synthetic-service',allowedOrigins:[origin],authorizeIdentity:async()=>({allowed:true,mode:'allowlist',role:'beta'}),fetchImpl}
  const workspace=createConnectedWorkspaceHandler({...config,consumerOnboardingEnabled:true}),consent=createScopedManagementConsentHandler(config)
  const runtime=createOwnerScopedManagementRuntime({...config,transactional:true,identity:{userId:owner,oauthClientId:client},audience:{allowed:true,mode:'allowlist',role:'beta'}})
- assert.equal(runtime.planning,undefined);assert.equal(runtime.opportunity,undefined);assert.equal(runtime.discoveryProfile,undefined);assert.equal(runtime.privateReminder,undefined);assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent.authorized,false);assert.equal((await runtime.business.invoke('execute_consumer_business_management',{commandId:'legacy-cannot-consumer',baseRevision:0,change:{operations:[{kind:'create_prep',value:{title:'Forbidden',estimatedMinutes:30}}]}})).structuredContent.code,'AUTH_FORBIDDEN')
+ assert.equal(runtime.planning,undefined);assert.equal(runtime.opportunity,undefined);assert.equal(runtime.discoveryProfile,undefined);assert.equal(runtime.privateReminder,undefined);assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'action'}})).structuredContent.authorized,false);assert.equal((await runtime.business.invoke('execute_consumer_business_management',{commandId:'legacy-cannot-consumer',baseRevision:0,change:{operations:[{kind:'create_prep',value:{title:'Forbidden',estimatedMinutes:30}}]}})).structuredContent.code,'AUTH_FORBIDDEN')
  const initialize={action:'initialize_empty',expectedAccountId:owner,commandId:'synthetic-empty-start',timezone:'America/New_York',confirmStartEmpty:true}
  const started=await workspace(post(initialize));assert.equal(started.status,200,await started.clone().text());const start=await started.json();assert.equal(start.snapshot.data.opportunities.length,0);assert.equal(start.snapshot.data.timePlanning.timezone,'America/New_York')
  const view=await (await consent(read())).json();const descriptor=view.descriptors.find(d=>d.domain==='planning'),businessDescriptor=view.descriptors.find(d=>d.domain==='business');assert.equal(businessDescriptor.canApprove,true)
@@ -55,21 +55,28 @@ try{
  decision.requestId='00000000-0000-4000-8000-000000005158';decision.choices=decision.choices.filter(c=>c.domain==='business')
  const approved=await consent(post(decision));assert.equal(approved.status,200,await approved.clone().text());assert.equal((await approved.json()).receipts[0].outcome,'APPROVED')
  const existing=await (await workspace(post({...initialize,timezone:'Europe/London'}))).json();assert.equal(existing.outcome,'EXISTING_WORKSPACE');assert.equal(existing.snapshot.data.timePlanning.timezone,'America/New_York')
- const businessRead=(await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent
+ const businessRead=(await runtime.business.invoke('get_consumer_business_management',{query:{type:'action'}})).structuredContent
  assert.equal(businessRead.authorized,true);assert.deepEqual(businessRead.data.items,[])
- const businessCommand={commandId:'consumer-business-create',baseRevision:Number(businessRead.workspaceVersion.slice(4)),change:{operations:[{kind:'create_prep',value:{title:'Synthetic reviewed prep',estimatedMinutes:30}}]}}
+ // Retired Prep reads/writes cannot change a freshly initialized account.
+ const beforeRetired=(await db.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1',[owner])).rows[0]
+ assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent.code,'PREPARATION_RETIRED')
+ const retiredCommand={commandId:'consumer-retired-prep',baseRevision:Number(businessRead.workspaceVersion.slice(4)),change:{operations:[{kind:'create_prep',value:{title:'Retired prep',estimatedMinutes:30}}]}}
+ assert.equal((await runtime.business.invoke('execute_consumer_business_management',retiredCommand)).structuredContent.code,'PREPARATION_RETIRED')
+ assert.deepEqual((await db.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1',[owner])).rows[0],beforeRetired)
+ assert.equal((await db.query('select count(*) n from public.pjsdas_command_ledger where user_id=$1',[owner])).rows[0].n,0)
+ const businessCommand={commandId:'consumer-business-create',baseRevision:Number(businessRead.workspaceVersion.slice(4)),change:{operations:[{kind:'create_manual_action',value:{title:'Synthetic reviewed action',estimatedMinutes:30}}]}}
  const businessApplied=await runtime.business.invoke('execute_consumer_business_management',businessCommand);assert.equal(businessApplied.structuredContent.outcome,'COMMITTED',JSON.stringify(businessApplied))
- assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent.data.items[0].title,'Synthetic reviewed prep')
+ assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'action'}})).structuredContent.data.items[0].title,'Synthetic reviewed action')
  const businessUndo={commandId:'consumer-business-undo',targetCommandId:businessCommand.commandId}
  const businessUndone=await runtime.business.invoke('undo_consumer_business_management',businessUndo);assert.equal(businessUndone.structuredContent.outcome,'COMMITTED',JSON.stringify(businessUndone))
- assert.deepEqual((await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent.data.items,[])
+ assert.deepEqual((await runtime.business.invoke('get_consumer_business_management',{query:{type:'action'}})).structuredContent.data.items,[])
  const proofs=(await (await consent(read())).json()).clients[0].grants,businessProof=proofs.find(g=>g.domain==='business')
  assert.equal(proofs.length,1)
  const revoke={...decision,requestId:'00000000-0000-4000-8000-000000005154',choices:[{...decision.choices[0],decision:'revoke',expectedGrant:{id:businessProof.id,revision:businessProof.revision}}]}
  const closed=createScopedManagementConsentHandler({...config,enabled:undefined,consumerEnabled:undefined,consumerCohort:undefined,authorizeIdentity:async()=>{throw Error('Audience removed')}})
  const closedView=await (await closed(read())).json();assert.ok(closedView.descriptors.every(d=>!d.canApprove));assert.equal(closedView.clients[0].canApprove,false)
  assert.equal((await closed(post(revoke))).status,200)
- assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'prep'}})).structuredContent.authorized,false)
+ assert.equal((await runtime.business.invoke('get_consumer_business_management',{query:{type:'action'}})).structuredContent.authorized,false)
  for(const [name,args]of [['execute_consumer_business_management',businessCommand],['undo_consumer_business_management',businessUndo]])assert.equal((await runtime.business.invoke(name,args)).structuredContent.code,'AUTH_FORBIDDEN')
  assert.deepEqual((await db.query("select to_jsonb(g) v from public.pjsdas_business_management_grants g where user_id=$1 and capability='workspace.manage'",[owner])).rows[0].v,legacyV2)
  assert.equal((await db.query('select count(*) n from public.pjsdas_command_ledger where user_id=$1',[owner])).rows[0].n,2)

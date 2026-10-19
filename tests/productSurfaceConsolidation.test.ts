@@ -13,12 +13,11 @@ describe('UU-04 Web information architecture', () => {
     expect(app).not.toContain("type Surface = 'today' | 'opportunities' | 'attention'")
   })
 
-  it('keeps opportunity decisions and preparation in one contextual working set without a separate Pipeline module', () => {
-    expect(app).toContain("type OpportunityTab = 'opportunities' | 'prepare'")
-    expect(app).toContain('<OpportunityDecisionList')
-    expect(app).toContain('<PrepGraphDock />')
-    expect(app).toContain("onTabChange('prepare')")
-    expect(app).not.toContain("type OpportunityTab = 'opportunities' | 'pipeline' | 'prepare'")
+  it('keeps jobs without any preparation entry or separate Pipeline module', () => {
+    expect(app).toContain('<JobLibrary')
+    expect(app).not.toContain('OpportunityTab')
+    expect(app).not.toContain('PrepGraphDock')
+    expect(app).not.toContain('PreparePanel')
     expect(app).not.toContain('<ApplicationPortfolioDock />')
   })
 

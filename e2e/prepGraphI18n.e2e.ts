@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-test('Prep Graph keeps source facts but localizes system status and link explanations', async ({ page }) => {
+test('retired preparation stays absent in both languages without changing source facts', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible()
 
-  await page.evaluate(async () => {
+  const seeded = await page.evaluate(async () => {
     const opportunity = {
       id: 'prep-i18n-job',
       company: '示例科技',
@@ -42,31 +42,50 @@ test('Prep Graph keeps source facts but localizes system status and link explana
         transaction.objectStore('prep').put(prep)
       }
     })
+    return { opportunity, prep }
   })
 
   await page.reload()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库/ }).click()
   await page.locator('.opportunity-decision-row').filter({ hasText: '示例科技' }).click()
   const opportunityDetail = page.locator('.job-detail-page')
-  await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toContainText('SQL readiness')
-  await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toContainText('显式指向该岗位')
+  await expect(opportunityDetail.locator('.opportunity-detail-related-prep')).toHaveCount(0)
+  await expect(opportunityDetail.getByText('SQL readiness', { exact: true })).toHaveCount(0)
+  await expect(opportunityDetail.getByRole('button', { name: /查看准备/ })).toHaveCount(0)
   await page.locator('.job-detail-back').click()
-  await page.locator('.tsui-library-secondary button').filter({ hasText: '准备' }).click()
+  await expect(page.locator('.tsui-library-secondary button').filter({ hasText: '准备' })).toHaveCount(0)
+  await expect(page.locator('.prep-graph-dock-trigger, .prep-graph-dialog, .surface-prep-grid')).toHaveCount(0)
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
   const interfaceGroup = page.locator('details.settings-group').filter({ has: page.locator('summary strong').filter({ hasText: /^(界面|Interface)$/ }) })
   await interfaceGroup.locator('summary').click()
   await interfaceGroup.getByRole('button', { name: 'EN', exact: true }).click()
   await page.locator('.tsui-primary-nav').getByRole('button', { name: /Jobs/ }).click()
-  await page.locator('.tsui-library-secondary button').filter({ hasText: 'Preparation' }).click()
-  await page.getByRole('button', { name: 'Prep Graph' }).click()
+  await expect(page.getByRole('heading', { name: 'Job library', exact: true })).toBeVisible()
+  await expect(page.locator('.tsui-library-secondary button').filter({ hasText: 'Preparation' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Prep Graph', exact: true })).toHaveCount(0)
+  await page.locator('.opportunity-decision-row').filter({ hasText: seeded.opportunity.company }).click()
+  await expect(page.locator('.job-detail-page')).toContainText(seeded.opportunity.company)
+  await expect(page.locator('.job-detail-page')).toContainText(seeded.opportunity.role)
+  await expect(page.locator('.opportunity-detail-related-prep, .prep-graph-dialog, .surface-prep-grid')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /View preparation/ })).toHaveCount(0)
+  await expect(page.getByText('SQL readiness', { exact: true })).toHaveCount(0)
 
-  const dialog = page.locator('.prep-graph-dialog')
-  await expect(dialog.getByRole('heading', { name: 'Preparation links' })).toBeVisible()
-  await expect(dialog.getByText('PREP GRAPH', { exact: true })).toBeVisible()
-  await expect(dialog.getByText(/V1\.6/)).toHaveCount(0)
-  await expect(dialog.getByText('Waiting', { exact: true })).toBeVisible()
-  await expect(dialog.locator('.prep-graph-node-head').getByText('SQL readiness', { exact: true })).toBeVisible()
-
-  await dialog.getByText('See 1 deterministic links', { exact: true }).click()
-  await expect(dialog.getByText('This Prep explicitly names the opportunity or its application group as a trigger.', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page.locator('.job-detail-page')).toContainText(seeded.opportunity.company)
+  await expect(page.locator('.opportunity-detail-related-prep, .prep-graph-dialog, .surface-prep-grid')).toHaveCount(0)
+  const persisted = await page.evaluate(async ({ opportunity, prep }) => new Promise((resolve, reject) => {
+    const request = indexedDB.open('pjsdas')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction(['opportunities', 'prep'], 'readonly')
+      const job = transaction.objectStore('opportunities').get(opportunity.id)
+      const item = transaction.objectStore('prep').get(prep.id)
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error)
+      transaction.oncomplete = () => { db.close(); resolve({ opportunity: job.result, prep: item.result }) }
+    }
+  }), seeded)
+  expect(persisted).toEqual(seeded)
 })

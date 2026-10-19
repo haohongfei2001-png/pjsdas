@@ -1,3 +1,4 @@
+import { isPreparationTaskText } from './preparationRetirement.js'
 import {
   parseProgressUpdate as parseProgressUpdateV4,
   type ExecutableProgressOperation,
@@ -524,5 +525,7 @@ export function parseProgressUpdate(
   const relinked = relinkCanonicalizedOperations(original, identities)
   const shorthand = repairCompanyTestShorthand(relinked, currentOpportunities)
   const completed = repairExplicitCompletions(shorthand, currentOpportunities)
-  return repairGeneralTasks(completed, currentOpportunities, now)
+  const plan = repairGeneralTasks(completed, currentOpportunities, now)
+  return rebuildPlan(plan.operations.map(operation => operation.kind === 'manual_action' && isPreparationTaskText(operation.sourceText)
+    ? { id: operation.id, kind: 'unresolved', sourceText: operation.sourceText, confidence: 'low', occurredAt: operation.occurredAt, reason: '准备功能及其待办已移除，本次未写入。', candidateOpportunities: [] } : operation))
 }

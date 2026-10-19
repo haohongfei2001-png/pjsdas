@@ -58,6 +58,11 @@ describe('PJSDAS MCP gateway alpha', () => {
       expect(jsonFrom(result)).toMatchObject({ code: 'SCORING_RETIRED', retryable: false })
       return
     }
+    if (name === 'get_prep_graph') {
+      expect(result.isError).toBe(true)
+      expect(jsonFrom(result)).toMatchObject({ code: 'PREPARATION_RETIRED', retryable: false })
+      return
+    }
     expect(result.isError).not.toBe(true)
     const data = jsonFrom(result)
     if (name === 'get_today_brief' || name === 'get_opportunity_detail') {

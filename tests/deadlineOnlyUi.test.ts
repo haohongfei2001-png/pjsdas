@@ -52,14 +52,11 @@ describe('deadline-only product surfaces', () => {
     expect(portfolio).toContain('buildApplicationPortfolioDecision(group, opportunities')
   })
 
-  it('retains preparation links and factual counts without leverage or priority scoring', () => {
-    const graph = source('PrepGraphDockHeavy.tsx')
-    expect(graph).not.toMatch(/leverageScore|urgencyScore|valueScore|need\.severity|highest-leverage/i)
-    expect(graph).toContain('node.coverageCount')
-    expect(graph).toContain('node.nextRelevantAt')
-    expect(graph).toContain('link.confidence')
+  it('removes preparation UI without restoring scoring controls', () => {
     const app = source('AppV8.tsx')
-    expect(app).not.toMatch(/prepPriorityRank|presentPrepPriority/)
-    expect(app).toContain('a.recentNodeAt')
+    expect(app).not.toMatch(/PrepGraphDock|PreparePanel|prepPriorityRank|presentPrepPriority/)
+    const detail = source('OpportunityDetailDrawer.tsx')
+    expect(detail).not.toMatch(/relatedPrep|prepPack|onNavigate\('prepare'\)/)
+    expect(detail).toContain('Progress & actions')
   })
 })

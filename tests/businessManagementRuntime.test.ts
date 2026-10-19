@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createOwnerBusinessManagementRuntime } from '../gateway/businessManagementRuntime.js'
 const owner='00000000-0000-4000-8000-000000000001', client='00000000-0000-4000-8000-000000000002'
 const grant={id:'00000000-0000-4000-8000-000000000003',user_id:owner,client_id:client,revision:1,consent_version:2,capability:'workspace.manage',granted_at:'2026-10-01T00:00:00Z',revoked_at:null}
-const args={commandId:'synthetic-command-1',baseRevision:0,change:{operations:[{kind:'create_prep',value:{title:'Synthetic',estimatedMinutes:30}}]}}
+const args={commandId:'synthetic-command-1',baseRevision:0,change:{operations:[{kind:'create_manual_action',value:{title:'Synthetic',estimatedMinutes:30}}]}}
 function fixture() {
  const fetchImpl=vi.fn<typeof fetch>(async()=>Response.json([grant]))
  return {enabled:'enabled',transactional:true,identity:{userId:owner,oauthClientId:client},audience:{mode:'allowlist' as const,allowed:true,role:'owner' as const},source:{read:async()=>{throw new Error('unexpected workspace read')}},supabaseUrl:'https://example.invalid',serviceRoleKey:'synthetic',fetchImpl}
@@ -38,7 +38,7 @@ describe('runtime-to-authoritative SQL adapter',()=>{
     expect(url.pathname).toBe('/rest/v1/rpc/pjsdas_commit_management_workspace_v1')
     const body=JSON.parse(String(init?.body))
     expect(body).toMatchObject({target_user_id:owner,target_client_id:client,target_grant_id:grant.id,target_grant_revision:1,target_operation:'business_management',target_command_id:args.commandId})
-    expect(body.target_snapshot.data.prep[0].title).toBe('Synthetic')
+    expect(body.target_snapshot.data.actions[0].title).toBe('Synthetic')
     return status===403?Response.json({code:'42501',message:'revoked'},{status}):Response.json([{outcome:'COMMITTED',workspace_id:'fixture-workspace',revision:1,receipt:{}}])
    }
    expect(url.searchParams.get('user_id')).toBe(`eq.${owner}`)

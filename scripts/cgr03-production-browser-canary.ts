@@ -82,7 +82,7 @@ async function run() {
     await expect(detail).toContainText('产品经理-增长', { timeout: 20000 })
     await page.reload()
     await expect(detail).toContainText('产品经理-增长', { timeout: 20000 })
-    await detail.locator('.opportunity-detail-section').filter({ hasText: /准备与相关待办|Preparation & related actions/ }).locator('summary').click()
+    await detail.locator('.opportunity-detail-section').filter({ hasText: /进展与行动|Progress & actions/ }).locator('summary').click()
     await detail.getByRole('button', { name: /标记完成|Mark done/ }).click()
     await expect(page.locator('.action-undo-toast')).toContainText(/已标记完成|Marked done/)
     const done = await workspace(origin, tokenB, { action: 'read' })

@@ -3,17 +3,17 @@ import { applyBusinessManagement, readBusinessManagement, restoreBusinessManagem
 import { unknownDeadlineWorkspace } from './fixtures/unknownDeadlineWorkspace.js'
 import { createOwnerBusinessManagementRuntime } from '../gateway/businessManagementRuntime.js'
 const owner='00000000-0000-4000-8000-000000000001',client='00000000-0000-4000-8000-000000000002',grantId='00000000-0000-4000-8000-000000000003',now=new Date('2026-10-03T00:00:00Z')
-function raw(){const s=unknownDeadlineWorkspace(1);s.data.actions[0].dueAt='2026-08-27T15:59:59Z';s.data.actions[0].timingMode='deadline';s.data.prep=[{id:'synthetic-b',title:'B',estimatedMinutes:30,createdAt:now.toISOString(),updatedAt:now.toISOString(),future:{keep:['raw',null]}} as any,{id:'synthetic-a',title:'A',estimatedMinutes:30,createdAt:now.toISOString(),updatedAt:now.toISOString()}];(s.data as any).futureSurface={nested:[1,'keep',null]};return s}
-const protectedData=(s:ReturnType<typeof raw>)=>Object.fromEntries(Object.entries(s.data).filter(([key])=>!['prep','timeline'].includes(key)))
-const create={operations:[{kind:'create_prep',value:{title:'Synthetic new prep',estimatedMinutes:30}}]}
+function raw(){const s=unknownDeadlineWorkspace(1);s.data.actions[0].dueAt='2026-08-27T15:59:59Z';s.data.actions[0].timingMode='deadline';s.data.prep=[{id:'synthetic-b',title:'B',estimatedMinutes:30,createdAt:now.toISOString(),updatedAt:now.toISOString(),future:{keep:['raw',null]}} as any,{id:'synthetic-a',title:'A',estimatedMinutes:30,createdAt:now.toISOString(),updatedAt:now.toISOString()}];s.data.applicationGroups=[{id:'group-b',company:'B',notes:'retain',future:{keep:['raw',null]}} as any,{id:'group-a',company:'A'}];(s.data as any).futureSurface={nested:[1,'keep',null]};return s}
+const protectedData=(s:ReturnType<typeof raw>)=>Object.fromEntries(Object.entries(s.data).filter(([key])=>!['applicationGroups','timeline'].includes(key)))
+const create={operations:[{kind:'create_application_group',value:{company:'Synthetic group',total:2}}]}
 describe('v2 exact raw preservation regression',()=>{
- it.each([create,{operations:[{kind:'update_prep',id:'synthetic-b',patch:{title:'Edited'}}]},{operations:[{kind:'archive_prep',id:'synthetic-b'}]}])('preserves unrelated raw facts and restores exact prep order/metadata %#',change=>{
+ it.each([create,{operations:[{kind:'update_application_group',id:'group-b',patch:{company:'Edited'}}]},{operations:[{kind:'archive_application_group',id:'group-b'}]}])('preserves unrelated raw facts and restores exact group order/metadata while preserving legacy prep %#',change=>{
   const before=raw(),unchanged=structuredClone(before)
   const read=readBusinessManagement(before,{type:'action',ids:[before.data.actions[0].id]});const {leverage:_leverage,delayCost:_delay,...visibleAction}=before.data.actions[0];expect(read.items[0]).toEqual(visibleAction);expect(read.items[0]).not.toHaveProperty('leverage');expect(read.items[0]).not.toHaveProperty('delayCost')
   const applied=applyBusinessManagement(before,change,'synthetic-v2-raw-command',now)
   expect(protectedData(applied.snapshot)).toEqual(protectedData(before));expect(before).toEqual(unchanged)
   const restored=restoreBusinessManagement(applied.snapshot,applied.compensation!,now)
-  expect(protectedData(restored)).toEqual(protectedData(before));expect(restored.data.prep).toEqual(before.data.prep)
+  expect(protectedData(restored)).toEqual(protectedData(before));expect(restored.data.prep).toEqual(before.data.prep);expect(restored.data.applicationGroups).toEqual(before.data.applicationGroups)
  })
  it('keeps a valid legacy envelope and does not manufacture protected collections',()=>{
   const before=raw();before.version=1

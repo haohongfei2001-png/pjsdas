@@ -1,3 +1,4 @@
+import { withoutPreparationSurfaces } from './preparationRetirement.js'
 import { todayProcessTimingOwner, type ProcessRecoveryItem } from './fixedEventGuardLogic.js'
 import { calendarNodeProjection, scheduleNodeEligible } from './scheduleEligibility.js'
 import { rankActions } from './decisionV3.js'
@@ -347,10 +348,10 @@ function executionFor(action: Action, opportunity: Opportunity | undefined): Tod
   }
   if (action.kind === 'prep') {
     return {
-      state: 'executable_now',
+      state: 'blocked_missing_target',
       operation: 'start_prep',
       deepLink: opportunityDeepLink,
-      realActionAvailable: true,
+      realActionAvailable: false,
     }
   }
   if (action.kind === 'group_decision') {
@@ -604,7 +605,7 @@ export function buildTodayBrief(
   rawContext: TodayBriefContext = {},
 ): TodayBrief {
   const context = resolvedContext(rawContext)
-  const snapshot = upgradeSnapshotToLatest(rawSnapshot)
+  const snapshot = withoutPreparationSurfaces(upgradeSnapshotToLatest(rawSnapshot))
   const availableMinutes = todayCapacity(snapshot.data.timePlanning, context.now, context.timezone, input.availableMinutes).minutes
   if (!Number.isInteger(availableMinutes) || availableMinutes < 0 || (input.availableMinutes !== undefined && availableMinutes > 1440)) {
     throw new Error('TodayBrief availableMinutes must be between 0 and 1440.')
