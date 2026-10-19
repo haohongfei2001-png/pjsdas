@@ -1,3 +1,6 @@
+import { createConfiguredAiCaptureRuntime } from '../gateway/aiCaptureRuntime.js'
+import { createAiCapturePreviewHandler } from '../gateway/aiCapturePreviewHandler.js'
+import { createTransactionalWorkspaceStore } from '../gateway/transactionalWorkspaceStore.js'
 import { configuredConsumerTestCohort } from '../gateway/consumerTestCohort.js'
 import { createScopedManagementConsentHandler } from '../gateway/scopedManagementConsentHandler.js'
 import { createOwnerManagementConsentHandler } from '../gateway/ownerManagementConsentHandler.js'
@@ -43,8 +46,25 @@ const scopedConsentHandler = createScopedManagementConsentHandler({
   authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
 })
 
+// The server route is deliberately default-off. Existing Gateway credentials
+// alone do not authorize capture data transmission or additional expenditure.
+// The factory requires explicit activation plus verified free-only funding metadata; account policy admission remains mandatory.
+const aiCapturePreviewHandler = createAiCapturePreviewHandler({
+  runtime: createConfiguredAiCaptureRuntime({ supabaseUrl: PJSDAS_SUPABASE_URL,
+    serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '' }),
+  supabaseUrl: PJSDAS_SUPABASE_URL,
+  supabasePublishableKey: PJSDAS_SUPABASE_PUBLISHABLE_KEY,
+  allowedOrigins: firstPartyWebOrigins(),
+  authorizeIdentity: createConfiguredAudienceAccessGuard({ supabaseUrl: PJSDAS_SUPABASE_URL }),
+  readWorkspace: userId => createTransactionalWorkspaceStore({
+    supabaseUrl: PJSDAS_SUPABASE_URL,
+    serviceRoleKey: process.env.PJSDAS_SUPABASE_SERVICE_ROLE_KEY ?? '',
+  }).readForUser(userId),
+})
+
 export default {
   fetch(request: Request) {
+    if (new URL(request.url).searchParams.get('surface') === 'ai-capture-preview') return aiCapturePreviewHandler(request)
     if (new URL(request.url).searchParams.get('surface') === 'scoped-management-consent') return scopedConsentHandler(request)
     if (new URL(request.url).searchParams.get('surface') === 'owner-management-consent') return ownerConsentHandler(request)
     return handler(request)

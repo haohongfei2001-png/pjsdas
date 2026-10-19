@@ -1,3 +1,5 @@
+import { aiCandidateDetails } from './capture/aiCandidateDetails.js'
+import { aiCaptureEnabled, previewAiCapture, confirmAiCapture, isCurrentAiPreview, type AiCapturePreview } from './aiCaptureClient.js'
 import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
 import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
@@ -147,6 +149,8 @@ export default function TellPjsdasCapture({
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewRequest, setPreviewRequest] = useState(0)
+  const [aiRequest, setAiRequest] = useState<{ text: string; accountKey: string; requestId: string }>()
+  const processedAiRequest = useRef<string | undefined>(undefined)
   const [fileReading, setFileReading] = useState(false)
   const [fileAttachment, setFileAttachment] = useState<{ name: string; quote: string }>()
   const [fileNotice, setFileNotice] = useState('')
@@ -155,7 +159,7 @@ export default function TellPjsdasCapture({
   const fileTriggerRef = useRef<HTMLButtonElement | null>(null)
   const previewSectionRef = useRef<HTMLElement | null>(null)
   const fileReadEpochRef = useRef(0)
-  const [preview, setPreview] = useState<WebSemanticCapturePreview>()
+  const [storedPreview, setPreview] = useState<WebSemanticCapturePreview>()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saveState, setSaveState] = useState<CaptureSaveState>('idle')
@@ -198,6 +202,9 @@ export default function TellPjsdasCapture({
   useLayoutEffect(() => () => operationLifecycle.current.invalidate(), [])
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
+  const modelCapture = aiCaptureEnabled() && !manualMode
+  const currentAiPreview = isCurrentAiPreview(storedPreview, text, accountKey) ? storedPreview : undefined
+  const preview = modelCapture ? currentAiPreview : storedPreview && 'ai' in storedPreview ? undefined : storedPreview
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
 
   const previewPresentation = useRef(createCapturePreviewPresentation())
@@ -405,16 +412,27 @@ export default function TellPjsdasCapture({
       setPreviewBusy(false)
       return
     }
+    if (modelCapture && (!connected || !aiRequest || aiRequest.text !== text || aiRequest.accountKey !== accountKey)) {
+      setPreview(undefined)
+      setPreviewBusy(false)
+      return
+    }
+    if (modelCapture && processedAiRequest.current === aiRequest?.requestId) { setPreviewBusy(false); return }
     const presentation = previewPresentation.current.begin()
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
-      void previewWebSemanticCapture(text)
+      if (modelCapture) processedAiRequest.current = aiRequest!.requestId
+      void (modelCapture ? previewAiCapture(text, accountKey!, aiRequest!.requestId) : previewWebSemanticCapture(text))
         .then((next) => {
           presentation.publish(() => { settledPreviewIdentity.current = parsedIdentity; setPreview(next); setPreviewBusy(false) })
         })
         .catch((caught) => {
           presentation.publish(() => {
-            setError(caught instanceof Error ? caught.message : String(caught))
+            const failure = caught instanceof Error ? caught.message : String(caught)
+            setError(failure)
+            // Only a known stale/expired result permits a new inference identity.
+            // Unknown provider/network outcomes keep their original receipt ID.
+            if (modelCapture && /^(AI_CAPTURE_STALE|AI_CAPTURE_EXPIRED):/.test(failure)) setAiRequest(undefined)
             setPreviewBusy(false)
           })
         })
@@ -423,7 +441,9 @@ export default function TellPjsdasCapture({
       presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked, modelCapture, aiRequest])
+
+  useEffect(() => { if (!open || manualMode || correctionMode) setAiRequest(undefined) }, [open, manualMode, correctionMode])
 
   useEffect(() => {
     if (!open) return
@@ -443,15 +463,20 @@ export default function TellPjsdasCapture({
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode, cloud.session])
+  }, [open, text, busy, stableCommandId, saveState, correctionMode, manualMode, cloud.session, preview, previewBusy, modelCapture])
 
   async function submit(invokedControl?: HTMLElement) {
     if (!text.trim() || busy) return
+    if (modelCapture && !recoveryLocked && (!currentAiPreview?.ai.canCommit || previewBusy)) {
+      setError(zh ? '请先点击整理并核对 AI 预览，再确认保存。' : 'Organize and review the AI preview before saving.')
+      return
+    }
     if (manualMode) {
       const invalid = sheetRef.current?.querySelector<HTMLInputElement>('input:invalid')
       if (invalid) { invalid.reportValidity(); return }
     }
     const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
+    if (modelCapture && queueOffline) { setError(zh ? 'AI 预览确认需要联网；输入内容已保留。' : 'AI confirmation needs a connection; your input is retained.'); return }
     if (queueOffline && recoveryLocked) return
     const commandId = connected
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
@@ -467,7 +492,8 @@ export default function TellPjsdasCapture({
     setDecisionCount(0)
     setUnresolvedCount(0)
     try {
-      const result = await submitWebSemanticCapture(text, {
+      const result = modelCapture ? await confirmAiCapture({ accountKey: accountKey!, commandId: commandId!, text,
+        preview: currentAiPreview as AiCapturePreview | undefined, recover: recoveryLocked }) : await submitWebSemanticCapture(text, {
         accountKey: cloud.session?.user.id,
         commandId,
         contextRefs,
@@ -627,7 +653,17 @@ export default function TellPjsdasCapture({
   }
 
   function requestPreview() {
-    if (!text.trim() || busy || recoveryLocked) return
+    if (!text.trim() || busy || modelCapture && previewBusy || recoveryLocked) return
+    if (modelCapture) {
+      if (!connected || !accountKey) { setError(zh ? '请登录并连接工作区后使用 AI 理解。' : 'Sign in and connect your workspace to use AI interpretation.'); return }
+      setError('')
+      setPreview(undefined)
+      processedAiRequest.current = undefined
+      // A retry of the same input asks for its durable result, never buys a
+      // second inference after an unknown response. Edits get a new identity.
+      setAiRequest(previous => previous?.text === text && previous.accountKey === accountKey
+        ? { ...previous } : { text, accountKey, requestId: createConnectedCommandId('ai-capture') })
+    }
     setPreviewRequest(value => value + 1)
     previewSectionRef.current?.focus()
   }
@@ -706,7 +742,7 @@ export default function TellPjsdasCapture({
           <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
             onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
           {moreActions}
-          <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
+          <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || modelCapture && previewBusy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
           </button>
         </div>
@@ -717,7 +753,7 @@ export default function TellPjsdasCapture({
         {text.trim() ? (
           <section ref={previewSectionRef} tabIndex={-1} className="cgr-understanding" aria-label={zh ? '整理结果' : 'Interpretation preview'} aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
-              <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
+              <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : modelCapture && !preview ? (zh ? '点击箭头开始 AI 理解' : 'Use the arrow to interpret with AI') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
               <span data-state={saveState}>
                 {saveState === 'auth_unconfirmed' ? (zh ? '等待账号确认' : 'Waiting for account confirmation')
                   : saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
@@ -734,13 +770,17 @@ export default function TellPjsdasCapture({
                 {modeNote ? <p className="cgr-understanding-note">{modeNote}</p> : null}
                 {preview.candidates.length ? (
                   <ul>
-                    {preview.candidates.map((candidate) => <li key={candidate.id}>{candidateLabel(candidate, zh)}</li>)}
+                    {preview.candidates.map((candidate) => <li key={candidate.id}>
+                      {candidateLabel(candidate, zh)}
+                      {modelCapture ? aiCandidateDetails(candidate, zh, currentAiPreview?.ai.timezone).map((detail, index) =>
+                        <p className="cgr-understanding-note" key={index}>{detail}</p>) : null}
+                    </li>)}
                   </ul>
                 ) : !modeNote ? (
                   <p className="cgr-understanding-note">{zh ? '还没有识别出可保存的内容。请补充具体事项或时间。' : 'Nothing is ready to save yet. Add the specific task or time.'}</p>
                 ) : null}
                 {preview.unresolved.length ? (
-                  <p className="cgr-understanding-warning">{zh ? `${preview.unresolved.length} 处内容仍需补充或确认，请核对具体事项、对象和时间。` : `${preview.unresolved.length} part(s) need clarification. Check the task, target, and time.`}</p>
+                  <p className="cgr-understanding-warning">{modelCapture ? preview.unresolved.join(' ') : zh ? `${preview.unresolved.length} 处内容仍需补充或确认，请核对具体事项、对象和时间。` : `${preview.unresolved.length} part(s) need clarification. Check the task, target, and time.`}</p>
                 ) : null}
                 {preview.ignored.length ? (
                   <p className="cgr-understanding-note">{zh ? `${preview.ignored.length} 个片段未作为当前事实处理（如引用的旧消息）。` : `${preview.ignored.length} fragment(s) were not treated as current facts (such as quoted history).`}</p>
@@ -761,7 +801,7 @@ export default function TellPjsdasCapture({
         {secondaryActions}
         {manualMode || text.trim() && preview || busy || recoveryLocked ? <div className="cgr-capture-footer">
 
-          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={event => { void submit(event.currentTarget) }}>
+          {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || modelCapture && !recoveryLocked && (!currentAiPreview?.ai.canCommit || previewBusy) || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={event => { void submit(event.currentTarget) }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
                 : saveState === 'confirmed_pending' ? (zh ? '核对本机状态' : 'Check device state')

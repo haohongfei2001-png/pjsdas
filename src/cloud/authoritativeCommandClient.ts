@@ -17,6 +17,7 @@ export type ConnectedBusinessCommand =
   | { type: 'job_viewed'; value: { opportunityId: string } }
   | { type: 'domain'; value: UserDomainCommand }
   | { type: 'semantic_intake'; value: SemanticIntakeObservation }
+  | { type: 'ai_capture_confirm'; value: { requestId: string } }
   | { type: 'resolve_semantic_decision'; value: { requestId: string; choiceId: string } }
   | { type: 'discovery_status'; value: DiscoveryStatusCommand }
   | { type: 'discovery_profile'; value: DiscoveryScopeInput; expectedFingerprint?: string }
@@ -60,6 +61,8 @@ export interface ConnectedCommandResponse {
 }
 
 interface PendingCommand {
+  /** Local recovery context only; never sent as server command authority. */
+  captureOriginalText?: string
   commandId: string
   action: 'command' | 'undo'
   baseRevision?: number
@@ -160,14 +163,14 @@ export function findAccountPendingSemanticOperation(accountKey: string, original
   const match = readPending(accountKey)
     .filter((item) =>
       item.action === 'command'
-      && item.command?.type === 'semantic_intake'
-      && (!originalText || item.command.value.originalText === originalText))
+      && (item.command?.type === 'semantic_intake' || item.command?.type === 'ai_capture_confirm')
+      && (!originalText || (item.command.type === 'semantic_intake' ? item.command.value.originalText : item.captureOriginalText) === originalText))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
-  if (!match || match.command?.type !== 'semantic_intake') return undefined
+  if (!match || (match.command?.type !== 'semantic_intake' && match.command?.type !== 'ai_capture_confirm')) return undefined
   return {
     commandId: match.commandId,
     status: match.status,
-    originalText: match.command.value.originalText,
+    originalText: match.command.type === 'semantic_intake' ? match.command.value.originalText : match.captureOriginalText ?? '',
     lastError: match.lastError,
   }
 }
@@ -473,7 +476,7 @@ function forCaller(result: ConnectedCommandResponse, allowProjectionPending?: bo
 export async function executeConnectedBusinessCommand(
   accountKey: string,
   command: ConnectedBusinessCommand,
-  options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean } = {},
+  options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean; captureOriginalText?: string } = {},
 ) {
   const writeLease = captureWorkspaceWriteLease(accountKey)
   const commandId = options.commandId
@@ -505,6 +508,7 @@ export async function executeConnectedBusinessCommand(
     action: 'command',
     baseRevision: base,
     command,
+    ...(command.type === 'ai_capture_confirm' ? { captureOriginalText: options.captureOriginalText } : {}),
     status: 'pending',
     createdAt: timestamp,
     updatedAt: timestamp,

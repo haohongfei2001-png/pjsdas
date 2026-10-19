@@ -1,3 +1,4 @@
+import { createAiCaptureLedger } from './aiCaptureLedger.js'
 import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { observationFromVerifiedOpportunity } from '../src/verifiedOpportunityCommand.js'
 import { bindVerifiedPostingRefresh, resolvePostingRefreshTarget } from '../src/postingRefresh.js'
@@ -94,6 +95,7 @@ export const authoritativeBusinessCommandSchema = z.object({
     z.object({ type: z.literal('planning_management'), value: planningManagementSchema }).strict(),
     z.object({ type: z.literal('discovery_profile_management'), value: discoveryProfileManagementSchema }).strict(),
     z.object({ type: z.literal('private_reminder_management'), value: privateReminderManagementSchema }).strict(),
+    z.object({ type: z.literal('ai_capture_confirm'), value: z.object({ requestId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,119}$/) }).strict() }).strict(),
     z.object({ type: z.literal('semantic_intake'), value: semanticIntakeSchema }).strict(),
     z.object({ type: z.literal('resolve_semantic_decision'), value: resolveSemanticDecisionSchema }).strict(),
     z.object({ type: z.literal('job_viewed'), value: z.object({ opportunityId: z.string().trim().min(1).max(500) }).strict() }).strict(),
@@ -167,7 +169,7 @@ function resultPayload(command: AuthoritativeBusinessCommand['command'], evaluat
       summary: evaluated.summary,
     }
   }
-  if (command.type === 'semantic_intake') {
+  if (command.type === 'semantic_intake' || command.type === 'ai_capture_confirm') {
     return {
       type: command.type,
       status: evaluated.status,
@@ -293,6 +295,7 @@ function intentObjects(command: AuthoritativeBusinessCommand['command'], snapsho
       ...(existing && existing.id !== item?.candidateOpportunityId ? [{ type: 'opportunity', id: existing.id }] : []),
     ]
   }
+  if (command.type === 'ai_capture_confirm') return [] // Resolved from server ledger at execution.
   if (command.type === 'semantic_intake') return semanticIntentObjects(command.value as SemanticIntakeObservation, snapshot)
   return decisionIntentObjects(command.value.requestId, snapshot)
 }
@@ -398,6 +401,8 @@ function lifecycle(now: string, baseRevision: number, currentRevision: number) {
 }
 
 export interface AuthoritativeCommandExecutorOptions extends TransactionalWorkspaceStoreOptions {
+  /** Test injection; production requires the explicit server activation gate. */
+  aiCaptureConfirmationEnabled?: boolean
   // Server-owned grant resolver; omission deliberately disables the new capability.
   resolveConsumerBusinessManagementGrant?: (principal: MutationPrincipal) => Promise<ConsumerBusinessManagementGrant | undefined>
   resolveBusinessManagementGrant?: (principal: MutationPrincipal) => Promise<BusinessManagementGrant | undefined>
@@ -465,6 +470,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
   async function execute(principal: MutationPrincipal, raw: unknown): Promise<AuthoritativeCommandExecution> {
     assertNoScoringInput(raw)
     const parsed = authoritativeBusinessCommandSchema.parse(raw) as AuthoritativeBusinessCommand
+    if (parsed.command.type === 'ai_capture_confirm' && principal.kind !== 'first_party_web') throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'AI capture confirmation requires the first-party owner.', false)
     const isManagement = parsed.command.type === 'business_management' || parsed.command.type === 'opportunity_management' || parsed.command.type === 'planning_management' || parsed.command.type === 'discovery_profile_management' || parsed.command.type === 'private_reminder_management'
     const admittedManagementGrant = isManagement ? await authorizeManagement(principal, undefined, parsed.command.type) : undefined
     if (parsed.command.type === 'domain' && parsed.command.value.commandId !== parsed.commandId) {
@@ -531,6 +537,20 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         }
       }
 
+      let captureObservation: SemanticIntakeObservation | undefined
+      if (parsed.command.type === 'ai_capture_confirm') {
+        if (!(options.aiCaptureConfirmationEnabled ?? (process.env.PJSDAS_AI_CAPTURE === 'enabled' && process.env.PJSDAS_AI_CAPTURE_FUNDING === 'verified-free-only-no-overage'))) throw new WorkspaceSourceError('AI_CAPTURE_NOT_ENABLED', 'AI capture confirmation is disabled.', false)
+        const capture = await createAiCaptureLedger(options).read(principal.userId, parsed.command.value.requestId)
+        if (!capture || capture.status !== 'READY' || capture.review?.status !== 'ready_for_review' || !capture.observation) throw new WorkspaceSourceError('AI_CAPTURE_NOT_READY', 'An immutable ready preview is required.', false)
+        if (Date.parse(capture.expires_at) <= Date.now()) throw new WorkspaceSourceError('AI_CAPTURE_EXPIRED', 'Preview expired; request a fresh interpretation.', false)
+        if (parsed.baseRevision !== current.revision || capture.expected_revision !== current.revision) throw new WorkspaceSourceError('AI_CAPTURE_STALE', 'Workspace changed; request and review a new preview.', false)
+        captureObservation = capture.observation as SemanticIntakeObservation
+        if (captureObservation.statementMode !== capture.review.statementMode || !['assertion', 'current_intent'].includes(captureObservation.statementMode)
+          || captureObservation.originalText !== capture.text || captureObservation.inputId !== `ai:${capture.request_id}` || captureObservation.source.kind !== 'web'
+          || captureObservation.source.sourceRecordId !== capture.request_id || captureObservation.source.timezone !== capture.timezone
+          || new Date(captureObservation.source.observedAt).getTime() !== new Date(capture.reference_time).getTime()
+          || await hashMutationPayload('candidates', captureObservation.candidates) !== await hashMutationPayload('candidates', capture.review.candidates)) throw new WorkspaceSourceError('AI_CAPTURE_LEDGER_INVALID', 'Stored preview binding is invalid.', false)
+      }
       if (parsed.baseRevision > current.revision) {
         throw new WorkspaceSourceError('INVALID_ARGUMENT', 'Command base revision is newer than the authoritative workspace.', false)
       }
@@ -545,7 +565,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         return { outcome: 'ALREADY_APPLIED', revision: current.revision, snapshot: current.snapshot,
           result: { type: parsed.command.type, status: 'ALREADY_APPLIED', summary: 'The requested fact is already current.' } }
       }
-      const intent = intentObjects(parsed.command, current.snapshot, proposal, parsed.commandId)
+      const intent = captureObservation ? semanticIntentObjects(captureObservation, current.snapshot) : intentObjects(parsed.command, current.snapshot, proposal, parsed.commandId)
       const intentFields = parsed.command.type === 'domain'
         ? intentFieldScopes(parsed.command.value as UserDomainCommand, intent)
         : intent.map(ref => ({ ...ref, field: parsed.command.type === 'job_viewed' ? 'discoveryRead' : '*' }))
@@ -623,8 +643,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         evaluated = applyMcpMixedCommand(current.snapshot, proposal!, now)
       } else if (parsed.command.type === 'mcp_discard') {
         evaluated = applyMcpDiscardCommand(current.snapshot, proposal!, parsed.command.value.rejectionSelections, now)
-      } else if (parsed.command.type === 'semantic_intake') {
-        evaluated = applySemanticIntake(current.snapshot, parsed.command.value as SemanticIntakeObservation, {
+      } else if (parsed.command.type === 'semantic_intake' || parsed.command.type === 'ai_capture_confirm') {
+        evaluated = applySemanticIntake(current.snapshot, captureObservation ?? parsed.command.value as SemanticIntakeObservation, {
           authorized: true,
           workspaceRevision: `txn:${current.revision}`,
           now,
@@ -637,6 +657,8 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
           now,
         )
       }
+
+      if (parsed.command.type === 'ai_capture_confirm' && (evaluated.decisionRequests?.length || evaluated.coverageDebtCount || !['APPLIED', 'ALREADY_APPLIED'].includes(evaluated.status))) throw new WorkspaceSourceError('AI_CAPTURE_REVIEW_REQUIRED', 'The whole reviewed batch could not be applied; no partial changes were saved.', false)
 
       if (evaluated.status === 'NEEDS_CONFIRMATION') {
         return {
@@ -653,7 +675,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         }
       }
 
-      if (!evaluated.changed && parsed.command.type !== 'domain') {
+      if (!evaluated.changed && parsed.command.type !== 'domain' && parsed.command.type !== 'ai_capture_confirm') {
         if (isManagement) await authorizeManagement(principal, admittedManagementGrant, parsed.command.type)
         return {
           outcome: evaluated.status === 'ALREADY_APPLIED' || evaluated.status === 'ALREADY_RESOLVED'
@@ -683,6 +705,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       const result = resultPayload(parsed.command, evaluated)
       const receiptContext = {
         contractVersion: 5,
+        ...(parsed.command.type === 'ai_capture_confirm' ? { aiCapture: { requestId: parsed.command.value.requestId, referenceTime: captureObservation!.source.observedAt, expectedRevision: parsed.baseRevision } } : {}),
         projectionDelta: diffWorkspaceDelta(current.snapshot, evaluated.snapshot, current.revision),
         schemaVersion: evaluated.snapshot.version,
         commandType: parsed.command.type,
@@ -700,6 +723,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       // Carry the freshly read identity/revision into the transaction-locked RPC.
       const managementGrant = isManagement ? await authorizeManagement(principal, admittedManagementGrant, parsed.command.type) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        ...(parsed.command.type === 'ai_capture_confirm' ? { aiCaptureAuthorization: { requestId: parsed.command.value.requestId, observation: captureObservation! } } : {}),
         managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 7 ? { consentVersion: 7 as const } : managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,
@@ -716,12 +740,15 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
           baseRevision: parsed.baseRevision,
         },
         compensation,
-        effectiveTime: parsed.command.type === 'semantic_intake'
+        effectiveTime: captureObservation ? captureObservation.source.observedAt : parsed.command.type === 'semantic_intake'
           ? parsed.command.value.source.assertedAt ?? parsed.command.value.source.observedAt
           : undefined,
         receiptContext,
       })
-      if (committed.outcome === 'CONFLICT') continue
+      if (committed.outcome === 'CONFLICT') {
+        if (parsed.command.type === 'ai_capture_confirm') throw new WorkspaceSourceError('AI_CAPTURE_STALE', 'Workspace changed at confirmation; no rebase is allowed.', false)
+        continue
+      }
       if (committed.outcome !== 'COMMITTED' && managementGrant) await authorizeManagement(principal, admittedManagementGrant, managementGrant.consentVersion === 6 ? 'private_reminder_management' : managementGrant.consentVersion === 5 ? 'discovery_profile_management' : managementGrant.consentVersion === 4 ? 'planning_management' : managementGrant.consentVersion === 3 ? 'opportunity_management' : 'business_management')
       return {
         outcome: committed.outcome,

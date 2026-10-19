@@ -79,7 +79,7 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeCommandExecutorOptions, 'resolveBusinessManagementGrant'> = {}, hooks: { beforeCommit?: (state: { current: PJSDASSnapshot; revision: number }) => Response | undefined } = {}) {
+function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeCommandExecutorOptions, 'resolveBusinessManagementGrant' | 'aiCaptureConfirmationEnabled'> = {}, hooks: { beforeCommit?: (state: { current: PJSDASSnapshot; revision: number }) => Response | undefined } = {}, captureRows: any[] = []) {
   let current = upgradeSnapshotToLatest(initial)
   let revision = 1
   const ledger: Array<{
@@ -97,6 +97,7 @@ function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeComm
     if (url.pathname === '/rest/v1/pjsdas_workspaces') {
       return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision, schema_version: current.version }])
     }
+    if (url.pathname === '/rest/v1/pjsdas_ai_capture_previews') return json(captureRows.filter(row => row.user_id === url.searchParams.get('user_id')?.slice(3) && row.request_id === url.searchParams.get('request_id')?.slice(3)))
     if (url.pathname === '/rest/v1/pjsdas_command_ledger') {
       const commandId = url.searchParams.get('command_id')?.replace(/^eq\./, '')
       const after = Number(url.searchParams.get('resulting_revision')?.replace(/^gt\./, '') ?? '-1')
@@ -105,7 +106,7 @@ function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeComm
         && (Number.isFinite(after) ? item.resulting_revision > after : true))
       return json(rows)
     }
-    if (url.pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2' || url.pathname === '/rest/v1/rpc/pjsdas_commit_management_workspace_v1') {
+    if (url.pathname === '/rest/v1/rpc/pjsdas_commit_ai_capture' || url.pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2' || url.pathname === '/rest/v1/rpc/pjsdas_commit_management_workspace_v1') {
       const intercepted = hooks.beforeCommit?.({ current, revision })
       if (intercepted) return intercepted
       const body = JSON.parse(String(init?.body))
@@ -158,6 +159,7 @@ function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeComm
     executor: createAuthoritativeCommandExecutor({
       supabaseUrl: 'https://example.supabase.co',
       serviceRoleKey: 'service-role',
+      aiCaptureConfirmationEnabled: true,
       fetchImpl,
       ...managementOptions,
     }),
@@ -872,5 +874,80 @@ describe('B3 first-party viewed metadata', () => {
     await expect(h.executor.execute(h.principal, { commandId: 'stale-scope-save', baseRevision: 1,
       command: { type: 'discovery_profile', expectedFingerprint: 'a'.repeat(64), value: { targetRoleQueries: ['产品经理'], titleEquals: ['产品经理'], preferredLocations: [], mustHave: [], mustNotHave: [] } } })).rejects.toThrow('Search scope changed')
     expect(h.ledger).toHaveLength(0)
+  })
+})
+
+
+describe('immutable AI preview authoritative confirmation', () => {
+  function ready() {
+    const text = 'Send a visitor access request'
+    const observation = { contractVersion: 1, inputId: 'ai:capture-test', statementMode: 'current_intent', originalText: text,
+      source: { kind: 'web', sourceId: 'todayaction-web', sourceRecordId: 'capture-test', sourceVersion: '1', observedAt: '2026-10-19T00:00:00.000Z', timezone: 'UTC' },
+      candidates: [{ id: 'ai-capture:1', kind: 'manual_action', title: text, objectConfidence: 'high', eventConfidence: 'high', temporalConfidence: 'high', evidenceRefs: ['capture-test#text=0:29'], sourceVersionRefs: ['1'] }] }
+    return { user_id: 'user-a', request_id: 'capture-test', payload_hash: 'a'.repeat(64), text, timezone: 'UTC', reference_time: observation.source.observedAt,
+      expected_revision: 1, expires_at: new Date(Date.now() + 900_000).toISOString(), status: 'READY', review: { status: 'ready_for_review', statementMode: 'current_intent', candidates: observation.candidates, issues: [] }, observation }
+  }
+  const command = { commandId: 'cmd-ai-capture-test', baseRevision: 1, command: { type: 'ai_capture_confirm', value: { requestId: 'capture-test' } } }
+  it('commits stored candidates, recovers the same receipt, and uses existing semantic undo', async () => {
+    const h = harness(snapshot(), {}, {}, [ready()])
+    const result = await h.executor.execute(h.principal, command)
+    expect(result).toMatchObject({ outcome: 'COMMITTED', result: { type: 'ai_capture_confirm', status: 'APPLIED' }, receipt: { undoAvailable: true } })
+    expect(h.state().current.data.actions.filter(item => item.title === 'Send a visitor access request')).toHaveLength(1)
+    expect(await h.executor.execute(h.principal, command)).toMatchObject({ outcome: 'ALREADY_APPLIED', receipt: result.receipt })
+    const undone = await h.executor.undo(h.principal, { commandId: 'undo-ai-capture-test', targetCommandId: command.commandId })
+    expect(undone.outcome).toBe('COMMITTED')
+    expect(h.state().current.data.actions.some(item => item.title === 'Send a visitor access request')).toBe(false)
+  })
+  it('records a durable confirm receipt even when identical semantic facts are already applied', async () => {
+    const row = ready(); const h = harness(snapshot(), {}, {}, [row])
+    await h.executor.execute(h.principal, { commandId: 'prior-semantic-command', baseRevision: 1, command: { type: 'semantic_intake', value: row.observation } })
+    row.expected_revision = 2
+    const result = await h.executor.execute(h.principal, { ...command, baseRevision: 2 })
+    expect(result).toMatchObject({ outcome: 'COMMITTED', result: { status: 'ALREADY_APPLIED' }, receipt: { commandType: 'ai_capture_confirm' } })
+    expect(h.ledger).toHaveLength(2)
+    expect(await h.executor.execute(h.principal, { ...command, baseRevision: 2 })).toMatchObject({ outcome: 'ALREADY_APPLIED', receipt: result.receipt })
+  })
+  it.each(['UNKNOWN', 'DISPATCHED', 'BLOCKED', 'COMMITTED'])('never commits an unready %s receipt', async status => {
+    const h = harness(snapshot(), {}, {}, [{ ...ready(), status }])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_NOT_READY' })
+    expect(h.ledger).toHaveLength(0)
+  })
+  it('rejects expired reviews and a disabled global confirmation gate', async () => {
+    const h = harness(snapshot(), {}, {}, [{ ...ready(), expires_at: '2000-01-01T00:00:00Z' }])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_EXPIRED' })
+    const disabled = harness(snapshot(), { aiCaptureConfirmationEnabled: false }, {}, [ready()])
+    await expect(disabled.executor.execute(disabled.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_NOT_ENABLED' })
+  })
+  it('rejects a stored statement mode changed independently of its review', async () => {
+    const row = ready(); row.observation.statementMode = 'question'
+    const h = harness(snapshot(), {}, {}, [row])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_LEDGER_INVALID' })
+  })
+  it('rejects a different account and injected candidates', async () => {
+    const h = harness(snapshot(), {}, {}, [{ ...ready(), user_id: 'user-b' }])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_NOT_READY' })
+    await expect(h.executor.execute(h.principal, { ...command, command: { ...command.command, value: { requestId: 'capture-test', candidates: [] } } })).rejects.toThrow()
+    await expect(h.executor.execute({ ...h.principal, kind: 'delegated_mcp' }, command)).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' })
+  })
+  it('never rebases an old preview after an unrelated workspace write', async () => {
+    const h = harness(snapshot(), {}, {}, [ready()])
+    await h.executor.execute(h.principal, { ...statusCommand('unrelated-write', 'action-2', 'done'), baseRevision: 1 })
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_STALE' })
+    expect(h.ledger).toHaveLength(1)
+  })
+  it('does not retry or rebase when the atomic commit loses its CAS', async () => {
+    let calls = 0
+    const h = harness(snapshot(), {}, { beforeCommit: ({ current }) => { calls++; return json([{ outcome: 'CONFLICT', workspace_id: 'ws-1', revision: 2, snapshot: current, receipt: {} }]) } }, [ready()])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_STALE' })
+    expect(calls).toBe(1); expect(h.ledger).toHaveLength(0)
+  })
+  it('rejects mismatched stored observations and rolls back batches needing a decision', async () => {
+    const tampered = ready(); tampered.observation.originalText = 'changed'
+    let h = harness(snapshot(), {}, {}, [tampered])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_LEDGER_INVALID' })
+    const row = ready(); row.observation.candidates.push({ ...row.observation.candidates[0], id: 'ai-capture:2', objectConfidence: 'low' })
+    h = harness(snapshot(), {}, {}, [row])
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_REVIEW_REQUIRED' })
+    expect(h.ledger).toHaveLength(0); expect(h.state().current.data.actions).toHaveLength(2)
   })
 })
