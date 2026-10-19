@@ -1,9 +1,10 @@
 import { createCapturePreviewPresentation } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
 import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
+import { capturePopoverLayout } from './capture/popoverLayout.js'
 import { manualJobDraft, readManualJobDraft, manualJobCandidate } from './capture/manualJob.js'
 import type { UserJobFacts } from './opportunityCreation.js'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 const RecordCorrectionReview = lazy(() => import('./RecordCorrectionReview.js'))
 import {
   previewWebSemanticCapture,
@@ -35,7 +36,8 @@ import './capture/capture.css'
 
 interface TellPjsdasCaptureProps {
   open: boolean
-  onClose: () => void
+  onClose: (restoreFocus?: boolean) => void
+  anchorRef?: RefObject<HTMLButtonElement | null>
   onChanged: () => Promise<void>
   onOpenDecisions: () => void
   contextLabel?: string
@@ -125,6 +127,7 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
 export default function TellPjsdasCapture({
   open,
   onClose,
+  anchorRef,
   onChanged,
   onOpenDecisions,
   contextLabel,
@@ -134,6 +137,7 @@ export default function TellPjsdasCapture({
   const cloud = useCloud()
   const zh = lang === 'zh'
   const [manualMode, setManualMode] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const naturalDraftRef = useRef('')
   const manualDraftRef = useRef<UserJobFacts>({ company: '', role: '' })
   const [correctionMode, setCorrectionMode] = useState(false)
@@ -164,6 +168,9 @@ export default function TellPjsdasCapture({
   const correctionBackRef = useRef<HTMLButtonElement | null>(null)
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  const restoreFocusRef = useRef(true)
+  const closedDraftRef = useRef<{ accountKey: string | null; text: string } | undefined>(undefined)
+  const [popoverStyle, setPopoverStyle] = useState<ReturnType<typeof capturePopoverLayout>>()
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
   const textRef = useRef('')
 
@@ -190,16 +197,74 @@ export default function TellPjsdasCapture({
 
   useEffect(() => {
     if (!open) {
+      if (initializedUserIdRef.current === null && !cloud.session?.user.id) closedDraftRef.current = { accountKey: null, text: textRef.current }
       initializedUserIdRef.current = undefined
+      setMoreOpen(false)
       return
     }
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    restoreFocusRef.current = true
+    openerRef.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : anchorRef?.current ?? null
     const id = window.setTimeout(() => textareaRef.current?.focus(), 0)
     return () => {
       window.clearTimeout(id)
-      openerRef.current?.focus()
+      if (restoreFocusRef.current) openerRef.current?.focus()
     }
   }, [open])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const viewport = window.visualViewport
+      setPopoverStyle(capturePopoverLayout(anchorRef?.current?.getBoundingClientRect(), {
+        left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0,
+        width: viewport?.width ?? window.innerWidth, height: viewport?.height ?? window.innerHeight,
+      }))
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    if (anchorRef?.current) observer.observe(anchorRef.current)
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    window.visualViewport?.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('scroll', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      window.visualViewport?.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('scroll', place)
+    }
+  }, [open, anchorRef])
+
+  useLayoutEffect(() => {
+    const input = textareaRef.current
+    if (!open || !input) return
+    const fit = () => {
+      input.style.height = '0px'
+      input.style.height = `${Math.min(160, Math.max(44, input.scrollHeight))}px`
+    }
+    fit()
+    const observer = new MutationObserver(fit)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'lang'] })
+    return () => observer.disconnect()
+  }, [open, text, manualMode, correctionMode, popoverStyle?.width])
+
+  function dismissCapture(restoreFocus = true) {
+    closedDraftRef.current = initializedUserIdRef.current === null && !cloud.session?.user.id ? { accountKey: null, text: textRef.current } : undefined
+    restoreFocusRef.current = restoreFocus
+    onClose(restoreFocus)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node) || sheetRef.current?.contains(target) || anchorRef?.current?.contains(target)) return
+      dismissCapture(false)
+    }
+    document.addEventListener('pointerdown', outside)
+    return () => document.removeEventListener('pointerdown', outside)
+  }, [open, cloud.session?.user.id, onClose, anchorRef])
 
   useEffect(() => {
     if (!open) return
@@ -225,9 +290,10 @@ export default function TellPjsdasCapture({
       }
       return
     }
+    const retainedDraft = closedDraftRef.current?.accountKey === (userId ?? null) ? closedDraftRef.current.text : ''
     const initial = userId && connectedWorkspaceAuthorityEnabled()
       ? readAccountDraft(userId, 'tell-pjsdas')
-      : ''
+      : retainedDraft
     const resumable = userId && connectedWorkspaceAuthorityEnabled() && initial
       ? findAccountPendingSemanticOperation(userId, initial)
       : undefined
@@ -315,9 +381,10 @@ export default function TellPjsdasCapture({
   useEffect(() => {
     if (!open) return
     const key = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Node) || !sheetRef.current?.contains(event.target)) return
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        dismissCapture()
         return
       }
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
@@ -325,20 +392,6 @@ export default function TellPjsdasCapture({
         event.preventDefault()
         void submit()
         return
-      }
-      if (event.key !== 'Tab' || !sheetRef.current) return
-      const focusable = [...sheetRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), summary, [href], [tabindex]:not([tabindex="-1"])',
-      )].filter(element => element.getClientRects().length > 0)
-      if (!focusable.length) return
-      const first = focusable[0]!
-      const last = focusable[focusable.length - 1]!
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
       }
     }
     window.addEventListener('keydown', key)
@@ -353,6 +406,7 @@ export default function TellPjsdasCapture({
     }
     const queueOffline = connected && typeof navigator !== 'undefined' && !navigator.onLine
     if (queueOffline && recoveryLocked) return
+    const focusedControl = document.activeElement instanceof HTMLElement && sheetRef.current?.contains(document.activeElement) ? document.activeElement : undefined
 
     const commandId = connected
       ? stableCommandId ?? createConnectedCommandId('web-semantic')
@@ -407,6 +461,7 @@ export default function TellPjsdasCapture({
         ].filter(Boolean)
         setMessage(parts.join(' '))
         if (result.status === 'APPLIED') {
+          closedDraftRef.current = undefined
           if (manualMode) manualDraftRef.current = { company: '', role: '' }
           textRef.current = ''
           setText('')
@@ -431,6 +486,13 @@ export default function TellPjsdasCapture({
     } finally {
       submissionFlightRef.current = false
       setBusy(false)
+      // A confirmed natural-language save removes its button. Keep keyboard
+      // focus in the still-open composer, without stealing an outside click.
+      if (focusedControl) window.requestAnimationFrame(() => {
+        if (!sheetRef.current?.isConnected || document.activeElement !== document.body) return
+        if (focusedControl.isConnected && !focusedControl.matches(':disabled')) focusedControl.focus()
+        else textareaRef.current?.focus()
+      })
     }
   }
 
@@ -534,25 +596,26 @@ export default function TellPjsdasCapture({
 
 
   const modeNote = preview ? modeExplanation(preview, zh) : undefined
+  const moreActions = <button type="button" className="cgr-capture-more" aria-label={zh ? '更多操作' : 'More options'} aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>···</button>
+  const secondaryActions = moreOpen ? <div className="cgr-capture-secondary">
+    {!manualMode && !correctionMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
+    {!correctionMode ? <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button> : null}
+  </div> : null
+
 
   return (
-    <div className="cgr-capture-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="cgr-capture-popover" style={popoverStyle}>
       <section
+        id="tell-pjsdas-composer"
         ref={sheetRef}
         className="cgr-capture-sheet"
         role="dialog"
-        aria-modal="true"
-        aria-labelledby="tell-pjsdas-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-modal="false"
+        aria-label={manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}
       >
-        <header className="cgr-capture-header">
-          <div>
-            <h2 id="tell-pjsdas-title">{manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}</h2>
-            {contextLabel ? <span className="cgr-capture-context">{zh ? '当前上下文：' : 'Context: '}{contextLabel}</span> : null}
-          </div>
-          <button className="cgr-icon-button" type="button" onClick={onClose} aria-label={zh ? '关闭' : 'Close'}>×</button>
-        </header>
-
+        {contextLabel ? <span className="cgr-capture-context">{contextLabel}</span> : null}
+        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}<button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button></div> : null}
+        {correctionMode ? secondaryActions : null}
         {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
         {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
@@ -562,7 +625,7 @@ export default function TellPjsdasCapture({
           ref={textareaRef}
           className="cgr-capture-input"
           aria-label={zh ? '要告诉 TodayAction 的内容' : 'What to tell TodayAction'}
-          rows={4}
+          rows={1}
           value={text}
           disabled={busy || recoveryLocked}
           onChange={(event) => editText(event.target.value)}
@@ -587,6 +650,8 @@ export default function TellPjsdasCapture({
           <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
           </button>
+          {moreActions}
+          <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </div>
         </div>
         {fileReading || fileNotice ? <p className="cgr-capture-file-note" role="status">{fileReading ? (zh ? '正在本地读取…' : 'Reading locally…') : fileNotice}</p> : null}
@@ -629,21 +694,16 @@ export default function TellPjsdasCapture({
         ) : null}
 
         </>}
-        <div className="cgr-capture-footer"
+        <div className="cgr-capture-actions"
           onPointerEnter={() => previewPresentation.current.hold('pointer', true)}
           onPointerLeave={() => previewPresentation.current.hold('pointer', false)}
           onFocusCapture={() => previewPresentation.current.hold('focus', true)}
           onBlurCapture={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) previewPresentation.current.hold('focus', false)
           }}>
-          <details className="cgr-capture-more">
-          <summary aria-label={zh ? '更多操作' : 'More options'}>···</summary>
-          <div className="cgr-capture-secondary">
-          {!manualMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
-          <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button>
-          {manualMode ? <button className="text-button" type="button" disabled={busy} onClick={onClose}>{zh ? '取消' : 'Cancel'}</button> : null}
-          </div>
-          </details>
+        {secondaryActions}
+        {manualMode || text.trim() && preview || busy || recoveryLocked ? <div className="cgr-capture-footer">
+
           {manualMode || text.trim() && preview || busy || recoveryLocked ? <button className="cgr-primary-button" type="button" disabled={busy || !text.trim() || manualMode && (!manualJob.company.trim() || !manualJob.role.trim())} onClick={() => { void submit() }}>
             {busy ? (zh ? '正在权威保存…' : 'Saving authoritatively…')
               : saveState === 'unknown' ? (zh ? '确认保存状态' : 'Confirm save status')
@@ -652,6 +712,7 @@ export default function TellPjsdasCapture({
                 : saveState === 'reauth' ? (zh ? '重新确认' : 'Retry confirmation')
                   : manualMode ? (zh ? '保存岗位' : 'Save job') : (zh ? '确认并保存' : 'Confirm and save')}
           </button> : null}
+        </div> : null}
         </div>
 
         {message ? (

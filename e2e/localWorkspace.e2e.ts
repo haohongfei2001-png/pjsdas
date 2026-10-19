@@ -114,7 +114,10 @@ test('primary navigation, language, recovery, and global Tell TodayAction stay c
   await page.getByRole('button', { name: 'Close' }).click()
 
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: 'Tell TodayAction', exact: true })).toBeVisible()
+  const capture = page.getByRole('dialog', { name: 'Tell TodayAction', exact: true })
+  await expect(capture).toBeVisible()
+  await expect(capture).toHaveAttribute('aria-modal', 'false')
+  await expect(page).toHaveURL(/\/settings$/)
   await expect(page.locator('.cgr-capture-input')).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 

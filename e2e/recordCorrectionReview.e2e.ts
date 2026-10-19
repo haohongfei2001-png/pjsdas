@@ -14,7 +14,8 @@ function packet(server: Awaited<ReturnType<typeof setupInstantServer>>) {
   }
 }
 async function enterReview(page: Page) {
-  if (await page.locator('.cgr-capture-more').getAttribute('open') === null) await page.locator('.cgr-capture-more summary').click()
+  const more = page.getByRole('button', { name: '更多操作', exact: true })
+  if (await more.getAttribute('aria-expanded') !== 'true') await more.click()
   await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
 }
 async function open(page: Page) {

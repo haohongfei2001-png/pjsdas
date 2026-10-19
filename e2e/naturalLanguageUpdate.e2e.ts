@@ -59,7 +59,7 @@ async function seedOpportunities(page: Page, opportunities: ReturnType<typeof so
 
 async function openCapture(page: Page) {
   await page.locator('.tsui-tell-button').click()
-  await expect(page.getByRole('heading', { name: '告诉 TodayAction' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '告诉 TodayAction' })).toBeVisible()
 }
 
 async function readMutationState(page: Page) {
