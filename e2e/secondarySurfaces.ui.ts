@@ -908,7 +908,7 @@ test('authorized region displacement still rejects styling, text and extra movem
     const sheet = await page.addStyleTag({ content: alteration === 'padding' ? '#protected { padding:1px }'
       : alteration === 'color' ? '#protected { color:red }'
       : alteration === 'pseudo' ? '#protected::before { content:"changed" }'
-      : alteration === 'movement' ? '#protected { position:relative; top:.5px }' : '' })
+      : alteration === 'movement' ? '#protected { position:relative; top:.5px }' : '/* text-only mutation */' })
     if (alteration === 'text') await page.locator('#protected span').evaluate(element => { element.textContent = 'Different text' })
     const changed = await relocatedRegionContract(page, '#protected')
     expect(() => assertRelocatedRegion(changed, baseline), alteration).toThrow()
