@@ -510,6 +510,8 @@ test('a held completion cannot retake focus or overwrite the next composer sessi
     expect(await page.evaluate(() => localStorage.getItem('pjsdas-cgr01-draft:account-a:tell-pjsdas'))).toBe('下次草稿：核对差旅材料')
     const more = dialog.getByRole('button', { name: '更多操作', exact: true })
     await page.keyboard.press('Tab')
+    await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+    await page.keyboard.press('Tab')
     await expect(more).toBeFocused()
     await finishCaptureReadback(page)
     await expect(more).toBeFocused()
