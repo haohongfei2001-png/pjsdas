@@ -219,6 +219,10 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
     await manualLoad.click()
     await expect.poll(() => page.locator('.tsui-schedule-row').count()).toBeGreaterThan(beforeManualLoad)
     await expect(page.locator('.capture-following')).toHaveCount(0)
+    // Clicking outside intentionally closes the editor without discarding it.
+    await expect(capture).toHaveCount(0)
+    await page.locator('.tsui-tell-button').click()
+    await expect(draft).toHaveValue('保留这份未发送的日程草稿')
   }
   await capture.getByRole('button', { name: /更多操作|More options/ }).click()
   await capture.getByRole('button', { name: /关闭|Close/ }).click()
