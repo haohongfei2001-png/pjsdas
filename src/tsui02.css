@@ -274,3 +274,17 @@
 @media (max-width: 700px) { .cgr-app-shell .tsui-topbar { padding-left: 14px; padding-right: 14px; } }
 
 .tsui-task-column { min-width: 0; }
+
+/* The primary navigation already names these pages. Keep semantic h1 names
+   available to assistive technology without repeating them in the content. */
+.tsui-today .tsui-page-heading h1,
+.tsui-schedule-page .tsui-page-heading,
+.cgr-app-shell .tsui-library-heading h1 {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.tsui-today .tsui-page-heading { margin: 0 0 16px; align-items: center; }
+.tsui-today .tsui-page-heading > div { gap: 0; }
+.tsui-today .tsui-page-heading p { margin: 0; }
+.cgr-app-shell .tsui-library-heading { margin: 0 0 12px; }

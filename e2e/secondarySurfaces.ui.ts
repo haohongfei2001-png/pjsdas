@@ -116,7 +116,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     // The owner explicitly moved capture out of the header on 2026-10-20.
     // Keep full before/after images above, but protect the unchanged task,
     // node and schedule content with exact native region pixels, not a mask.
-    for (const [region, selector] of Object.entries({ tasks: '.tsui-task-panel', nodes: '.tsui-node-panel', schedule: '.tsui-schedule-page' })) {
+    for (const [region, selector] of Object.entries({ tasks: '.tsui-task-panel', nodes: '.tsui-node-panel', scheduleToolbar: '.tsui-schedule-toolbar', schedule: '.tsui-schedule-panel' })) {
       if (!(await page.locator(selector).isVisible())) continue
       const regionName = `${name}.${region}.png`
       const regionBytes = await captureDocumentRegion(page, selector, `${evidence}/${regionName}`)
@@ -198,7 +198,7 @@ async function captureDocumentRegion(page: Page, selector: string, path: string)
   return page.screenshot({ path, fullPage: true, clip, animations: 'disabled', caret: 'hide' })
 }
 
-// B3 permits the new scope block, ninth query and retired Inbox link only.
+// Approved changes: scope block, ninth query, retired Inbox link and duplicate title removal.
 // Keep the unmodified full-page evidence, then compare real DOM regions without
 // masking, repainting, moving elements, changing the baseline, or pixel tolerance.
 async function protectLibrary(page: Page, width: number, scale: number) {
@@ -239,7 +239,7 @@ async function protectLibrary(page: Page, width: number, scale: number) {
     const scope = document.querySelector('.ta-search-scope')
     const scopeExtent = scope ? scope.getBoundingClientRect().height + parseFloat(getComputedStyle(scope).marginBottom) : 0
     return { heading: rect('.tsui-library-heading'), toolbar: rect('.tsui-library-toolbar'), search: rect('.tsui-library-toolbar input'), panel: rect('.tsui-library-panel'),
-      total: rect('.tsui-library-total'), scopeExtent, oldFilters, searchStyle: style(document.querySelector('.tsui-library-toolbar input')!),
+      total: rect('.tsui-library-total'), headingMargin: parseFloat(getComputedStyle(document.querySelector('.tsui-library-heading')!).marginBottom), scopeExtent, oldFilters, searchStyle: style(document.querySelector('.tsui-library-toolbar input')!),
       filterStyle: style(filterBox), toolbarStyle: style(toolbar),
       oldButtonBoxes: labels.map(label => rect(buttons.find(button => button.textContent === label)!)),
       flow: { toolbar: rect(toolbar), filters: rect(filterBox), search: rect('.tsui-library-toolbar input'), panel: rect('.tsui-library-panel'),
@@ -257,7 +257,10 @@ async function protectLibrary(page: Page, width: number, scale: number) {
     searchTopGap: referenceFlow.search.y - referenceFlow.filters.y - referenceFlow.filters.height,
     toolbarBottomGap: referenceFlow.toolbar.y + referenceFlow.toolbar.height - referenceFlow.search.y - referenceFlow.search.height })
   if (phase === 'after') {
-    expect(geometry.heading).toEqual(before.heading)
+    const headingDelta = geometry.heading.height + geometry.headingMargin - before.heading.height - before.headingMargin
+    expect(geometry.heading.x).toBe(before.heading.x)
+    expect(geometry.heading.width).toBe(before.heading.width)
+    expect(geometry.heading.height).toBeLessThan(before.heading.height)
     assertOriginalLibraryFilters(geometry.oldFilters, before.oldFilters)
     expect(geometry.searchStyle).toEqual(before.searchStyle)
     expect(geometry.filterStyle).toEqual(before.filterStyle)
@@ -265,9 +268,9 @@ async function protectLibrary(page: Page, width: number, scale: number) {
     for (let index = 0; index < originalJobFilters.length; index++) {
       if (!geometry.flow.stacked) expect(geometry.oldButtonBoxes[index].width, 'original desktop filter width').toBe(before.oldButtonBoxes[index].width)
     }
-    expect(geometry.toolbar.y - before.toolbar.y, 'only the scope block displaces the toolbar').toBe(geometry.scopeExtent)
-    expect(geometry.panel.y - before.panel.y, 'only scope height and query wrapping displace rows')
-      .toBe(geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height)
+    expect(geometry.toolbar.y - before.toolbar.y, 'scope and approved heading reduction displace the toolbar').toBe(geometry.scopeExtent + headingDelta)
+    expect(geometry.panel.y - before.panel.y, 'scope, heading reduction and query wrapping displace rows')
+      .toBe(geometry.scopeExtent + geometry.toolbar.height - before.toolbar.height + headingDelta)
     expect(geometry.total.y - geometry.panel.y - geometry.panel.height).toBe(before.total.y - before.panel.y - before.panel.height)
     for (const region of ['search', 'panel', 'total'] as const) {
       expect({ ...geometry[region], y: 0 }).toEqual({ ...before[region], y: 0 })
@@ -292,7 +295,7 @@ async function protectLibrary(page: Page, width: number, scale: number) {
       await writeFile(`${evidence}/${name}.repeat.json`, JSON.stringify({ hashes }, null, 2))
       await saveRenderContract(page, `${name}.dom`, selector)
     }
-    if (phase === 'after') {
+    if (phase === 'after' && label !== 'HEADING') {
       const baseline = await readFile(`secondary-ui-before/${name}`)
       expect.soft(digest(bytes), `${name}: unchanged original Library region`).toBe(digest(baseline))
     }

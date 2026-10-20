@@ -187,3 +187,33 @@ test('Settings no longer exposes a second time planner and visiting it preserves
   await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)
   expect(await planning(page)).toEqual(before)
 })
+
+
+test('primary navigation names pages without duplicate visual content headings', async ({ page }, info) => {
+  await localStart(page)
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    for (const [title, selector] of [['今天', '.tsui-today h1'], ['岗位库', '.tsui-library-heading h1'], ['日程', '.tsui-schedule-page h1']] as const) {
+      await page.locator('.tsui-primary-nav').getByRole('button', { name: title, exact: true }).click()
+      await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toHaveCount(1)
+      const heading = page.locator(selector)
+      const hidden = await heading.evaluate(element => {
+        const hiddenElement = element.closest('.tsui-schedule-page .tsui-page-heading') ?? element
+        const css = getComputedStyle(hiddenElement)
+        return { position: css.position, width: css.width, height: css.height, clipPath: css.clipPath }
+      })
+      expect(hidden).toEqual({ position: 'absolute', width: '1px', height: '1px', clipPath: 'inset(50%)' })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      await info.attach(`single-page-title-${title}-${width}`, { body: await page.screenshot(), contentType: 'image/png' })
+    }
+  }
+})
+
+test('opening capture from body restores focus to its entry on Escape', async ({ page }) => {
+  await localStart(page)
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.tsui-capture-region .tsui-tell-button')).toBeFocused()
+})

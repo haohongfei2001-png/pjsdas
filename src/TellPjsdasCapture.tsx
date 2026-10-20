@@ -174,6 +174,7 @@ export default function TellPjsdasCapture({
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const restoreFocusRef = useRef(true)
+  const portalFocusRef = useRef({ open, container })
   const closedDraftRef = useRef<{ accountKey: string | null; text: string } | undefined>(undefined)
   const [popoverStyle, setPopoverStyle] = useState<ReturnType<typeof capturePopoverLayout>>()
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
@@ -269,7 +270,10 @@ export default function TellPjsdasCapture({
   }, [open, anchorRef, inline])
 
   useLayoutEffect(() => {
-    if (open && restoreFocusRef.current && captureFocusIsVacant(document)) textareaRef.current?.focus({ preventScroll: true })
+    const previous = portalFocusRef.current
+    portalFocusRef.current = { open, container }
+    // Initial focus belongs to the open effect, which first records the opener.
+    if (open && previous.open && container !== previous.container && restoreFocusRef.current && captureFocusIsVacant(document)) textareaRef.current?.focus({ preventScroll: true })
   }, [open, container])
 
   useLayoutEffect(() => {
