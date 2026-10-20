@@ -169,7 +169,10 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   const capture = page.getByRole('dialog', { name: /告诉 TodayAction|Tell TodayAction/ })
   await expect(capture).toBeVisible()
   await expect(capture).not.toContainText('⌘ Enter')
-  await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', fullPage: true, animations: 'disabled' })
+  // The inline entry can follow the complete long list. Capture the actual
+  // composer viewport, not a >32767px bitmap rejected by Firefox/WebKit.
+  await expect(capture).toBeInViewport()
+  await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', animations: 'disabled' })
   await visual(page, 'CAPTURE_MOBILE')
   await capture.getByRole('button', { name: /更多操作|More options/ }).click()
   await capture.getByRole('button', { name: /关闭|Close/ }).click()
