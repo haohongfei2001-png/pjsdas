@@ -152,7 +152,7 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
 
     // The first device records an offline command. A separate device commits while it is offline.
     await firstContext.setOffline(true)
-    await first.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
+    await first.locator('.tsui-capture-region').getByRole('button', { name: /告诉 TodayAction/ }).click()
     await first.locator('.cgr-capture-input').fill('事项：离线整理材料')
     await first.getByRole('button', { name: '确认并保存' }).click()
     await expect(first.getByText('待同步')).toBeVisible()
@@ -160,7 +160,7 @@ test('dense owner day survives Gmail refresh, a cross-device update and offline 
     expect(queued).toMatchObject([{ status: 'pending', baseRevision: 1005 }])
     expect(server.commands.filter(item => item.client === 'first')).toHaveLength(0)
 
-    await second.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
+    await second.locator('.tsui-capture-region').getByRole('button', { name: /告诉 TodayAction/ }).click()
     await second.locator('.cgr-capture-input').fill('事项：另一设备整理岗位')
     await second.getByRole('button', { name: '确认并保存' }).click()
     await expect(second.getByText(/已记录：另一设备整理岗位/)).toBeVisible()

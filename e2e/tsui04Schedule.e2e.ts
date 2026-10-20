@@ -169,8 +169,61 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   const capture = page.getByRole('dialog', { name: /告诉 TodayAction|Tell TodayAction/ })
   await expect(capture).toBeVisible()
   await expect(capture).not.toContainText('⌘ Enter')
-  await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', fullPage: true, animations: 'disabled' })
+  // The inline entry can follow the complete long list. Capture the actual
+  // composer viewport, not a >32767px bitmap rejected by Firefox/WebKit.
+  await expect(capture).toBeInViewport()
+  await expect(capture.locator('.cgr-capture-close')).toBeInViewport()
+  await expect(page.locator('.tsui-schedule-page .tsui-load-anchor')).toBeHidden()
+  const editingRows = await page.locator('.tsui-schedule-row').count()
+  await page.waitForTimeout(350)
+  await expect(page.locator('.tsui-schedule-row')).toHaveCount(editingRows)
+  const draft = capture.getByRole('textbox', { name: /要告诉 TodayAction 的内容|What to tell TodayAction/ })
+  await draft.fill('保留这份未发送的日程草稿')
+  await expect(draft).toBeFocused()
+  await expect(draft).toBeInViewport()
+  await page.screenshot({ path: 'test-results/tsui04/capture-mobile.png', animations: 'disabled' })
   await visual(page, 'CAPTURE_MOBILE')
+  await draft.press('Escape')
+  await expect(capture).toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-page .tsui-load-anchor')).toBeVisible()
+  await page.locator('.tsui-tell-button').click()
+  await expect(draft).toHaveValue('保留这份未发送的日程草稿')
+  await expect(capture.locator('.cgr-capture-close')).toBeInViewport()
+  await expect.poll(async () => {
+    const bounds = await draft.evaluate(element => ({ top: element.getBoundingClientRect().top,
+      navigationBottom: document.querySelector('.tsui-topbar')!.getBoundingClientRect().bottom }))
+    return bounds.top - bounds.navigationBottom
+  }).toBeGreaterThanOrEqual(0)
+  await page.mouse.wheel(0, -500)
+  await expect(page.locator('.capture-following')).toHaveCount(0)
+  await expect(page.locator('.tsui-schedule-page .tsui-load-anchor')).toBeVisible()
+  await page.waitForTimeout(350)
+  const manualScrollY = await page.evaluate(() => window.scrollY)
+  const originalPadding = await page.locator('main').evaluate(element => {
+    const previous = { value: element.style.getPropertyValue('padding-bottom'), priority: element.style.getPropertyPriority('padding-bottom'),
+      height: element.getBoundingClientRect().height }
+    element.style.setProperty('padding-bottom', '120px', 'important')
+    return previous
+  })
+  await expect(page.locator('main')).toHaveCSS('padding-bottom', '120px')
+  expect(await page.locator('main').evaluate(element => element.getBoundingClientRect().height)).not.toBe(originalPadding.height)
+  await page.waitForTimeout(100)
+  expect(Math.abs(await page.evaluate(() => window.scrollY) - manualScrollY)).toBeLessThanOrEqual(1)
+  await page.locator('main').evaluate((element, previous) => {
+    if (previous.value) element.style.setProperty('padding-bottom', previous.value, previous.priority)
+    else element.style.removeProperty('padding-bottom')
+  }, originalPadding)
+  const manualLoad = page.locator('.tsui-schedule-page .tsui-load-more')
+  if (await manualLoad.count()) {
+    const beforeManualLoad = await page.locator('.tsui-schedule-row').count()
+    await manualLoad.click()
+    await expect.poll(() => page.locator('.tsui-schedule-row').count()).toBeGreaterThan(beforeManualLoad)
+    await expect(page.locator('.capture-following')).toHaveCount(0)
+    // Clicking outside intentionally closes the editor without discarding it.
+    await expect(capture).toHaveCount(0)
+    await page.locator('.tsui-tell-button').click()
+    await expect(draft).toHaveValue('保留这份未发送的日程草稿')
+  }
   await capture.getByRole('button', { name: /更多操作|More options/ }).click()
   await capture.getByRole('button', { name: /关闭|Close/ }).click()
   await page.locator('.tsui-topbar').getByRole('button', { name: /设置|Settings/ }).click()
