@@ -95,11 +95,69 @@ async function seed(page: Page, appliedForLayout = false, snapshot = fixture(app
   return mutations
 }
 
+// Removing the page title relocates, but must not restyle or reflow, these
+// specific regions. Keep their raw pixels; a different device-pixel phase can
+// legitimately change raster coverage without changing layout or styling.
+async function relocatedRegionContract(page: Page, selector: string) {
+  return page.locator(selector).evaluate(root => {
+    const origin = root.getBoundingClientRect()
+    const rect = (box: DOMRect) => ({ x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height })
+    const style = (element: Element, pseudo?: string) => {
+      const css = getComputedStyle(element, pseudo)
+      return Object.fromEntries([...css].map(key => [key, css.getPropertyValue(key)]))
+    }
+    const nodes = (node: Node): unknown => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const range = document.createRange(); range.selectNodeContents(node)
+        return { text: node.textContent, lines: [...range.getClientRects()].map(rect) }
+      }
+      if (!(node instanceof Element)) return { type: node.nodeType, text: node.textContent }
+      const box = node.getBoundingClientRect()
+      return { tag: node.tagName, attributes: Object.fromEntries([...node.attributes].map(a => [a.name, a.value])),
+        box: node.getClientRects().length ? rect(box) : null, style: style(node), pseudo: ['::before', '::after', '::marker'].map(pseudo => style(node, pseudo)),
+        control: node instanceof HTMLInputElement ? { value: node.value, checked: node.checked }
+          : node instanceof HTMLSelectElement ? { value: node.value, selectedIndex: node.selectedIndex }
+          : node instanceof HTMLTextAreaElement ? { value: node.value }
+          : node instanceof HTMLImageElement ? { currentSrc: node.currentSrc, width: node.naturalWidth, height: node.naturalHeight, complete: node.complete } : null,
+        children: [...node.childNodes].map(nodes) }
+    }
+    const neutral: Record<string, string[]> = { opacity: ['1'], filter: ['none'], transform: ['none'], 'clip-path': ['none'],
+      clip: ['auto'], 'mix-blend-mode': ['normal'], isolation: ['auto'], overflow: ['visible'], contain: ['none'],
+      'background-color': ['rgba(0, 0, 0, 0)'], 'background-image': ['none'], 'backdrop-filter': ['none'] }
+    const paint = []
+    for (let parent = root.parentElement; parent; parent = parent.parentElement) {
+      const css = getComputedStyle(parent)
+      const effects = Object.fromEntries(Object.entries(neutral).filter(([key, values]) => !values.includes(css.getPropertyValue(key))).map(([key]) => [key, css.getPropertyValue(key)]))
+      if (Object.keys(effects).length) {
+        const box = parent.getBoundingClientRect()
+        const clipX = css.overflowX !== 'visible', clipY = css.overflowY !== 'visible'
+        const coverage = { left: clipX ? Math.max(0, box.left - origin.left) : 0,
+          right: clipX ? Math.min(origin.width, box.right - origin.left) : origin.width,
+          top: clipY ? Math.max(0, box.top - origin.top) : 0,
+          bottom: clipY ? Math.min(origin.height, box.bottom - origin.top) : origin.height }
+        paint.push({ effects, coverage, shapeBox: css.clipPath !== 'none' || css.transform !== 'none' || css.clip !== 'auto' ? rect(box) : null })
+      }
+    }
+    const heading = document.querySelector(root.closest('.tsui-schedule-page') ? '.tsui-schedule-page .tsui-page-heading' : '.tsui-today .tsui-page-heading')!
+    const css = getComputedStyle(heading)
+    const headingExtent = css.position === 'absolute' ? 0 : heading.getBoundingClientRect().height + parseFloat(css.marginTop) + parseFloat(css.marginBottom)
+    return { x: origin.x + scrollX, y: origin.y + scrollY, width: origin.width, height: origin.height,
+      headingExtent, dpr: devicePixelRatio, tree: nodes(root), paint }
+  })
+}
+function assertRelocatedRegion(actual: Awaited<ReturnType<typeof relocatedRegionContract>>, baseline: Awaited<ReturnType<typeof relocatedRegionContract>>) {
+  expect(actual.y - baseline.y, 'only the approved heading extent moves the region').toBe(actual.headingExtent - baseline.headingExtent)
+  expect({ ...actual, y: 0, headingExtent: 0 }).toEqual({ ...baseline, y: 0, headingExtent: 0 })
+}
+
 async function capture(page: Page, label: string, width: number, scale = 100, protectMain = false, scrollRoot?: string) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   await page.evaluate(scale => { document.documentElement.style.fontSize = `${scale}%`; window.scrollTo(0, 0) }, scale)
   await page.evaluate(() => document.fonts.ready)
-  if (scrollRoot) await page.locator(scrollRoot).evaluate(element => { element.scrollTop = element.scrollHeight })
+  if (scrollRoot) await page.locator(scrollRoot).evaluate(element => {
+    if (element.closest('.cgr-capture-inline')) element.scrollIntoView({ block: 'end' })
+    else element.scrollTop = element.scrollHeight
+  })
   const name = `${label}-${width}-${scale}.png`
   await mkdir(evidence, { recursive: true })
   const overlay = await page.locator('.cgr-capture-backdrop, .cgr-capture-popover:not(.cgr-capture-inline), .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
@@ -120,9 +178,22 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
       if (!(await page.locator(selector).isVisible())) continue
       const regionName = `${name}.${region}.png`
       const regionBytes = await captureDocumentRegion(page, selector, `${evidence}/${regionName}`)
+      const relocatable = ['tasks', 'scheduleToolbar', 'schedule'].includes(region)
+      const contract = relocatable ? await relocatedRegionContract(page, selector) : undefined
+      if (contract) await writeFile(`${evidence}/${regionName}.contract.json`, JSON.stringify(contract, null, 2))
       if (phase === 'after') {
         const baseline = await readFile(`secondary-ui-before/${regionName}`)
-        expect.soft(digest(regionBytes), `${label}: unchanged ${region} pixels match dbad720`).toBe(digest(baseline))
+        let sameRasterPhase = true
+        if (contract) {
+          const previous = JSON.parse(await readFile(`secondary-ui-before/${regionName}.contract.json`, 'utf8'))
+          assertRelocatedRegion(contract, previous)
+          const phaseAt = (value: number, dpr: number) => (value * dpr) % 1
+          sameRasterPhase = phaseAt(contract.x, contract.dpr) === phaseAt(previous.x, previous.dpr)
+            && phaseAt(contract.y, contract.dpr) === phaseAt(previous.y, previous.dpr)
+          await writeFile(`${evidence}/${regionName}.comparison.json`, JSON.stringify({ sameRasterPhase,
+            beforeHash: digest(baseline), afterHash: digest(regionBytes), protection: 'exact structure, style and approved displacement' }))
+        }
+        if (sameRasterPhase) expect.soft(digest(regionBytes), `${label}: unchanged ${region} pixels match dbad720`).toBe(digest(baseline))
       }
     }
   }
@@ -414,6 +485,8 @@ test('refined capture preserves drafts through both secondary entries without wr
   await input.fill('今天提交周报')
   await expect(page.locator('.cgr-understanding')).toContainText('今天提交周报')
   await input.press('Tab')
+  await expect(page.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
   await expect(page.locator('.cgr-capture-more')).toBeFocused()
   expect(await page.locator('.cgr-capture-more').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
   await page.keyboard.press('Enter')
@@ -522,7 +595,8 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
     await capture(page, 'CONTEXT_CAPTURE_BOTTOM', width, 200, false, '.cgr-capture-sheet')
     const footerButtons = page.locator(phase === 'after' ? '.cgr-capture-secondary button' : '.cgr-capture-footer button')
     // Empty composer keeps confirmation out of the initial state. Both secondary entries remain.
-    await expect(footerButtons).toHaveCount(phase === 'after' ? 5 : 1)
+    await expect(footerButtons).toHaveCount(phase === 'after' ? 4 : 1)
+    if (phase === 'after') await expect(page.locator('.cgr-capture-composer').getByRole('button', { name: '关闭', exact: true })).toHaveCount(1)
     for (const button of await footerButtons.all()) {
       await expect(button).toBeInViewport()
       if (phase === 'after') expect(await button.evaluate(element => {
@@ -821,4 +895,23 @@ test('local file reads cannot overwrite edits or reopen a closed composer', asyn
   await expect(page.locator('.cgr-capture-attachment')).toHaveCount(0)
   await expect(input).toHaveValue('今天填写报销单')
   expect(mutations).toEqual([])
+})
+
+
+test('authorized region displacement still rejects styling, text and extra movement', async ({ page }) => {
+  await page.setContent('<main class="tsui-today"><header class="tsui-page-heading" style="height:20.25px"></header><section id="protected"><span>Unchanged text</span></section></main>')
+  const baseline = await relocatedRegionContract(page, '#protected')
+  await page.locator('header').evaluate(element => { element.style.height = '10px' })
+  const moved = await relocatedRegionContract(page, '#protected')
+  assertRelocatedRegion(moved, baseline)
+  for (const alteration of ['padding', 'color', 'pseudo', 'movement', 'text']) {
+    const sheet = await page.addStyleTag({ content: alteration === 'padding' ? '#protected { padding:1px }'
+      : alteration === 'color' ? '#protected { color:red }'
+      : alteration === 'pseudo' ? '#protected::before { content:"changed" }'
+      : alteration === 'movement' ? '#protected { position:relative; top:.5px }' : '' })
+    if (alteration === 'text') await page.locator('#protected span').evaluate(element => { element.textContent = 'Different text' })
+    const changed = await relocatedRegionContract(page, '#protected')
+    expect(() => assertRelocatedRegion(changed, baseline), alteration).toThrow()
+    await sheet.evaluate(element => element.remove())
+  }
 })
