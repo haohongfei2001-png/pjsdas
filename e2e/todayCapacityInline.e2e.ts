@@ -148,22 +148,31 @@ test('a previous successful save is not replayed over a newer authoritative valu
   await open(page); await expect(input(page)).toHaveValue('6')
 })
 
-test('the topbar keeps only the plus visible while retaining its label, 44px target and capture focus behavior', async ({ page }) => {
+test('capture below the tasks aligns with the brand and preserves repeated close and draft recovery', async ({ page }) => {
   await localStart(page)
-  const button = page.locator('.tsui-topbar .tsui-tell-button')
-  await expect(button).toHaveText('＋')
+  const button = page.locator('.tsui-capture-region .tsui-tell-button')
+  await expect(button).toHaveText('＋告诉 TodayAction')
   await expect(button).toHaveAccessibleName('＋ 告诉 TodayAction')
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 844 })
     const box = await button.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
+    const brand = (await page.locator('.tsui-brand').boundingBox())!
+    expect(Math.abs(box!.x - brand.x)).toBeLessThanOrEqual(1)
+    expect(await page.locator('.tsui-topbar .tsui-tell-button').count()).toBe(0)
     await button.focus(); await page.keyboard.press('Enter')
     await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+    const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+    await input.fill('未提交的草稿')
+    await page.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(button).toBeFocused()
+    await button.click()
+    await expect(input).toHaveValue('未提交的草稿')
     await page.keyboard.press('Escape')
     await expect(button).toBeFocused()
   }
   await page.evaluate(() => localStorage.setItem('pjsdas-ui-language', 'en')); await page.reload()
-  await expect(button).toHaveText('＋'); await expect(button).toHaveAccessibleName('＋ Tell TodayAction')
+  await expect(button).toHaveText('＋Tell TodayAction'); await expect(button).toHaveAccessibleName('＋ Tell TodayAction')
 })
 
 test('Settings no longer exposes a second time planner and visiting it preserves stored preferences', async ({ page }) => {

@@ -266,3 +266,11 @@
 .cgr-app-shell .tsui-topbar .tsui-tell-button{display:grid;place-items:center;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;color:#fff;font-size:24px;line-height:1}
 .cgr-app-shell .tsui-topbar .tsui-tell-button::before{display:none}
 .cgr-app-shell .tsui-topbar .tsui-top-actions{justify-content:flex-end}
+
+/* Match the header brand to the existing main-content gutter at every width. */
+@media (min-width: 701px) {
+  .cgr-app-shell .tsui-topbar { padding-left: calc(max(0px, (100vw - 1560px) / 2) + clamp(20px, 4.2vw, 60px)); padding-right: calc(max(0px, (100vw - 1560px) / 2) + clamp(20px, 4.2vw, 60px)); }
+}
+@media (max-width: 700px) { .cgr-app-shell .tsui-topbar { padding-left: 14px; padding-right: 14px; } }
+
+.tsui-task-column { min-width: 0; }

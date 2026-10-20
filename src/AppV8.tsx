@@ -164,6 +164,7 @@ export default function AppV8() {
   const [captureExpanded, setCaptureExpanded] = useState(false)
   const captureOpen = route.capture || captureExpanded
   const captureAnchorRef = useRef<HTMLButtonElement>(null)
+  const [captureContainer, setCaptureContainer] = useState<HTMLDivElement | null>(null)
   const [captureContextOpportunityId, setCaptureContextOpportunityId] = useState<string>()
   const [todayFreshness, setTodayFreshness] = useState<TodayFreshnessView>({ state: 'local' })
   const [opportunityView, setOpportunityView] = useState<JobFilter>('all')
@@ -319,7 +320,12 @@ export default function AppV8() {
     }
     setCaptureContextOpportunityId(route.opportunityId)
     setCaptureExpanded(true)
+    requestAnimationFrame(() => document.querySelector('.tsui-capture-region')?.scrollIntoView({ block: 'nearest' }))
   }
+
+  useEffect(() => {
+    if (route.capture && !loading) document.querySelector('.tsui-capture-region')?.scrollIntoView({ block: 'nearest' })
+  }, [route.capture, loading, captureContainer])
 
   function closeCapture() {
     setCaptureExpanded(false)
@@ -911,6 +917,13 @@ export default function AppV8() {
     }
   }
 
+  const captureEntry = (
+    <div className="tsui-capture-region">
+      <button ref={captureAnchorRef} className="tsui-tell-button" type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span><span>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</span></button>
+      <div ref={setCaptureContainer} />
+    </div>
+  )
+
   if (loadError !== undefined) return <StartupRecovery error={loadError} onRetry={() => { void reload() }} />
 
   return (
@@ -924,7 +937,6 @@ export default function AppV8() {
           })}
         </nav>
         <div className="tsui-top-actions">
-          <button ref={captureAnchorRef} className="tsui-tell-button" type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span></button>
           <button className="tsui-settings-button" type="button" aria-label={zh ? '设置' : 'Settings'} onClick={() => navigate('/settings')}>⚙</button>
         </div>
       </header>
@@ -937,6 +949,7 @@ export default function AppV8() {
 
         {!loading && surface === 'today' && todayWeb && scheduleStream ? (
           <TodayFeature
+            captureEntry={captureEntry}
             selection={todayWeb}
             capacityAutosaver={capacityAutosaver.current!}
             capacitySaveState={capacitySaveState}
@@ -993,12 +1006,12 @@ export default function AppV8() {
           onChanged={reload} /> : null}
         {!loading && surface === 'history' ? <ActivitySurface timeline={timeline} onBack={() => navigate('/settings')} /> : null}
         {!loading && surface === 'settings' ? <SettingsSurface lastImport={lastImport} onChanged={reload} onOpenActivity={() => navigate('/history')} onOpenDataQuality={() => navigate('/decisions')} /> : null}
+        {surface !== 'today' || loading || !todayWeb || !scheduleStream ? captureEntry : null}
       </main>
-
-
-
       <TellPjsdasCapture
-        open={!CGR02_TODAY_READ_ONLY && captureOpen}
+        inline
+        container={captureContainer}
+        open={!CGR02_TODAY_READ_ONLY && captureOpen && Boolean(captureContainer)}
         anchorRef={captureAnchorRef}
         onClose={closeCapture}
         onChanged={reload}

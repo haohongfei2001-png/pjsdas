@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './capturePreviewPresentation.js'
 import ManualJobFields from './capture/ManualJobFields.js'
 import { readCaptureTextFile, appendCaptureQuote, CaptureTextFileError } from './capture/textFile.js'
@@ -37,6 +38,8 @@ import './capture/capture.css'
 
 interface TellPjsdasCaptureProps {
   open: boolean
+  inline?: boolean
+  container?: HTMLElement | null
   onClose: (restoreFocus?: boolean) => void
   anchorRef?: RefObject<HTMLButtonElement | null>
   onChanged: () => Promise<void>
@@ -127,6 +130,8 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
 
 export default function TellPjsdasCapture({
   open,
+  inline = false,
+  container,
   onClose,
   anchorRef,
   onChanged,
@@ -239,7 +244,7 @@ export default function TellPjsdasCapture({
   }, [open])
 
   useLayoutEffect(() => {
-    if (!open) return
+    if (!open || inline) return
     const place = () => {
       const viewport = window.visualViewport
       setPopoverStyle(capturePopoverLayout(anchorRef?.current?.getBoundingClientRect(), {
@@ -261,7 +266,11 @@ export default function TellPjsdasCapture({
       window.visualViewport?.removeEventListener('resize', place)
       window.visualViewport?.removeEventListener('scroll', place)
     }
-  }, [open, anchorRef])
+  }, [open, anchorRef, inline])
+
+  useLayoutEffect(() => {
+    if (open && restoreFocusRef.current && captureFocusIsVacant(document)) textareaRef.current?.focus({ preventScroll: true })
+  }, [open, container])
 
   useLayoutEffect(() => {
     const input = textareaRef.current
@@ -274,7 +283,7 @@ export default function TellPjsdasCapture({
     const observer = new MutationObserver(fit)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'lang'] })
     return () => observer.disconnect()
-  }, [open, text, manualMode, correctionMode, popoverStyle?.width])
+  }, [open, text, manualMode, correctionMode, popoverStyle?.width, container])
 
   function dismissCapture(restoreFocus = true) {
     closedDraftRef.current = initializedUserIdRef.current === null && !cloud.session?.user.id ? { accountKey: null, text: textRef.current } : undefined
@@ -663,12 +672,11 @@ export default function TellPjsdasCapture({
     </> : null}
     {!manualMode && !correctionMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
     {!correctionMode ? <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button> : null}
-    {!manualMode && !correctionMode ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>{zh ? '收起' : 'Close'}</button> : null}
   </div> : null
 
 
-  return (
-    <div className="cgr-capture-popover" style={popoverStyle}>
+  const content = (
+    <div className={`cgr-capture-popover${inline ? ' cgr-capture-inline' : ''}`} style={inline ? undefined : popoverStyle}>
       <section
         id="tell-pjsdas-composer"
         ref={sheetRef}
@@ -705,6 +713,7 @@ export default function TellPjsdasCapture({
         <div className="cgr-capture-tools">
           <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
             onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
+          <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'} title={zh ? '收起，保留草稿' : 'Close and keep draft'}>×</button>
           {moreActions}
           <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
@@ -814,4 +823,5 @@ export default function TellPjsdasCapture({
       </section>
     </div>
   )
+  return inline && container ? createPortal(content, container) : content
 }

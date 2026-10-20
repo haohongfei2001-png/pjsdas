@@ -65,7 +65,7 @@ test('Brand name, accessible capture, language and narrow header preserve the TS
   await expect(page).toHaveTitle('今天 · TodayAction')
   await page.setViewportSize({ width: 1440, height: 900 })
   await visual(page, (base === '/' ? 'ROOT' : 'LEGACY') + '_DESKTOP')
-  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
+  await page.locator('.tsui-capture-region').getByRole('button', { name: /告诉 TodayAction/ }).click()
   const dialog = page.getByRole('dialog', { name: '告诉 TodayAction' })
   await expect(dialog.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   await expect(dialog).toHaveAttribute('aria-modal', 'false')
@@ -78,6 +78,7 @@ test('Brand name, accessible capture, language and narrow header preserve the TS
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     await expect(page.locator('.tsui-brand')).toBeInViewport()
+    await page.locator('.tsui-tell-button').scrollIntoViewIfNeeded()
     await expect(page.locator('.tsui-tell-button')).toBeInViewport()
   }
   await page.evaluate(() => { document.documentElement.style.fontSize = '' })

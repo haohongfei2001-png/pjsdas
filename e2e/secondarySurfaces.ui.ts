@@ -102,7 +102,7 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
   if (scrollRoot) await page.locator(scrollRoot).evaluate(element => { element.scrollTop = element.scrollHeight })
   const name = `${label}-${width}-${scale}.png`
   await mkdir(evidence, { recursive: true })
-  const overlay = await page.locator('.cgr-capture-backdrop, .cgr-capture-popover, .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
+  const overlay = await page.locator('.cgr-capture-backdrop, .cgr-capture-popover:not(.cgr-capture-inline), .backup-backdrop, .event-dock-backdrop, .prep-graph-backdrop, .discovery-inbox-modal-backdrop, .mcp-proposal-backdrop, .ta-scope-dialog[open]').count()
   const bytes = await page.screenshot({ path: `${evidence}/${name}`, fullPage: overlay === 0, animations: 'disabled', caret: 'hide' })
   if (diagnoseRaster && protectMain) {
     const hashes = [digest(bytes)]
@@ -112,9 +112,19 @@ async function capture(page: Page, label: string, width: number, scale = 100, pr
     await writeFile(`${evidence}/${name}.repeat.json`, JSON.stringify({ hashes }, null, 2))
     await saveRenderContract(page, `${name}.dom`)
   }
-  if (protectMain && phase === 'after') {
-    const baseline = await readFile(`secondary-ui-before/${name}`)
-    expect.soft(digest(bytes), `${label}: all main pixels must match the approved pre-B1 reference dbad720`).toBe(digest(baseline))
+  if (protectMain) {
+    // The owner explicitly moved capture out of the header on 2026-10-20.
+    // Keep full before/after images above, but protect the unchanged task,
+    // node and schedule content with exact native region pixels, not a mask.
+    for (const [region, selector] of Object.entries({ tasks: '.tsui-task-panel', nodes: '.tsui-node-panel', schedule: '.tsui-schedule-page' })) {
+      if (!(await page.locator(selector).isVisible())) continue
+      const regionName = `${name}.${region}.png`
+      const regionBytes = await captureDocumentRegion(page, selector, `${evidence}/${regionName}`)
+      if (phase === 'after') {
+        const baseline = await readFile(`secondary-ui-before/${regionName}`)
+        expect.soft(digest(regionBytes), `${label}: unchanged ${region} pixels match dbad720`).toBe(digest(baseline))
+      }
+    }
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   const overflowNodes = overflow > 1 ? await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('body *')]
@@ -688,8 +698,8 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   await expect(panel).toHaveAttribute('aria-modal', 'false')
   const anchor = (await opener.boundingBox())!
   const box = (await page.locator('.cgr-capture-popover').boundingBox())!
-  expect(Math.abs(box.x + box.width - anchor.x - anchor.width)).toBeLessThanOrEqual(1)
-  expect(Math.abs(box.y - anchor.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(box.x - anchor.x)).toBeLessThanOrEqual(1)
+  expect(box.y).toBeGreaterThanOrEqual(anchor.y + anchor.height)
   expect((await page.locator('.cgr-capture-composer').boundingBox())!.height).toBeLessThanOrEqual(60)
   await input.press('Shift+Tab')
   expect(await panel.evaluate(element => element.contains(document.activeElement))).toBe(false)
@@ -702,12 +712,12 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   await expect(input).toBeFocused()
   await page.setViewportSize({ width: 390, height: 844 })
   const mobile = (await page.locator('.cgr-capture-popover').boundingBox())!
-  expect(mobile.x).toBe(12)
-  expect(mobile.width).toBe(366)
+  expect(mobile.x).toBe(14)
+  expect(mobile.width).toBe(362)
   const outsideTarget = page.locator('.tsui-job-open').last()
   const outsideBox = (await outsideTarget.boundingBox())!
   const occupied = (await page.locator('.cgr-capture-popover').boundingBox())!
-  expect(outsideBox.y).toBeGreaterThan(occupied.y + occupied.height)
+  expect(outsideBox.y + outsideBox.height).toBeLessThanOrEqual(occupied.y)
   await outsideTarget.click()
   await expect(panel).toHaveCount(0)
   await expect(page.locator('.job-detail-page h1')).toBeVisible()

@@ -395,3 +395,12 @@
 .settings-surface .settings-signin-permission[open] { flex-basis: 100%; }
 .settings-surface .settings-signin-permission > summary { display: flex; align-items: center; min-height: 44px; color: #3468d4; }
 .settings-surface .settings-signin-permission > p { margin: 0 0 8px; }
+
+/* Capture lives below the page content, never over its navigation or opener. */
+.tsui-capture-region { width: min(100%, 720px); margin-top: 20px; }
+.tsui-capture-region > .tsui-tell-button { display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 44px; padding: 8px 14px; border: 1px solid #dce5fa; border-radius: 10px; background: #edf2ff; color: #315ec5; font-size: .875rem; line-height: 1.5; }
+.tsui-capture-region > .tsui-tell-button::before { display: none; }
+.tsui-capture-region > .tsui-tell-button[aria-expanded="true"] { margin-bottom: 10px; }
+.tsui-capture-region .cgr-capture-inline { position: relative; inset: auto; z-index: auto; width: 100%; max-height: none; }
+.tsui-capture-region .cgr-capture-inline .cgr-capture-sheet { max-height: none; overflow: visible; padding: 0; }
+.tsui-capture-region .cgr-capture-tools .cgr-capture-close { width: 44px; font-size: 1.25rem; }
