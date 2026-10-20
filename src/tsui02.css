@@ -288,3 +288,7 @@
 .tsui-today .tsui-page-heading > div { gap: 0; }
 .tsui-today .tsui-page-heading p { margin: 0; }
 .cgr-app-shell .tsui-library-heading { margin: 0 0 12px; }
+
+/* Pause only the technical auto-pagination trigger while editing. Real rows
+   and the explicit Load more control stay available; leaving restores it. */
+.capture-following .tsui-schedule-page .tsui-load-anchor { display: none; }

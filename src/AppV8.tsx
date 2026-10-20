@@ -162,6 +162,7 @@ export default function AppV8() {
   const zh = lang === 'zh'
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureExpanded, setCaptureExpanded] = useState(false)
+  const [captureFollowing, setCaptureFollowing] = useState(true)
   const captureOpen = route.capture || captureExpanded
   const captureAnchorRef = useRef<HTMLButtonElement>(null)
   const [captureContainer, setCaptureContainer] = useState<HTMLDivElement | null>(null)
@@ -302,6 +303,7 @@ export default function AppV8() {
 
   function navigate(path: string, replace = false) {
     setCaptureExpanded(false)
+    setCaptureFollowing(true)
     setCaptureContextOpportunityId(undefined)
     const destination = browserPath(path)
     if (replace) window.history.replaceState(null, '', destination)
@@ -315,17 +317,81 @@ export default function AppV8() {
       return
     }
     if (captureOpen) {
+      setCaptureFollowing(true)
       document.getElementById('tell-pjsdas-input')?.focus()
       return
     }
     setCaptureContextOpportunityId(route.opportunityId)
+    setCaptureFollowing(true)
     setCaptureExpanded(true)
-    requestAnimationFrame(() => document.querySelector('.tsui-capture-region')?.scrollIntoView({ block: 'nearest' }))
   }
 
   useEffect(() => {
-    if (route.capture && !loading) document.querySelector('.tsui-capture-region')?.scrollIntoView({ block: 'nearest' })
-  }, [route.capture, loading, captureContainer])
+    if (!captureOpen || !captureFollowing || !captureContainer) return
+    const region = captureContainer.closest<HTMLElement>('.tsui-capture-region')
+    const main = region?.closest('main')
+    if (!region || !main) return
+    let frame = 0
+    let ownsViewport = true
+    const keepEditorVisible = () => {
+      frame = 0
+      if (!ownsViewport) return
+      const active = document.activeElement
+      if (!(active instanceof HTMLElement) || !region.contains(active)) return
+      // Keep the input and visible Close together, not the expanding preview.
+      const target = active.closest<HTMLElement>('.cgr-capture-composer') ?? active
+      const box = target.getBoundingClientRect()
+      const viewport = window.visualViewport
+      const top = Math.max(viewport?.offsetTop ?? 0, topbarRef.current?.getBoundingClientRect().bottom ?? 0) + 8
+      const bottom = (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight) - 8
+      const delta = box.height > bottom - top || box.top < top
+        ? box.top - top : box.bottom > bottom ? box.bottom - bottom : 0
+      if (Math.abs(delta) > 1) window.scrollBy(0, delta)
+    }
+    const queue = () => { if (ownsViewport && !frame) frame = requestAnimationFrame(keepEditorVisible) }
+    const release = () => {
+      ownsViewport = false
+      cancelAnimationFrame(frame)
+      setCaptureFollowing(false)
+    }
+    const leaveEditor = (event: Event) => {
+      if (event.target instanceof Node) {
+        if (!region.contains(event.target)) release()
+        else queue()
+      }
+    }
+    const manualScrollKey = (event: KeyboardEvent) => {
+      const editable = event.target instanceof HTMLElement
+        && (event.target.matches('input, textarea, select') || event.target.isContentEditable)
+      if (!editable && ['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) release()
+    }
+    // Suspend the schedule sentinel while editing; observe any already queued
+    // batch without a resize -> scroll -> automatic-pagination loop.
+    const observer = new ResizeObserver(queue)
+    observer.observe(main)
+    observer.observe(region)
+    if (region.parentElement && region.parentElement !== main) observer.observe(region.parentElement)
+    window.visualViewport?.addEventListener('resize', queue)
+    window.visualViewport?.addEventListener('scroll', queue)
+    window.addEventListener('wheel', release, { passive: true })
+    window.addEventListener('touchmove', release, { passive: true })
+    document.addEventListener('pointerdown', leaveEditor, true)
+    document.addEventListener('focusin', leaveEditor, true)
+    document.addEventListener('keydown', manualScrollKey, true)
+    queue()
+    return () => {
+      ownsViewport = false
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.visualViewport?.removeEventListener('resize', queue)
+      window.visualViewport?.removeEventListener('scroll', queue)
+      window.removeEventListener('wheel', release)
+      window.removeEventListener('touchmove', release)
+      document.removeEventListener('pointerdown', leaveEditor, true)
+      document.removeEventListener('focusin', leaveEditor, true)
+      document.removeEventListener('keydown', manualScrollKey, true)
+    }
+  }, [captureOpen, captureFollowing, captureContainer])
 
   function closeCapture() {
     setCaptureExpanded(false)
@@ -927,7 +993,7 @@ export default function AppV8() {
   if (loadError !== undefined) return <StartupRecovery error={loadError} onRetry={() => { void reload() }} />
 
   return (
-    <div className="app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell">
+    <div className={`app-shell surface-shell ultimate-shell cgr-shell cgr-app-shell${captureOpen && captureFollowing ? ' capture-following' : ''}`}>
       <header ref={topbarRef} className="tsui-topbar">
         <button className="tsui-brand" type="button" onClick={() => navigate('/today')} aria-label={zh ? 'TodayAction，今天' : 'TodayAction, Today'}><BrandMark className="tsui-brand-mark" /><strong>{BRAND_NAME}</strong></button>
         <nav className="tsui-primary-nav" aria-label={zh ? '主导航' : 'Primary navigation'}>
