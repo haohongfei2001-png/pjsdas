@@ -104,7 +104,7 @@ test('closing a pending review clears private file and ignores late reads', asyn
   await page.locator('.cgr-correction-entries button').click(); await started
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   release()
-  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
+  await page.locator('.tsui-capture-region').getByRole('button', { name: /告诉 TodayAction/ }).click()
   await enterReview(page)
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
   expect(server.sent).toEqual([])
@@ -125,7 +125,7 @@ test('an intervening account lease change prevents submission and close clears i
   expect(server.sent).toEqual([])
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   await page.evaluate(async () => (await import('/pjsdas/src/cloud/accountCacheLease.ts')).setAccountCacheSession('instant-owner'))
-  await page.locator('.tsui-topbar').getByRole('button', { name: /告诉 TodayAction/ }).click()
+  await page.locator('.tsui-capture-region').getByRole('button', { name: /告诉 TodayAction/ }).click()
   await enterReview(page)
   await expect(page.locator('.cgr-correction-entries')).toHaveCount(0)
 })
