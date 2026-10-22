@@ -266,3 +266,29 @@
 .cgr-app-shell .tsui-topbar .tsui-tell-button{display:grid;place-items:center;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;color:#fff;font-size:24px;line-height:1}
 .cgr-app-shell .tsui-topbar .tsui-tell-button::before{display:none}
 .cgr-app-shell .tsui-topbar .tsui-top-actions{justify-content:flex-end}
+
+/* Match the header brand to the existing main-content gutter at every width. */
+@media (min-width: 701px) {
+  .cgr-app-shell .tsui-topbar { padding-left: calc(max(0px, (100vw - 1560px) / 2) + clamp(20px, 4.2vw, 60px)); padding-right: calc(max(0px, (100vw - 1560px) / 2) + clamp(20px, 4.2vw, 60px)); }
+}
+@media (max-width: 700px) { .cgr-app-shell .tsui-topbar { padding-left: 14px; padding-right: 14px; } }
+
+.tsui-task-column { min-width: 0; }
+
+/* The primary navigation already names these pages. Keep semantic h1 names
+   available to assistive technology without repeating them in the content. */
+.tsui-today .tsui-page-heading h1,
+.tsui-schedule-page .tsui-page-heading,
+.cgr-app-shell .tsui-library-heading h1 {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.tsui-today .tsui-page-heading { margin: 0 0 16px; align-items: center; }
+.tsui-today .tsui-page-heading > div { gap: 0; }
+.tsui-today .tsui-page-heading p { margin: 0; }
+.cgr-app-shell .tsui-library-heading { margin: 0 0 12px; }
+
+/* Pause only the technical auto-pagination trigger while editing. Real rows
+   and the explicit Load more control stay available; leaving restores it. */
+.capture-following .tsui-schedule-page .tsui-load-anchor { display: none; }

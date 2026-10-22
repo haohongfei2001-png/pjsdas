@@ -148,17 +148,60 @@ test('a previous successful save is not replayed over a newer authoritative valu
   await open(page); await expect(input(page)).toHaveValue('6')
 })
 
-test('the topbar keeps only the plus visible while retaining its label, 44px target and capture focus behavior', async ({ page }) => {
+test('capture below the tasks aligns with the brand and preserves repeated close and draft recovery', async ({ page }, info) => {
   await localStart(page)
-  const button = page.locator('.tsui-topbar .tsui-tell-button')
+  const button = page.locator('.tsui-capture-region .tsui-tell-button')
   await expect(button).toHaveText('＋')
   await expect(button).toHaveAccessibleName('＋ 告诉 TodayAction')
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 844 })
     const box = await button.boundingBox()
-    expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
+    expect(box!.width).toBe(44); expect(box!.height).toBe(44)
+    const brand = (await page.locator('.tsui-brand').boundingBox())!
+    expect(Math.abs(box!.x - brand.x)).toBeLessThanOrEqual(1)
+    expect(await page.locator('.tsui-topbar .tsui-tell-button').count()).toBe(0)
+    await page.mouse.move(width - 2, 2)
+    await info.attach(`plus-only-collapsed-${width}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' })
+    await button.click()
+    const pointerInput = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+    const frame = page.locator('.cgr-capture-composer')
+    await expect(pointerInput).toBeFocused()
+    await expect(frame).toHaveCSS('border-top-width', '1px')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(223, 229, 238)')
+    await expect(frame).toHaveCSS('outline-style', 'none')
+    await expect(pointerInput).toHaveCSS('outline-style', 'none')
+    await page.keyboard.type('鼠标展开后输入')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(223, 229, 238)')
+    await info.attach(`fine-chat-pointer-${width}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' })
+    await button.click()
+    await expect(pointerInput).toHaveCount(0)
     await button.focus(); await page.keyboard.press('Enter')
     await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+    const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+    await expect(frame).toHaveCSS('border-top-width', '1px')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(101, 122, 158)')
+    await expect(frame).toHaveCSS('outline-style', 'none')
+    await input.fill('未提交的草稿')
+    await expect(button).toHaveAccessibleName('关闭')
+    await expect(button).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.locator('.cgr-capture-sheet .cgr-capture-close')).toHaveCount(0)
+    const expanded = (await button.boundingBox())!
+    expect(expanded.x).toBe(box!.x)
+    const composer = (await page.locator('.cgr-capture-composer').boundingBox())!
+    expect(composer.x).toBe(expanded.x + expanded.width)
+    expect(Math.abs(composer.y - expanded.y)).toBeLessThanOrEqual(1)
+    expect(composer.width + expanded.width).toBeLessThanOrEqual(width)
+    expect(await page.locator('.cgr-capture-composer').evaluate(element => getComputedStyle(element).boxShadow)).toBe('none')
+    await expect.poll(() => button.locator('.tsui-capture-symbol').evaluate(element => getComputedStyle(element).transform)).toBe('matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)')
+    expect(await button.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+    expect(await button.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1)
+    await info.attach(`morphing-entry-${width}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' })
+    await button.click()
+    await expect(button).toBeFocused()
+    await expect(button).toHaveAttribute('aria-expanded', 'false')
+    await expect(input).toHaveCount(0)
+    await button.click()
+    await expect(input).toHaveValue('未提交的草稿')
     await page.keyboard.press('Escape')
     await expect(button).toBeFocused()
   }
@@ -177,4 +220,66 @@ test('Settings no longer exposes a second time planner and visiting it preserves
   await expect(page.locator('.settings-group > summary').filter({ hasText: '可用时间' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '保存时段', exact: true })).toHaveCount(0)
   expect(await planning(page)).toEqual(before)
+})
+
+
+test('primary navigation names pages without duplicate visual content headings', async ({ page }, info) => {
+  await localStart(page)
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 })
+    for (const [title, selector] of [['今天', '.tsui-today h1'], ['岗位库', '.tsui-library-heading h1'], ['日程', '.tsui-schedule-page h1']] as const) {
+      await page.locator('.tsui-primary-nav').getByRole('button', { name: title, exact: true }).click()
+      await expect(page.getByRole('heading', { name: title, exact: true, level: 1 })).toHaveCount(1)
+      const heading = page.locator(selector)
+      const hidden = await heading.evaluate(element => {
+        const hiddenElement = element.closest('.tsui-schedule-page .tsui-page-heading') ?? element
+        const css = getComputedStyle(hiddenElement)
+        return { position: css.position, width: css.width, height: css.height, clipPath: css.clipPath }
+      })
+      expect(hidden).toEqual({ position: 'absolute', width: '1px', height: '1px', clipPath: 'inset(50%)' })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      await info.attach(`single-page-title-${title}-${width}`, { body: await page.screenshot(), contentType: 'image/png' })
+    }
+  }
+})
+
+test('opening capture from body restores focus to its entry on Escape', async ({ page }) => {
+  await localStart(page)
+  for (const shortcut of ['Control+k', 'Meta+k']) {
+    await page.mouse.click(1, 1)
+    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+    await page.keyboard.press(shortcut)
+    await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+    await expect(page.locator('.cgr-capture-composer')).toHaveCSS('border-top-color', 'rgb(101, 122, 158)')
+    await expect(page.locator('.cgr-capture-composer')).toHaveCSS('outline-style', 'none')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.tsui-capture-region .tsui-tell-button')).toBeFocused()
+  }
+})
+
+
+test('morphing capture cancels its exit on rapid reopen and respects reduced motion', async ({ page }) => {
+  await localStart(page)
+  const button = page.locator('.tsui-capture-region > .tsui-tell-button')
+  const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+  await button.click()
+  await input.fill('快速收回后继续输入')
+  await button.click()
+  // Do not wait for the 180ms exit to finish before reopening the same control.
+  await button.click()
+  await page.waitForTimeout(240)
+  await expect(input).toBeVisible()
+  await expect(input).toHaveValue('快速收回后继续输入')
+  await expect(input).toBeFocused()
+  await expect(button).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Escape')
+  await expect(button).toBeFocused()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await button.click()
+  expect(await page.locator('.cgr-capture-inline').evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+  expect(await button.locator('.tsui-capture-symbol').evaluate(element => getComputedStyle(element).transitionProperty)).toBe('none')
+  await expect(input).toHaveValue('快速收回后继续输入')
+  await button.click()
+  await expect(input).toHaveCount(0)
+  await expect(button).toHaveAttribute('aria-expanded', 'false')
 })

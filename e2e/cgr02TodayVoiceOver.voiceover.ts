@@ -80,10 +80,10 @@ test('real VoiceOver can find Today, Tell TodayAction and the authoritative save
     expect(foundTodayTask, headingPhrases.join(' | ')).toBe(true)
 
     const openerName = '＋ 告诉 TodayAction'
-    await expect(page.locator('.tsui-topbar').getByRole('button', { name: openerName, exact: true })).toBeEnabled()
+    await expect(page.locator('.tsui-capture-region').getByRole('button', { name: openerName, exact: true })).toBeEnabled()
     // The decorative plus may be pronounced as a word; AX identity still uses
     // the exact complete name, while speech must name the full button function.
-    current = await findControl(openerName, 'button', 'previous', current, '告诉 TodayAction')
+    current = await findControl(openerName, 'button', 'next', current, '告诉 TodayAction')
     // Guidepup act performs the actual VoiceOver cursor's native AX action.
     // capture:true retains the complete announcement, not only its first chunk.
     current = await capture('activate capture opener', () => voiceOver.act({ capture: true }))

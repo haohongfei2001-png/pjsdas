@@ -1,3 +1,5 @@
+import { createAiRequestIdentity } from './capture/aiRequestIdentity.js'
+import { createPortal } from 'react-dom'
 import { aiCandidateDetails } from './capture/aiCandidateDetails.js'
 import { aiCaptureEnabled, previewAiCapture, confirmAiCapture, isCurrentAiPreview, type AiCapturePreview } from './aiCaptureClient.js'
 import { createCapturePreviewPresentation, canRetainRecoveryPreview } from './capturePreviewPresentation.js'
@@ -39,6 +41,8 @@ import './capture/capture.css'
 
 interface TellPjsdasCaptureProps {
   open: boolean
+  inline?: boolean
+  container?: HTMLElement | null
   onClose: (restoreFocus?: boolean) => void
   anchorRef?: RefObject<HTMLButtonElement | null>
   onChanged: () => Promise<void>
@@ -132,6 +136,8 @@ function saveErrorCopy(state: CaptureSaveState, zh: boolean) {
 
 export default function TellPjsdasCapture({
   open,
+  inline = false,
+  container,
   onClose,
   anchorRef,
   onChanged,
@@ -142,6 +148,15 @@ export default function TellPjsdasCapture({
   const { lang } = useUiLanguage()
   const cloud = useCloud()
   const zh = lang === 'zh'
+  // Presence is visual only: closed content is inert immediately, while all
+  // existing operation/focus/draft effects continue to follow actual `open`.
+  const [present, setPresent] = useState(open)
+  useEffect(() => {
+    if (open) { setPresent(true); return }
+    if (!inline || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setPresent(false); return }
+    const timer = window.setTimeout(() => setPresent(false), 180)
+    return () => window.clearTimeout(timer)
+  }, [open, inline])
   const [manualMode, setManualMode] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const naturalDraftRef = useRef('')
@@ -154,6 +169,7 @@ export default function TellPjsdasCapture({
   const [previewRequest, setPreviewRequest] = useState(0)
   const [aiRequest, setAiRequest] = useState<{ text: string; accountKey: string; requestId: string }>()
   const processedAiRequest = useRef<string | undefined>(undefined)
+  const aiRequestIdentity = useRef(createAiRequestIdentity())
   const [fileReading, setFileReading] = useState(false)
   const [fileAttachment, setFileAttachment] = useState<{ name: string; quote: string }>()
   const [fileNotice, setFileNotice] = useState('')
@@ -176,6 +192,7 @@ export default function TellPjsdasCapture({
   const sheetRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const restoreFocusRef = useRef(true)
+  const portalFocusRef = useRef({ open, container })
   const closedDraftRef = useRef<{ accountKey: string | null; text: string } | undefined>(undefined)
   const [popoverStyle, setPopoverStyle] = useState<ReturnType<typeof capturePopoverLayout>>()
   const initializedUserIdRef = useRef<string | null | undefined>(undefined)
@@ -244,12 +261,12 @@ export default function TellPjsdasCapture({
     const id = window.setTimeout(() => { if (restoreFocusRef.current) textareaRef.current?.focus({ preventScroll: true }) }, 0)
     return () => {
       window.clearTimeout(id)
-      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
+      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement) || anchorRef?.current?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
     }
   }, [open])
 
   useLayoutEffect(() => {
-    if (!open) return
+    if (!open || inline) return
     const place = () => {
       const viewport = window.visualViewport
       setPopoverStyle(capturePopoverLayout(anchorRef?.current?.getBoundingClientRect(), {
@@ -271,7 +288,14 @@ export default function TellPjsdasCapture({
       window.visualViewport?.removeEventListener('resize', place)
       window.visualViewport?.removeEventListener('scroll', place)
     }
-  }, [open, anchorRef])
+  }, [open, anchorRef, inline])
+
+  useLayoutEffect(() => {
+    const previous = portalFocusRef.current
+    portalFocusRef.current = { open, container }
+    // Initial focus belongs to the open effect, which first records the opener.
+    if (open && previous.open && container !== previous.container && restoreFocusRef.current && captureFocusIsVacant(document)) textareaRef.current?.focus({ preventScroll: true })
+  }, [open, container])
 
   useLayoutEffect(() => {
     const input = textareaRef.current
@@ -284,7 +308,7 @@ export default function TellPjsdasCapture({
     const observer = new MutationObserver(fit)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'lang'] })
     return () => observer.disconnect()
-  }, [open, text, manualMode, correctionMode, popoverStyle?.width])
+  }, [open, text, manualMode, correctionMode, popoverStyle?.width, container])
 
   function dismissCapture(restoreFocus = true) {
     closedDraftRef.current = initializedUserIdRef.current === null && !cloud.session?.user.id ? { accountKey: null, text: textRef.current } : undefined
@@ -297,7 +321,9 @@ export default function TellPjsdasCapture({
     if (!open) return
     const trackFocusOwnership = (event: Event) => {
       if (!(event.target instanceof Node)) return
-      if (sheetRef.current?.contains(event.target)) { restoreFocusRef.current = true; return }
+      // The morphing anchor is the inline composer's close control, not an
+      // outside interaction. Preserve the actual (possibly contextual) opener.
+      if (sheetRef.current?.contains(event.target) || anchorRef?.current?.contains(event.target)) { restoreFocusRef.current = true; return }
       restoreFocusRef.current = false
       operationLifecycle.current.releaseFocus()
     }
@@ -436,7 +462,10 @@ export default function TellPjsdasCapture({
             if (modelCapture) setSaveState('ai_preview_error')
             // Only a known stale/expired result permits a new inference identity.
             // Unknown provider/network outcomes keep their original receipt ID.
-            if (modelCapture && /^(AI_CAPTURE_STALE|AI_CAPTURE_EXPIRED):/.test(failure)) setAiRequest(undefined)
+            if (modelCapture && /^(AI_CAPTURE_STALE|AI_CAPTURE_EXPIRED):/.test(failure)) {
+              aiRequestIdentity.current.expire(aiRequest!.requestId)
+              setAiRequest(undefined)
+            }
             setPreviewBusy(false)
           })
         })
@@ -665,8 +694,7 @@ export default function TellPjsdasCapture({
       processedAiRequest.current = undefined
       // A retry of the same input asks for its durable result, never buys a
       // second inference after an unknown response. Edits get a new identity.
-      setAiRequest(previous => previous?.text === text && previous.accountKey === accountKey
-        ? { ...previous } : { text, accountKey, requestId: createConnectedCommandId('ai-capture') })
+      setAiRequest(aiRequestIdentity.current.forInput(text, accountKey, () => createConnectedCommandId('ai-capture')))
     }
     setPreviewRequest(value => value + 1)
     previewSectionRef.current?.focus()
@@ -685,7 +713,7 @@ export default function TellPjsdasCapture({
       editText(manualJobDraft(manualDraftRef.current))
     }
   }
-  if (!open) return null
+  if (!open && !present) return null
   const manualJob = readManualJobDraft(text) ?? { company: '', role: '' }
 
 
@@ -703,12 +731,11 @@ export default function TellPjsdasCapture({
     </> : null}
     {!manualMode && !correctionMode ? <button type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(true)}>{zh ? '核实已有记录' : 'Review existing records'}</button> : null}
     {!correctionMode ? <button className="text-button cgr-capture-mode" type="button" disabled={busy || recoveryLocked} onClick={switchManualMode}>{manualMode ? (zh ? '用自然语言添加' : 'Use natural language') : (zh ? '手动填写岗位' : 'Enter job manually')}</button> : null}
-    {!manualMode && !correctionMode ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>{zh ? '收起' : 'Close'}</button> : null}
   </div> : null
 
 
-  return (
-    <div className="cgr-capture-popover" style={popoverStyle}>
+  const content = (
+    <div className={`cgr-capture-popover${inline ? ' cgr-capture-inline' : ''}`} data-open={open} inert={!open} aria-hidden={!open || undefined} style={inline ? undefined : popoverStyle}>
       <section
         id="tell-pjsdas-composer"
         ref={sheetRef}
@@ -719,10 +746,10 @@ export default function TellPjsdasCapture({
         aria-label={manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}
       >
         {contextLabel ? <span className="cgr-capture-context">{contextLabel}</span> : null}
-        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}<button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button></div> : null}
+        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}{!inline ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button> : null}</div> : null}
         {correctionMode ? secondaryActions : null}
         {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
-        {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
+        {correctionMode ? (open ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : null) : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
         <div className="cgr-capture-composer">
         <textarea
@@ -745,6 +772,7 @@ export default function TellPjsdasCapture({
         <div className="cgr-capture-tools">
           <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
             onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
+          {!inline ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'} title={zh ? '收起，保留草稿' : 'Close and keep draft'}>×</button> : null}
           {moreActions}
           <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || modelCapture && previewBusy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
@@ -860,4 +888,5 @@ export default function TellPjsdasCapture({
       </section>
     </div>
   )
+  return inline && container ? createPortal(content, container) : content
 }

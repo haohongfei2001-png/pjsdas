@@ -32,8 +32,15 @@ Synthetic unit tests cover actual installed SDK transport with mocked networking
 
 Serial PGlite is not a real multi-session PostgreSQL concurrency certification. Before production activation, run independent multi-connection admission/confirm/revocation race tests against a disposable PostgreSQL instance, verify the deployed migration and grants, and verify provider billing enforcement and conservative cost bounds. No live language-understanding accuracy or actual model cost is claimed by these synthetic tests.
 
-## Multi-session fixture (execution pending CI)
+## Multi-session fixture (original candidate verified; integration gates separate)
 
 `tests/sql/ai-capture-concurrency.mjs` is included in the existing `test:concurrency` chain and existing PostgreSQL 17 CI service, with no new job or resource. It permits only the synthetic loopback fixture URL, creates and cleans up only its own uniquely named database, and witnesses exact transaction blockers through PostgreSQL catalogs. Eleven schedules cover same-ID admission, last-credit contention, admission rollback, conflicting confirmations, same-command replay, intervening workspace CAS, confirmation rollback, expiry crossed while queued, and both orders of dispatch-policy revocation. Expiry gates use `clock_timestamp()` rather than transaction-start `now()`, so waiting cannot preserve expired approval. A funding/data-sharing revocation stops future sends but does not cancel a previously reviewed local write; server disable still rejects new confirmations before SQL.
 
 The fixture was syntax-checked locally; the actual multi-connection run is pending the existing hosted CI service. Serial PGlite was rerun after the wall-clock correction. Do not describe this fixture's presence as a successful concurrency certification before that CI result.
+
+
+On 2026-10-22, the original PR #282 CI record was checked: SQL run 39235885174
+passed its real migration/authorization and multi-session contention steps, and UI
+run 39235884927 passed the synthetic AI composer step. This closes the original
+fixture-execution uncertainty, not production migration, provider billing, model
+quality, or the required gates for any later integrated head.

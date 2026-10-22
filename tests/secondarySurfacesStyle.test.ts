@@ -5,7 +5,7 @@ import postcss from 'postcss'
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const css = read('src/secondarySurfaces.css')
 const captureFocus = '.cgr-capture-sheet :is(button, a, input, select, textarea, summary, .cgr-understanding):focus-visible'
-const composerFocus = '.cgr-capture-sheet .cgr-capture-composer:has(.cgr-capture-input:focus-visible)'
+const composerFocus = '.cgr-capture-popover:not(.cgr-capture-inline) .cgr-capture-sheet .cgr-capture-composer:has(.cgr-capture-input:focus-visible)'
 const inputFocus = '.cgr-capture-sheet .cgr-capture-input:focus-visible'
 
 function expectVisibleFocus(source: string) {
@@ -14,10 +14,18 @@ function expectVisibleFocus(source: string) {
   root.walkDecls(declaration => {
     if (/^outline(?:-style|-width)?$/i.test(declaration.prop) && /^(?:none\b|[+-]?(?:0+(?:\.0*)?|\.0+)(?:[a-z]+|%)?(?:\s|$))/i.test(declaration.value)) removals.push(declaration)
   })
-  // The sole exception transfers textarea focus to the containing composer.
-  // Other controls and browsers without :has keep their own visible outline.
-  expect(removals).toHaveLength(1)
-  const removal = removals[0]!
+  // Floating capture keeps its original outline. Inline capture replaces both
+  // textarea and outer outlines with a 1px keyboard-aware border, not no focus.
+  expect(removals).toHaveLength(3)
+  const removal = removals.find(item => (item.parent as postcss.Rule).selector === inputFocus)!
+  expect(removal).toBeDefined()
+  const inlineSelectors = ['.tsui-capture-region .cgr-capture-composer', '.tsui-capture-region .cgr-capture-sheet .cgr-capture-input']
+  for (const selector of inlineSelectors) {
+    const matches = removals.filter(item => (item.parent as postcss.Rule).selector === selector)
+    expect(matches).toHaveLength(1)
+    expect(matches[0]!.value).toBe('none')
+    expect(matches[0]!.important).toBe(true)
+  }
   expect(removal.prop).toBe('outline')
   expect(removal.value).toBe('none')
   expect(removal.important).toBe(true)
@@ -35,6 +43,12 @@ function expectVisibleFocus(source: string) {
   const fallback = root.nodes.find(node => node.type === 'rule' && node.selector === captureFocus) as postcss.Rule | undefined
   expect(fallback).toBeDefined()
   expect(declarations(fallback!)).toEqual(expect.arrayContaining(['outline:2px solid #315ec5!important', 'outline-offset:2px!important']))
+  const keyboardSelector = '.tsui-capture-region[data-keyboard-focus="true"] .cgr-capture-composer:focus-within'
+  const keyboard = root.nodes.find(node => node.type === 'rule' && node.selector === keyboardSelector) as postcss.Rule | undefined
+  expect(keyboard).toBeDefined()
+  expect(declarations(keyboard!)).toContain('border-color:#657a9e')
+  const inlineFrame = root.nodes.find(node => node.type === 'rule' && node.selector === inlineSelectors[0] && declarations(node).includes('border:1px solid #dfe5ee'))
+  expect(inlineFrame).toBeDefined()
 }
 
 describe('secondary-surface styling stays outside the protected main UI', () => {
@@ -61,6 +75,8 @@ describe('secondary-surface styling stays outside the protected main UI', () => 
     ['zero with units hides focus', () => `${css}\n.cgr-capture-tool:focus-visible { outline-width: 0px !important; }`],
     ['fractional zero hides focus', () => `${css}\n.cgr-capture-tool:focus-visible { outline-width: .0rem !important; }`],
     ['missing fallback', () => css.replace(captureFocus, '.unrelated:focus-visible')],
+    ['missing inline keyboard cue', () => css.replace('border-color: #657a9e', 'border-color: transparent')],
+    ['missing thin inline frame', () => css.replace('border: 1px solid #dfe5ee', 'border: 0')],
   ] as const)('rejects %s in the single-ring contract', (_name, mutate) => {
     expect(() => expectVisibleFocus(mutate())).toThrow()
   })

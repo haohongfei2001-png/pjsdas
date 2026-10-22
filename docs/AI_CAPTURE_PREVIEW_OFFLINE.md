@@ -57,3 +57,29 @@ performed by this implementation. Synthetic tests are not evidence of live quali
 - Serial PGlite verifies SQL constraints and transactions, not multi-session
   concurrency certification. Perform staged database integration/lock verification
   before activation. Live language quality remains untested until authorized.
+
+## Mainline integration checkpoint — 2026-10-22
+
+The original PR #282 implementation is retained and integrated with main
+`64af7779c967ac6a5bd7c19e5224c24f5c4808fd`. The approved plus-only entry,
+rightward expansion, fine input boundary and keyboard focus contract are unchanged.
+
+A concrete retry-lifecycle gap is fixed: closing or switching composer modes
+previously discarded the request identity after an uncertain preview. Retry identity
+is now separate from the active view trigger. Reopening does not dispatch; the next
+explicit click for the same account/input reuses the original durable request ID.
+Known expired/stale responses may release that identity; unknown failures do not.
+This memory-only retention is not cross-reload recovery or new write authority.
+
+Verification milestones:
+- Original PR #282 hosted synthetic AI browser and real multi-session PostgreSQL
+  checks passed (runs 39235884927 and 39235885174). These supersede the original
+  historical pending statements above, not the new integration's exact-head gates.
+- Integrated local suite: 363 files / 4,565 tests passed, with typecheck and build.
+- New exact-head browser, SQL and required release checks remain pending publication.
+- Runtime activation, live model quality and production SQL migration remain NOT
+  performed. No paid model/search call or credential/configuration change was made.
+
+Next bounded milestone is exact-head acceptance of this default-off integration.
+A later real-model quality milestone remains gated on verified funding and data
+scope; passing mocks must not be described as a usable live AI conversation.

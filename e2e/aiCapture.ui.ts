@@ -78,3 +78,64 @@ test('model failure is visible and has no local-parser fallback', async ({ page 
   await expect.poll(() => f.previews.length).toBe(2)
   expect(f.previews[1].requestId).toBe(f.previews[0].requestId)
 })
+
+test('closing an in-flight preview preserves its retry identity without auto-requesting on reopen', async ({ page }) => {
+  const f = await setup(page, 'ready', true)
+  await f.input.fill('关闭后继续核对的合成内容')
+  await f.organize.click()
+  await expect.poll(() => f.previews.length).toBe(1)
+  await f.input.press('Escape')
+  f.release()
+  await page.locator('.tsui-tell-button').click()
+  await expect(f.input).toHaveValue('关闭后继续核对的合成内容')
+  await page.waitForTimeout(300)
+  expect(f.previews).toHaveLength(1)
+  await expect(page.locator('.cgr-understanding')).not.toContainText('模型理解的合成任务')
+  await f.organize.click()
+  await expect.poll(() => f.previews.length).toBe(2)
+  expect(f.previews[1].requestId).toBe(f.previews[0].requestId)
+  expect(f.commands).toHaveLength(0)
+})
+
+test('closing before the preview debounce never starts interpretation on reopen', async ({ page }) => {
+  const f = await setup(page)
+  await f.input.fill('还未发出的合成内容')
+  // One task closes before the 180ms debounce; no timing race with the driver.
+  await f.organize.evaluate(button => {
+    (button as HTMLButtonElement).click()
+    document.querySelector<HTMLButtonElement>('.tsui-tell-button')!.click()
+  })
+  await expect(page.locator('.tsui-tell-button')).toHaveAttribute('aria-expanded', 'false')
+  await page.waitForTimeout(250)
+  expect(f.previews).toHaveLength(0)
+  await page.locator('.tsui-tell-button').click()
+  await page.waitForTimeout(250)
+  expect(f.previews).toHaveLength(0)
+  await f.organize.click()
+  await expect.poll(() => f.previews.length).toBe(1)
+  expect(f.commands).toHaveLength(0)
+})
+
+for (const secondaryMode of ['manual', 'review'] as const) {
+  test(`${secondaryMode} round-trip retains unknown preview identity but requires another explicit click`, async ({ page }) => {
+    const f = await setup(page, 'failure')
+    await f.input.fill('保留原始请求的合成内容')
+    await f.organize.click()
+    await expect(page.locator('.cgr-capture-sheet')).toContainText('AI 理解暂时不可用')
+    await page.getByRole('button', { name: '更多操作', exact: true }).click()
+    if (secondaryMode === 'manual') {
+      await page.getByRole('button', { name: '手动填写岗位', exact: true }).click()
+      await page.getByRole('button', { name: '用自然语言添加', exact: true }).click()
+    } else {
+      await page.getByRole('button', { name: '核实已有记录', exact: true }).click()
+      await page.getByRole('button', { name: '返回记录进展', exact: true }).click()
+    }
+    await expect(f.input).toHaveValue('保留原始请求的合成内容')
+    await page.waitForTimeout(250)
+    expect(f.previews).toHaveLength(1)
+    await f.organize.click()
+    await expect.poll(() => f.previews.length).toBe(2)
+    expect(f.previews[1].requestId).toBe(f.previews[0].requestId)
+    expect(f.commands).toHaveLength(0)
+  })
+}
