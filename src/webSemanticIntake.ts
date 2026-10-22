@@ -98,7 +98,7 @@ async function optimisticReplace(
 
 export async function previewWebSemanticCapture(
   text: string,
-  options: { now?: Date } = {},
+  options: { now?: Date; contextRefs?: string[] } = {},
 ): Promise<WebSemanticCapturePreview> {
   const trimmed = text.trim()
   if (!trimmed) return { mode: 'assertion', candidates: [], unresolved: [], ignored: [] }
@@ -109,7 +109,7 @@ export async function previewWebSemanticCapture(
     exportLocalSnapshot(),
   ])
   const timezone = baseline.data.timePlanning?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
-  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
+  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone, options.contextRefs)
   return {
     mode: interpretation.mode,
     candidates: interpretation.candidates,
@@ -138,7 +138,7 @@ export async function submitWebSemanticCapture(
   const baselineFingerprint = await fingerprintWorkspace(baseline)
   assertCurrent()
   const interpretation = options.candidates ? { mode: 'current_intent' as const, candidates: options.candidates, unresolved: [], ignored: [] }
-    : buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
+    : buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone, options.contextRefs)
   // A partial interpretation is not authority to save a supported subset of
   // the same message. Stop before local mutation, remote dispatch or outbox
   // admission. Receipt recovery remains read-only and must still resolve an
@@ -180,8 +180,8 @@ export async function submitWebSemanticCapture(
     }
     const authoritative = options.confirmExisting
       ? (nonWriting
-        ? await confirmConnectedCommand(options.accountKey, commandId, { receiptOnly: true })
-        : await confirmConnectedCommand(options.accountKey, commandId))
+        ? await confirmConnectedCommand(options.accountKey, commandId, { receiptOnly: true, expectedContextRefs: options.contextRefs ?? [] })
+        : await confirmConnectedCommand(options.accountKey, commandId, { expectedContextRefs: options.contextRefs ?? [] }))
       : await executeConnectedBusinessCommand(options.accountKey, {
           type: 'semantic_intake',
           value: observation,

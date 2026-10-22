@@ -1,3 +1,4 @@
+import { contextualCompletionsMatch } from './semanticCompletionContext.js'
 import { isPreparationCandidate, PreparationRetiredError, PREPARATION_RETIRED_MESSAGE } from './preparationRetirement.js'
 import { boundInterviewRescheduleMatches } from './boundInterviewReschedule.js'
 import { normalizedUserJobFacts, userJobIdentity } from './opportunityCreation.js'
@@ -720,6 +721,23 @@ function applyCandidate(
 ): CandidateApplyResult {
   const candidate = resolvedTarget(originalCandidate, resolution)
   if (isPreparationCandidate(candidate, snapshot.data)) throw new PreparationRetiredError()
+  // Decisions can be answered after the occurrence changes. Explicit owner
+  // constraints survive in the frozen candidate and must still agree at write.
+  if (candidate.kind === 'occurrence_completed' && candidate.target?.opportunityId) {
+    const owner = canonicalOpportunityId(snapshot, candidate.target.opportunityId)
+    const originalOwner = originalCandidate.target?.opportunityId
+    const explicitOccurrenceIds = [candidate.target.occurrenceId, (snapshot.data.scheduleNodes ?? []).find(node => node.id === candidate.target?.scheduleNodeId)?.occurrenceId]
+      .filter((id): id is string => Boolean(id))
+    const explicitNodes = [...new Set(explicitOccurrenceIds)].flatMap(id => {
+      const latest = latestScheduleOccurrence(snapshot.data.scheduleNodes ?? [], id)
+      return latest ? [latest] : []
+    })
+    if (originalOwner && canonicalOpportunityId(snapshot, originalOwner) !== owner
+      || explicitNodes.some(node => !node.opportunityId || canonicalOpportunityId(snapshot, node.opportunityId) !== owner)) {
+      throw new Error('The completion target no longer belongs to the selected opportunity; refresh the original context.')
+    }
+  }
+
   // Recheck at the mutation point too: another candidate or a later decision
   // must not retarget or confirm past the captured authoritative precondition.
   if (!boundInterviewRescheduleMatches(snapshot, candidate)) throw new Error('The expected interview arrangement changed; refresh the notice before recording it.')
@@ -1160,6 +1178,11 @@ export function applySemanticIntake(
   if (observation.candidates.some(candidate => !boundInterviewRescheduleMatches(base, candidate))) {
     return { status: 'NO_WRITE', snapshot: base, changed: false,
       summary: 'The expected interview arrangement changed or is ambiguous; refresh the notice before recording it.', decisionRequests: [] }
+  }
+
+  if (!contextualCompletionsMatch(base, observation)) {
+    return { status: 'NO_WRITE', snapshot: base, changed: false,
+      summary: 'The selected opportunity does not match an active completion target; refresh the original context.', decisionRequests: [] }
   }
 
   const semanticCommandId = `semantic-intake:${observation.inputId}`

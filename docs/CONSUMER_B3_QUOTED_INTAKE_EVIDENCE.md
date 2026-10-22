@@ -267,3 +267,49 @@ CGR-03 browser assertion still requires a genuinely completed schedule occurrenc
 Quoted/withdrawn browser cases now require zero additional command admission,
 revision, receipt or data change, rather than expecting an empty server command;
 their successful import, repeat, reload and rescheduling assertions remain intact.
+
+## Contextual completion ownership — 2026-10-22
+
+A two-job actual-entrypoint probe demonstrated that a generic completion could
+fall through from selected job A (already completed or missing interview) to B's
+scheduled interview. Both local and connected domain execution reproduced the
+wrong-job mutation; offline admission queued the wrong target. The former
+single-interview browser fixture could not detect this.
+
+The selected existing opportunity now constrains both preview and submission.
+Missing, conflicting or ambiguous context never becomes global fallback. The
+authoritative semantic batch rechecks candidate occurrence ownership before any
+business write, receipt or decision, and delayed decision execution rechecks the
+latest occurrence owner at the mutation point. Multiple active rounds within A
+still require a decision, without offering B. Context is not authorization and
+cannot bypass the existing account lease or authoritative workspace snapshot.
+
+Pending command envelopes remain frozen. Changing context permits receipt-only
+lookup, not resending or retargeting; absent/failed receipts preserve the pending
+operation. Late or background A success cannot consume an identical-text B draft
+or present A's success as B's. Ownership bookkeeping is memory-only and stores no
+new raw text; unknown ownership after reload retains the existing draft rather
+than inventing a cross-refresh guarantee. Existing background replay stays bound
+to the originally authorized envelope and passes the new authoritative guard.
+
+Regression coverage includes local/connected/offline two-job paths, missing and
+completed A, terminal latest versions, multiple A rounds, explicit conflicting
+identities, mixed-message rejection, forged cross-job IDs, delayed decision
+ownership changes, mismatched accounts, receipt recovery and background draft
+cleanup. Browser cases retain genuine schedule-state assertions and add held
+A-request → B-view → original-receipt recovery with B text and schedule unchanged.
+No paid capability, production migration, credential or resolved capture geometry was changed.
+
+### Bootstrap capture continuity
+
+The previous head's UI trace showed the provisional Today `+` being replaced by
+its resolved-layout counterpart during the first native click. No editor mounted;
+this was not an autofocus failure or an AI-model failure. Today now retains one
+capture DOM parent across initial/unavailable and resolved workspace states, and
+keeps the provisional layout still through a primary pointer press until the
+native click completes. Immediate input remains available; the resolved layout,
+44px target and focus assertions are unchanged. Controlled browser regressions
+cover node identity, pointer-down/read-resolution/pointer-up, and an already open
+editor's draft/focus through resolution. They require hosted browser execution;
+source review and unit/build success alone are not browser-pass evidence. This
+fix addresses Today freshness transitions, not every possible app-loading mount.

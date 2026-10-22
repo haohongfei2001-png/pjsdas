@@ -1,3 +1,4 @@
+import { selectedCompletionOpportunity, completionMatchesContext } from './semanticCompletionContext.js'
 import { isPreparationTaskText } from './preparationRetirement.js'
 import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
 import { resolveSourceTemporal } from './sourceTemporal.js'
@@ -355,6 +356,7 @@ function explicitCompletionCandidate(
   plan: ReturnType<typeof parseProgressUpdate>,
   opportunities: Opportunity[],
   baseline: PJSDASSnapshot,
+  contextOpportunityId?: string,
 ): SemanticCandidate | undefined {
   const kind = explicitCompletionKind(text, mode, opportunities)
   if (!kind) return undefined
@@ -363,7 +365,7 @@ function explicitCompletionCandidate(
   const exactMentions = opportunities
     .filter((item) => text.includes(item.company) && text.includes(item.role))
     .map((item) => item.id)
-  const candidateIds = [...new Set([...ids, ...exactMentions])]
+  const candidateIds = [...new Set([...ids, ...exactMentions, ...(contextOpportunityId ? [contextOpportunityId] : [])])]
 
   const latestByOccurrence = new Map<string, NonNullable<PJSDASSnapshot['data']['scheduleNodes']>[number]>()
   for (const node of baseline.data.scheduleNodes ?? []) {
@@ -375,7 +377,7 @@ function explicitCompletionCandidate(
   if (candidateIds.length === 1) nodes = nodes.filter((node) => node.opportunityId === candidateIds[0])
 
   const target = candidateIds.length === 1
-    ? { opportunityId: candidateIds[0], occurrenceKind: kind }
+    ? { opportunityId: candidateIds[0], occurrenceKind: kind, ...(contextOpportunityId && nodes.length === 1 ? { occurrenceId: nodes[0]!.occurrenceId } : {}) }
     : nodes.length === 1
       ? { occurrenceId: nodes[0]!.occurrenceId, occurrenceKind: kind }
       : { occurrenceKind: kind }
@@ -405,6 +407,7 @@ export function buildWebSemanticInterpretation(
   references: CanonicalJobReference[],
   now = new Date(),
   timezone = baseline.data.timePlanning?.timezone,
+  contextRefs: readonly string[] = [],
 ) {
   const importedJob = readExplicitStructuredQuotedJob(text)
   if (importedJob) {
@@ -489,7 +492,12 @@ export function buildWebSemanticInterpretation(
       && clause.includes(operation.company) && clause.includes(operation.role))
   })
   if (conflictingCompletion) return { mode, candidates: [], unresolved: ['同一岗位的完成事实与新的截止义务需要区分具体轮次，本次未写入。'], ignored: [] }
-  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
+  const completionContext = selectedCompletionOpportunity(baseline, contextRefs)
+  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline, completionContext.opportunityId)
+  if (explicitCompletion && (completionContext.error || (completionContext.opportunityId
+    && !completionMatchesContext(baseline, explicitCompletion, completionContext.opportunityId)))) {
+    return { mode, candidates: [], unresolved: [completionContext.error ?? '当前岗位没有明确可完成的对应安排，整条输入尚未保存。请核对岗位与事件。'], ignored: [] }
+  }
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
     ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode, opportunities) !== explicitKind)
@@ -539,6 +547,11 @@ export function buildWebSemanticInterpretation(
     ...convertedUnresolved.flatMap((item) => item.candidate ? [item.candidate] : []),
   ]
 
+  if (candidates.some(candidate => candidate.kind === 'occurrence_completed')
+    && (completionContext.error || (completionContext.opportunityId && candidates.some(candidate => candidate.kind === 'occurrence_completed'
+      && !completionMatchesContext(baseline, candidate, completionContext.opportunityId!))))) {
+    return { mode, candidates: [], unresolved: [completionContext.error ?? '完成事件与当前岗位上下文不一致，整条输入尚未保存。'], ignored: [] }
+  }
   return {
     mode,
     candidates,

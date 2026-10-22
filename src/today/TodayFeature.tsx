@@ -1,6 +1,6 @@
 import { presentDecision } from '../decisionPresentation.js'
 import { formatScheduleTemporal } from '../scheduleDisplayTime.js'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Action, Opportunity } from '../model.js'
 import { localDateKey, type TodayBriefAction } from '../todayBrief.js'
 import type { TodayWebSelection } from './todayWebSelector.js'
@@ -73,8 +73,30 @@ export default function TodayFeature({ captureEntry, selection, stream, opportun
     : new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric', weekday: 'short', timeZone: stream.timezone }).format(now)
   const todayKey = localDateKey(now, stream.timezone)
   const completedToday = [...stream.sections.history, ...(stream.completedActions ?? [])].filter((item) => item.date === todayKey && (item.state === 'completed' || item.timeline?.kind === 'action_status_changed'))
-  const awaiting = freshness.state === 'initial' && workspaceEmpty
-  const unavailable = freshness.state === 'unavailable' && workspaceEmpty
+  // Keep the provisional layout still through a native click; replacing or moving
+  // its + between pointer-down and click loses the user's first capture gesture.
+  const [capturePress, setCapturePress] = useState<{ state: 'initial' | 'unavailable'; pointerId: number }>()
+  const pendingPresentation = capturePress?.state ?? (workspaceEmpty && freshness.state === 'initial' ? 'initial' : workspaceEmpty && freshness.state === 'unavailable' ? 'unavailable' : undefined)
+  const awaiting = pendingPresentation === 'initial'
+  const unavailable = pendingPresentation === 'unavailable'
+  useEffect(() => {
+    if (!capturePress) return
+    let frame = 0
+    const release = (event: PointerEvent) => {
+      if (event.pointerId === capturePress.pointerId) frame = window.requestAnimationFrame(() => setCapturePress(undefined))
+    }
+    const cancel = () => setCapturePress(undefined)
+    const cancelPointer = (event: PointerEvent) => { if (event.pointerId === capturePress.pointerId) cancel() }
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', cancelPointer)
+    window.addEventListener('blur', cancel, { once: true })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener('pointerup', release)
+      window.removeEventListener('pointercancel', cancelPointer)
+      window.removeEventListener('blur', cancel)
+    }
+  }, [capturePress])
   const verifiedEmpty = workspaceEmpty && (freshness.state === 'current' || freshness.state === 'updated')
   const uncertainEmpty = freshness.state === 'cached' || freshness.state === 'blocked' || freshness.state === 'pending'
   const visibleActions = selection.visibleActions
@@ -105,11 +127,12 @@ export default function TodayFeature({ captureEntry, selection, stream, opportun
     {freshness.state === 'pending' ? <p className="tsui-freshness-note" role="status">{zh ? '正在确认修改的同步结果…' : 'Waiting for confirmation of your changes…'}</p> : null}
     {freshness.state === 'cached' ? <p className="tsui-freshness-note">{zh ? '显示已保存记录，等待更新。' : 'Showing saved records while updates are unavailable.'}</p> : null}
     {freshness.state === 'blocked' || (freshness.state === 'unavailable' && !workspaceEmpty) ? <div className="tsui-status tsui-compact-state" role="status">{freshness.state === 'blocked' ? (zh ? '本机状态待核对' : 'Review this device’s sync state') : (zh ? '暂时无法读取最新状态' : 'Latest state unavailable')} <button type="button" onClick={freshness.state === 'blocked' ? onStart : onRetry}>{freshness.state === 'blocked' ? (zh ? '打开设置' : 'Open settings') : (zh ? '重试' : 'Retry')}</button></div> : null}
-    {awaiting || unavailable ? <div className="tsui-empty" role="status">{awaiting ? (zh ? '正在确认最新状态…' : 'Checking the latest state…') : <>{zh ? '暂时无法确认今天。' : 'Today is unavailable.'} <button type="button" onClick={onRetry}>{zh ? '重试' : 'Retry'}</button></>}</div> : <>
-      <div className="tsui-mobile-switch" role="group" aria-label={zh ? '今天内容' : 'Today content'}><button type="button" className={mobileView === 'tasks' ? 'active' : ''} onClick={() => setMobileView('tasks')}>{zh ? '任务' : 'Tasks'} <span>{visibleActions.length + selection.decisionCount}</span></button><button type="button" className={mobileView === 'nodes' ? 'active' : ''} onClick={() => setMobileView('nodes')}>{zh ? '节点' : 'Nodes'} <span>{stream.counts.upcoming}</span></button></div>
+      {!awaiting && !unavailable ? <div className="tsui-mobile-switch" role="group" aria-label={zh ? '今天内容' : 'Today content'}><button type="button" className={mobileView === 'tasks' ? 'active' : ''} onClick={() => setMobileView('tasks')}>{zh ? '任务' : 'Tasks'} <span>{visibleActions.length + selection.decisionCount}</span></button><button type="button" className={mobileView === 'nodes' ? 'active' : ''} onClick={() => setMobileView('nodes')}>{zh ? '节点' : 'Nodes'} <span>{stream.counts.upcoming}</span></button></div> : null}
       <div className="tsui-today-grid">
-        <div className="tsui-task-column">
-        <section className={'tsui-panel tsui-task-panel' + (mobileView === 'nodes' ? ' mobile-hidden' : '') + (visibleActions.length + selection.decisionCount <= 1 ? ' is-sparse' : '')} aria-label={zh ? '今天的任务' : 'Tasks for today'}>
+        <div className="tsui-task-column" onPointerDownCapture={(event) => {
+          if (event.isPrimary && event.button === 0 && pendingPresentation && event.target instanceof Element && event.target.closest('.tsui-tell-button')) setCapturePress({ state: pendingPresentation, pointerId: event.pointerId })
+        }}>
+        {awaiting || unavailable ? <div className="tsui-empty" role="status">{awaiting ? (zh ? '正在确认最新状态…' : 'Checking the latest state…') : <>{zh ? '暂时无法确认今天。' : 'Today is unavailable.'} <button type="button" onClick={onRetry}>{zh ? '重试' : 'Retry'}</button></>}</div> : <section className={'tsui-panel tsui-task-panel' + (mobileView === 'nodes' ? ' mobile-hidden' : '') + (visibleActions.length + selection.decisionCount <= 1 ? ' is-sparse' : '')} aria-label={zh ? '今天的任务' : 'Tasks for today'}>
           <div className="tsui-panel-header"><div><h2>{zh ? '今日任务' : 'Today’s tasks'} <span className="tsui-count">{visibleActions.length + selection.decisionCount}</span></h2></div></div>
           {deadlineNotice}
           {visibleActions.length === 0 && selection.decisions.length === 0 ? <div className="tsui-empty">{uncertainEmpty ? <><strong>{zh ? '现有记录中没有今日任务' : 'No today tasks in the available records'}</strong><p>{freshness.state === 'pending' ? (zh ? '修改结果尚待同步确认。' : 'Changes are still awaiting sync confirmation.') : freshness.state === 'cached' ? (zh ? '已保存记录中暂无今日任务；联网后会自动更新。' : 'No tasks in saved records; this updates when connected.') : (zh ? '本机状态待核对，请从上方进入设置。' : 'Review this device’s state in Settings above.')}</p></> : workspaceEmpty ? <><strong>{verifiedEmpty ? (zh ? '账号工作区已读取，目前没有今日任务' : 'Account workspace checked; no tasks for today') : (zh ? '先让 TodayAction 了解你的求职进展' : 'Start by adding your job search')}</strong><p>{verifiedEmpty ? (zh ? '可以记录新的进展，或在设置中检查连接。' : 'Record new progress or check your connections in Settings.') : (zh ? '在设置中连接已有账号，或使用下方“告诉 TodayAction”记录进展。' : 'Connect your existing account in Settings or record progress with Tell TodayAction below.')}</p><button type="button" onClick={onStart}>{zh ? '打开设置' : 'Open settings'}</button></> : <strong>{zh ? '当前没有今日任务' : 'No tasks for today'}</strong>}</div> : null}
@@ -118,16 +141,14 @@ export default function TodayFeature({ captureEntry, selection, stream, opportun
             {visibleActions.map((item) => <article className="tsui-task-row" key={item.actionId} data-action-id={item.actionId} data-deferred-action-id={deferredHard.has(item.actionId) ? item.actionId : undefined} data-icon={item.company?.slice(0, 1) ?? '✓'}><div className="tsui-task-copy">{item.opportunityId ? !hasRepeatedApplicationContext(item) ? <button className="tsui-task-context" type="button" onClick={event => onOpenOpportunity(item.opportunityId!, event.currentTarget)}>{[item.company, item.role].filter(Boolean).join(' · ')}</button> : null : <small>{zh ? '独立任务' : 'Independent task'}</small>}<h3>{item.title}</h3><span>{timeLabel(item, zh, selection.displayTimezone)}</span></div><div className="tsui-task-actions"><button className="tsui-row-action" type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onExecute(item)) }}>{actionLabel(item, zh)}</button><button className={item.kind === 'apply' ? 'tsui-done-action tsui-submission-action' : 'tsui-done-action'} type="button" disabled={pendingId === item.actionId || readOnly} onClick={() => { void act(item.actionId, () => onMark(item.actionId, 'done', item.kind === 'apply' ? 'application_submission' : undefined)) }}>{pendingId === item.actionId ? (zh ? '处理中…' : 'Working…') : (item.kind === 'apply' ? (zh ? '我已投递' : 'I applied') : (zh ? '完成' : 'Done'))}</button></div></article>)}
           </div>
           {completedToday.length > 0 ? <section className="tsui-completed"><button type="button" aria-expanded={showCompleted} onClick={() => setShowCompleted((value) => !value)}>{zh ? '今日已完成' : 'Completed today'} · {completedToday.length} <span>{showCompleted ? '⌃' : '⌄'}</span></button>{showCompleted ? completedToday.map((entry) => <div key={entry.id}>{entry.title}</div>) : null}</section> : null}
-        </section>
+        </section>}
         {captureEntry}
         </div>
-        <aside className={'tsui-panel tsui-node-panel' + (mobileView === 'tasks' ? ' mobile-hidden' : '') + (stream.counts.upcoming === 0 ? ' is-empty' : '')} aria-label={zh ? '近期节点' : 'Upcoming nodes'}>
+        {!awaiting && !unavailable ? <aside className={'tsui-panel tsui-node-panel' + (mobileView === 'tasks' ? ' mobile-hidden' : '') + (stream.counts.upcoming === 0 ? ' is-empty' : '')} aria-label={zh ? '近期节点' : 'Upcoming nodes'}>
           <div className="tsui-panel-header"><div><h2>{zh ? '近期节点' : 'Upcoming nodes'}</h2><p>{zh ? '面试、笔试与真实截止时间' : 'Interviews, tests and real deadlines'}</p></div><button type="button" className="tsui-panel-link" onClick={onOpenAgenda}>{zh ? '打开日程' : 'Open schedule'} ›</button></div>
           {fixedNotice}
           <div className="tsui-node-scroll">{stream.counts.upcoming === 0 ? <p className="tsui-empty">{zh ? '暂无近期节点' : 'No upcoming nodes'}</p> : <ScheduleWindowList key={stream.key} stream={stream} section="upcoming" opportunities={opportunities} onOpenOpportunity={onOpenOpportunity} />}</div>
-        </aside>
+        </aside> : null}
       </div>
-    </>}
-    {awaiting || unavailable ? captureEntry : null}
   </section>
 }

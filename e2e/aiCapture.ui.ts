@@ -31,6 +31,9 @@ async function setup(page: Page, mode: 'ready' | 'question' | 'failure' = 'ready
     return cors(route, { code: 'NOT_FOUND' }, 404)
   })
   await page.goto('/pjsdas/today')
+  // These AI-specific cases start from the installed fixture. Cold-bootstrap
+  // clicks and editor continuity have dedicated held-read browser coverage.
+  await expect(page.getByRole('region', { name: '今天的任务' })).toBeVisible()
   await page.locator('.tsui-tell-button').click()
   const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
   await expect(input).toBeFocused()

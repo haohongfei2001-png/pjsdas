@@ -1102,7 +1102,7 @@ export default function AppV8() {
         onChanged={reload}
         onOpenDecisions={() => navigate('/decisions')}
         contextLabel={captureOpportunity ? `${captureOpportunity.company} · ${captureOpportunity.role}` : undefined}
-        contextRefs={captureOpportunity ? [`opportunity:${captureOpportunity.id}`] : []}
+        contextRefs={captureContextOpportunityId ? [`opportunity:${captureContextOpportunityId}`] : []}
       />
 
       {lastCompletedAction ? (
