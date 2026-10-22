@@ -398,13 +398,14 @@
 
 /* One quiet entry: the same + stays anchored while its editor reveals right. */
 .tsui-capture-region { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: start; width: min(100%, 720px); margin-top: 20px; }
-.tsui-capture-region > .tsui-tell-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #315ec5; font-size: .875rem; line-height: 1.5; box-shadow: none; }
+.tsui-capture-region > .tsui-tell-button { position: relative; display: inline-flex; align-items: center; justify-content: flex-start; gap: 0; width: max-content; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #315ec5; font-size: .875rem; line-height: 1.5; box-shadow: none; }
 .tsui-capture-region > .tsui-tell-button::before { display: none; }
 .tsui-capture-region > .tsui-tell-button:hover { background: #edf2ff; }
-.tsui-capture-symbol { display: inline-block; font-size: 22px; line-height: 1; transform: rotate(0deg); transition: transform 180ms ease; }
-.tsui-capture-label { position: absolute; left: 44px; white-space: nowrap; opacity: 1; transition: opacity 120ms ease; }
+.tsui-capture-symbol { display: inline-block; flex: 0 0 44px; text-align: center; font-size: 22px; line-height: 1; transform: rotate(0deg); transition: transform 180ms ease; }
+.tsui-capture-label { white-space: nowrap; opacity: 1; transition: opacity 120ms ease; }
 .tsui-capture-region[data-expanded="true"] .tsui-capture-symbol { transform: rotate(45deg); }
-.tsui-capture-region[data-expanded="true"] .tsui-capture-label { opacity: 0; visibility: hidden; pointer-events: none; }
+.tsui-capture-region[data-expanded="true"] > .tsui-tell-button { width: 44px; }
+.tsui-capture-region[data-expanded="true"] .tsui-capture-label { position: absolute; left: 44px; width: 0; overflow: hidden; opacity: 0; visibility: hidden; pointer-events: none; }
 .tsui-capture-content { min-width: 0; }
 .tsui-capture-region .cgr-capture-inline { position: relative; inset: auto; z-index: auto; width: 100%; max-height: none; transform-origin: left top; animation: capture-reveal 180ms ease both; }
 .tsui-capture-region .cgr-capture-inline[data-open="false"] { pointer-events: none; animation: capture-retract 180ms ease both; }

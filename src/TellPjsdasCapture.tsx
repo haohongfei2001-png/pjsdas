@@ -249,7 +249,7 @@ export default function TellPjsdasCapture({
     const id = window.setTimeout(() => { if (restoreFocusRef.current) textareaRef.current?.focus({ preventScroll: true }) }, 0)
     return () => {
       window.clearTimeout(id)
-      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
+      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement) || anchorRef?.current?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
     }
   }, [open])
 
@@ -309,7 +309,9 @@ export default function TellPjsdasCapture({
     if (!open) return
     const trackFocusOwnership = (event: Event) => {
       if (!(event.target instanceof Node)) return
-      if (sheetRef.current?.contains(event.target)) { restoreFocusRef.current = true; return }
+      // The morphing anchor is the inline composer's close control, not an
+      // outside interaction. Preserve the actual (possibly contextual) opener.
+      if (sheetRef.current?.contains(event.target) || anchorRef?.current?.contains(event.target)) { restoreFocusRef.current = true; return }
       restoreFocusRef.current = false
       operationLifecycle.current.releaseFocus()
     }
@@ -703,7 +705,7 @@ export default function TellPjsdasCapture({
         {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}{!inline ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button> : null}</div> : null}
         {correctionMode ? secondaryActions : null}
         {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
-        {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
+        {correctionMode ? (open ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : null) : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
         <div className="cgr-capture-composer">
         <textarea
