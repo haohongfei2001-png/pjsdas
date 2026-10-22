@@ -828,10 +828,10 @@ export default function TellPjsdasCapture({
           <section ref={previewSectionRef} tabIndex={-1} className="cgr-understanding" aria-label={zh ? '整理结果' : 'Interpretation preview'} aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
               <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : modelCapture && !preview ? (zh ? '点击箭头开始 AI 理解' : 'Use the arrow to interpret with AI') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
-              <span data-state={saveState}>
+              <span data-state={saveState === 'saved' && !authoritativeSaveConfirmed ? 'idle' : saveState}>
                 {saveState === 'auth_unconfirmed' ? (zh ? '等待账号确认' : 'Waiting for account confirmation')
                   : saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
-                  : saveState === 'saved' ? (zh ? '已保存' : 'Saved')
+                  : saveState === 'saved' && authoritativeSaveConfirmed ? (zh ? '已保存' : 'Saved')
                   : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
                   : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
                     : saveState === 'blocked_by_pending' ? (zh ? '尚未发送' : 'Not sent')
