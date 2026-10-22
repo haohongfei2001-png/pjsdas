@@ -442,9 +442,9 @@ for (const width of [1440, 390, 320]) test(`main pixels stay fixed before and af
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   if (phase === 'after') {
     const ring = await page.locator('.cgr-capture-composer').evaluate(element => ({
-      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth, offset: getComputedStyle(element).outlineOffset,
+      color: getComputedStyle(element).borderTopColor, width: getComputedStyle(element).borderTopWidth, outline: getComputedStyle(element).outlineStyle,
     }))
-    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '2px', offset: '0px' })
+    expect(ring).toEqual({ color: 'rgb(223, 229, 238)', width: '1px', outline: 'none' })
     expect(await page.locator('.cgr-capture-input').evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
   }
   await capture(page, 'CAPTURE', width, scale)
@@ -568,9 +568,9 @@ for (const width of [1440, 390, 320]) test(`page-only capture replays the same s
   await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
   if (phase === 'after') {
     const ring = await page.locator('.cgr-capture-composer').evaluate(element => ({
-      color: getComputedStyle(element).outlineColor, width: getComputedStyle(element).outlineWidth, offset: getComputedStyle(element).outlineOffset,
+      color: getComputedStyle(element).borderTopColor, width: getComputedStyle(element).borderTopWidth, outline: getComputedStyle(element).outlineStyle,
     }))
-    expect(ring).toEqual({ color: 'rgb(49, 94, 197)', width: '2px', offset: '0px' })
+    expect(ring).toEqual({ color: 'rgb(223, 229, 238)', width: '1px', outline: 'none' })
     expect(await page.locator('.cgr-capture-input').evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
   }
   await capture(page, 'PAGE_ONLY_CAPTURE', width, scale)

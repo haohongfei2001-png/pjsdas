@@ -163,6 +163,24 @@ export default function AppV8() {
   const [route, setRoute] = useState<RouteState>(() => routeFromPath())
   const [captureExpanded, setCaptureExpanded] = useState(false)
   const [captureFollowing, setCaptureFollowing] = useState(true)
+  const [captureKeyboardFocus, setCaptureKeyboardFocus] = useState(false)
+  useEffect(() => {
+    // Textareas match :focus-visible even after a pointer-triggered autofocus.
+    // Track navigation intent separately so that input focus does not draw a panel.
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Tab' || ((event.key === 'Enter' || event.key === ' ') &&
+        event.target instanceof Element && event.target.closest('button, a, summary, [role="button"]'))) {
+        setCaptureKeyboardFocus(true)
+      }
+    }
+    const pointer = () => setCaptureKeyboardFocus(false)
+    document.addEventListener('keydown', keyboard, true)
+    document.addEventListener('pointerdown', pointer, true)
+    return () => {
+      document.removeEventListener('keydown', keyboard, true)
+      document.removeEventListener('pointerdown', pointer, true)
+    }
+  }, [])
   const captureOpen = route.capture || captureExpanded
   const captureAnchorRef = useRef<HTMLButtonElement>(null)
   const [captureContainer, setCaptureContainer] = useState<HTMLDivElement | null>(null)
@@ -433,6 +451,7 @@ export default function AppV8() {
     const keyboard = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        setCaptureKeyboardFocus(true)
         openCapture()
       }
     }
@@ -984,8 +1003,8 @@ export default function AppV8() {
   }
 
   const captureEntry = (
-    <div className="tsui-capture-region" data-expanded={captureOpen}>
-      <button ref={captureAnchorRef} className={`tsui-tell-button${captureOpen ? ' cgr-capture-close' : ''}`} type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={captureOpen ? (zh ? '关闭' : 'Close') : (zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction')} title={captureOpen ? (zh ? '收起，保留草稿' : 'Close and keep draft') : undefined} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span className="tsui-capture-symbol" aria-hidden="true">＋</span><span className="tsui-capture-label" aria-hidden={captureOpen}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</span></button>
+    <div className="tsui-capture-region" data-expanded={captureOpen} data-keyboard-focus={captureKeyboardFocus}>
+      <button ref={captureAnchorRef} className={`tsui-tell-button${captureOpen ? ' cgr-capture-close' : ''}`} type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={captureOpen ? (zh ? '关闭' : 'Close') : (zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction')} title={captureOpen ? (zh ? '收起，保留草稿' : 'Close and keep draft') : undefined} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span className="tsui-capture-symbol" aria-hidden="true">＋</span></button>
       <div className="tsui-capture-content" ref={setCaptureContainer} />
     </div>
   )
