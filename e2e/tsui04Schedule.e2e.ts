@@ -172,7 +172,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   // The inline entry can follow the complete long list. Capture the actual
   // composer viewport, not a >32767px bitmap rejected by Firefox/WebKit.
   await expect(capture).toBeInViewport()
-  await expect(capture.locator('.cgr-capture-close')).toBeInViewport()
+  await expect(page.locator('.tsui-capture-region > .cgr-capture-close')).toBeInViewport()
   await expect(page.locator('.tsui-schedule-page .tsui-load-anchor')).toBeHidden()
   const editingRows = await page.locator('.tsui-schedule-row').count()
   await page.waitForTimeout(350)
@@ -188,7 +188,7 @@ test('TSUI-04 real schedule: today anchor, both directions, unresolved and undat
   await expect(page.locator('.tsui-schedule-page .tsui-load-anchor')).toBeVisible()
   await page.locator('.tsui-tell-button').click()
   await expect(draft).toHaveValue('保留这份未发送的日程草稿')
-  await expect(capture.locator('.cgr-capture-close')).toBeInViewport()
+  await expect(page.locator('.tsui-capture-region > .cgr-capture-close')).toBeInViewport()
   await expect.poll(async () => {
     const bounds = await draft.evaluate(element => ({ top: element.getBoundingClientRect().top,
       navigationBottom: document.querySelector('.tsui-topbar')!.getBoundingClientRect().bottom }))

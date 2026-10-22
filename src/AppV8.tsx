@@ -984,9 +984,9 @@ export default function AppV8() {
   }
 
   const captureEntry = (
-    <div className="tsui-capture-region">
-      <button ref={captureAnchorRef} className="tsui-tell-button" type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction'} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span aria-hidden="true">＋</span><span>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</span></button>
-      <div ref={setCaptureContainer} />
+    <div className="tsui-capture-region" data-expanded={captureOpen}>
+      <button ref={captureAnchorRef} className={`tsui-tell-button${captureOpen ? ' cgr-capture-close' : ''}`} type="button" aria-expanded={captureOpen} aria-controls="tell-pjsdas-composer" aria-label={captureOpen ? (zh ? '关闭' : 'Close') : (zh ? '＋ 告诉 TodayAction' : '＋ Tell TodayAction')} title={captureOpen ? (zh ? '收起，保留草稿' : 'Close and keep draft') : undefined} onClick={() => captureOpen ? closeCapture() : openCapture()} disabled={CGR02_TODAY_READ_ONLY}><span className="tsui-capture-symbol" aria-hidden="true">＋</span><span className="tsui-capture-label" aria-hidden={captureOpen}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</span></button>
+      <div className="tsui-capture-content" ref={setCaptureContainer} />
     </div>
   )
 

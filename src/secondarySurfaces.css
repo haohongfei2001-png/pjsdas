@@ -396,11 +396,24 @@
 .settings-surface .settings-signin-permission > summary { display: flex; align-items: center; min-height: 44px; color: #3468d4; }
 .settings-surface .settings-signin-permission > p { margin: 0 0 8px; }
 
-/* Capture lives below the page content, never over its navigation or opener. */
-.tsui-capture-region { width: min(100%, 720px); margin-top: 20px; }
-.tsui-capture-region > .tsui-tell-button { display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 44px; padding: 8px 14px; border: 1px solid #dce5fa; border-radius: 10px; background: #edf2ff; color: #315ec5; font-size: .875rem; line-height: 1.5; }
+/* One quiet entry: the same + stays anchored while its editor reveals right. */
+.tsui-capture-region { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: start; width: min(100%, 720px); margin-top: 20px; }
+.tsui-capture-region > .tsui-tell-button { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #315ec5; font-size: .875rem; line-height: 1.5; box-shadow: none; }
 .tsui-capture-region > .tsui-tell-button::before { display: none; }
-.tsui-capture-region > .tsui-tell-button[aria-expanded="true"] { margin-bottom: 10px; }
-.tsui-capture-region .cgr-capture-inline { position: relative; inset: auto; z-index: auto; width: 100%; max-height: none; }
+.tsui-capture-region > .tsui-tell-button:hover { background: #edf2ff; }
+.tsui-capture-symbol { display: inline-block; font-size: 22px; line-height: 1; transform: rotate(0deg); transition: transform 180ms ease; }
+.tsui-capture-label { position: absolute; left: 44px; white-space: nowrap; opacity: 1; transition: opacity 120ms ease; }
+.tsui-capture-region[data-expanded="true"] .tsui-capture-symbol { transform: rotate(45deg); }
+.tsui-capture-region[data-expanded="true"] .tsui-capture-label { opacity: 0; visibility: hidden; pointer-events: none; }
+.tsui-capture-content { min-width: 0; }
+.tsui-capture-region .cgr-capture-inline { position: relative; inset: auto; z-index: auto; width: 100%; max-height: none; transform-origin: left top; animation: capture-reveal 180ms ease both; }
+.tsui-capture-region .cgr-capture-inline[data-open="false"] { pointer-events: none; animation: capture-retract 180ms ease both; }
 .tsui-capture-region .cgr-capture-inline .cgr-capture-sheet { max-height: none; overflow: visible; padding: 0; }
-.tsui-capture-region .cgr-capture-tools .cgr-capture-close { width: 44px; font-size: 1.25rem; }
+.tsui-capture-region .cgr-capture-composer { padding: 0; border: 0; border-radius: 8px; background: transparent; box-shadow: none; }
+.tsui-capture-region .cgr-capture-input { padding: 10px 8px; }
+@keyframes capture-reveal { from { clip-path: inset(-4px 100% -4px -4px); opacity: 0; } to { clip-path: inset(-4px -4px -4px -4px); opacity: 1; } }
+@keyframes capture-retract { from { clip-path: inset(-4px -4px -4px -4px); opacity: 1; } to { clip-path: inset(-4px 100% -4px -4px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .tsui-capture-symbol, .tsui-capture-label { transition: none; }
+  .tsui-capture-region .cgr-capture-inline, .tsui-capture-region .cgr-capture-inline[data-open="false"] { animation: none; }
+}
