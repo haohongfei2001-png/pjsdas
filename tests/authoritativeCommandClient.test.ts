@@ -696,4 +696,41 @@ it('receipt-only lookup does not join a concurrently held same-ID resend', async
     })
   })
 
+  describe('AI receipt recovery retains original selected context', () => {
+    async function stageAi(contextRefs?: string[]) {
+      const commandId = 'ai-context-command'
+      const fingerprint = await fingerprintWorkspace(snapshot())
+      patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+      vi.mocked(fetchBackend).mockRejectedValue(new Error('synthetic lost response'))
+      await expect(executeConnectedBusinessCommand('account-a', { type: 'ai_capture_confirm', value: { requestId: 'ai-review-original' } },
+        { commandId, baseRevision: 7, captureOriginalText: 'synthetic draft', ...(contextRefs === undefined ? {} : { captureContextRefs: contextRefs }) })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+      vi.mocked(fetchBackend).mockReset()
+      return commandId
+    }
+    it.each(['changed', 'legacy-unknown'] as const)('%s context only looks up a receipt and never reissues the effect', async mode => {
+      const refs = mode === 'changed' ? ['opportunity:a'] : undefined
+      const commandId = await stageAi(refs), before = listAccountPendingOperations('account-a')
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        expect(JSON.parse(String(init?.body)).action).toBe('receipt')
+        return response({ found: false })
+      })
+      await expect(confirmConnectedCommand('account-a', commandId, { expectedContextRefs: ['opportunity:b'] })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+      expect(fetchBackend).toHaveBeenCalledOnce(); expect(listAccountPendingOperations('account-a')).toEqual(before)
+      expect(findAccountPendingSemanticOperation('account-a')).toMatchObject({ commandId, contextRefs: refs })
+    })
+    it('same-context recovery sends only the frozen original review identity', async () => {
+      const commandId = await stageAi(['opportunity:a'])
+      const original = listAccountPendingOperations('account-a')[0]!.command
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (body.action === 'receipt') return response({ found: false })
+        expect(body.command).toEqual(original)
+        expect(body.command).toEqual({ type: 'ai_capture_confirm', value: { requestId: 'ai-review-original' } })
+        return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(), result: { status: 'APPLIED' } })
+      })
+      expect(await confirmConnectedCommand('account-a', commandId, { expectedContextRefs: ['opportunity:a'] })).toMatchObject({ outcome: 'COMMITTED' })
+      expect(fetchBackend).toHaveBeenCalledTimes(2)
+    })
+  })
+
 })

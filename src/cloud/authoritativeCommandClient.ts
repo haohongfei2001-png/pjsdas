@@ -64,6 +64,7 @@ export interface ConnectedCommandResponse {
 interface PendingCommand {
   /** Local recovery context only; never sent as server command authority. */
   captureOriginalText?: string
+  captureContextRefs?: readonly string[]
   commandId: string
   action: 'command' | 'undo'
   baseRevision?: number
@@ -173,7 +174,7 @@ export function findAccountPendingSemanticOperation(accountKey: string, original
     status: match.status,
     originalText: match.command.type === 'semantic_intake' ? match.command.value.originalText : match.captureOriginalText ?? '',
     lastError: match.lastError,
-    contextRefs: match.command.type === 'semantic_intake' ? match.command.value.contextRefs ?? [] : undefined,
+    contextRefs: match.command.type === 'semantic_intake' ? match.command.value.contextRefs ?? [] : match.captureContextRefs,
   }
 }
 
@@ -491,7 +492,7 @@ function forCaller(result: ConnectedCommandResponse, allowProjectionPending?: bo
 export async function executeConnectedBusinessCommand(
   accountKey: string,
   command: ConnectedBusinessCommand,
-  options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean; captureOriginalText?: string } = {},
+  options: { commandId?: string; baseRevision?: number; allowProjectionPending?: boolean; captureOriginalText?: string; captureContextRefs?: readonly string[] } = {},
 ) {
   const writeLease = captureWorkspaceWriteLease(accountKey)
   const commandId = options.commandId
@@ -523,7 +524,7 @@ export async function executeConnectedBusinessCommand(
     action: 'command',
     baseRevision: base,
     command,
-    ...(command.type === 'ai_capture_confirm' ? { captureOriginalText: options.captureOriginalText } : {}),
+    ...(command.type === 'ai_capture_confirm' ? { captureOriginalText: options.captureOriginalText, ...(options.captureContextRefs !== undefined ? { captureContextRefs: JSON.parse(semanticContextKey(options.captureContextRefs)) as string[] } : {}) } : {}),
     status: 'pending',
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -578,9 +579,10 @@ export async function confirmConnectedCommand(accountKey: string, commandId: str
   options: { allowProjectionPending?: boolean; receiptOnly?: boolean; expectedContextRefs?: readonly string[] } = {}): Promise<ConnectedCommandResponse> {
   const writeLease = captureWorkspaceWriteLease(accountKey)
   const pending = readPending(accountKey).find(item => item.commandId === commandId)
-  const contextChanged = options.expectedContextRefs !== undefined && (!pending
-    || pending.command?.type !== 'semantic_intake'
-    || semanticContextKey(pending.command.value.contextRefs) !== semanticContextKey(options.expectedContextRefs))
+  const originalContext = pending?.command?.type === 'semantic_intake' ? pending.command.value.contextRefs ?? []
+    : pending?.command?.type === 'ai_capture_confirm' ? pending.captureContextRefs : undefined
+  const contextChanged = options.expectedContextRefs !== undefined && (originalContext === undefined
+    || semanticContextKey(originalContext) !== semanticContextKey(options.expectedContextRefs))
   const receiptOnly = options.receiptOnly || contextChanged
   const recover = async () => {
     try {

@@ -25,4 +25,16 @@ describe('AI preview retry identity across composer views', () => {
     identity.expire(first.requestId)
     expect(identity.forInput('draft', 'a', id).requestId).toBe('request-2')
   })
+  it('gives identical text under another selected job a fresh immutable identity', () => {
+    const identity = createAiRequestIdentity(); let n = 0
+    const id = () => `request-${++n}`
+    const refs = ['opportunity:a']
+    const first = identity.forInput('same draft', 'a', id, refs)
+    refs[0] = 'opportunity:b'
+    expect(first.contextRefs).toEqual(['opportunity:a'])
+    expect(identity.forInput('same draft', 'a', id, ['opportunity:a'])).toEqual(first)
+    expect(identity.forInput('same draft', 'a', id, refs).requestId).toBe('request-2')
+    expect(identity.forInput('same draft', 'a', id).requestId).toBe('request-3')
+  })
+
 })

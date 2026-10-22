@@ -6,6 +6,10 @@ import { validSourceDate, validSourceInstant, validSourceDeadline } from '../src
 import { normalizedUserJobFacts } from '../src/opportunityCreation.js'
 import { userJobFactsShape } from '../src/userJobFactsSchema.js'
 import { semanticIntakeSchema } from './semanticIntake.js'
+import { buildWebSemanticInterpretation } from '../src/webSemanticInterpretation.js'
+import { boundInterviewRescheduleMatches } from '../src/boundInterviewReschedule.js'
+import type { PJSDASSnapshot } from '../src/snapshot.js'
+import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 
 const boundedText = (max: number) => z.string().trim().min(1).max(max)
 const date = z.string().refine(validSourceDate, 'Expected a real calendar date.')
@@ -38,7 +42,27 @@ const temporal = z.discriminatedUnion('shape', [
 
 const actionTemporal = temporal.refine(value => value.shape === 'fixed_range', 'A timed Action needs an explicit start; day-only plans use plannedDate.')
 
+export const aiCaptureContextRefsSchema = z.array(z.string().regex(/^opportunity:[^\r\n]+$/).max(252)).max(1).optional()
+const fixedInterviewTime = z.object({ shape: z.literal('fixed_range'), precision: z.literal('datetime'), timezone, startAt: instant }).strict()
+
+/** Reuse the existing whole-message intake proof, not selected timestamp substrings.
+ * This deliberately admits only already-supported explicit reschedule notices.
+ * It is server-only context and never part of the provider request. */
+export function verifiedAiInterviewReschedules(text: string, snapshot: PJSDASSnapshot, referenceTime: string, timezone: string) {
+  const interpreted = buildWebSemanticInterpretation(text, snapshot.data.opportunities, snapshot, [], new Date(referenceTime), timezone)
+  if (!['assertion', 'current_intent'].includes(interpreted.mode) || interpreted.unresolved.length || interpreted.ignored.length) return []
+  return interpreted.candidates.flatMap(candidate => candidate.kind === 'occurrence_rescheduled'
+    && candidate.target?.opportunityId && candidate.target.occurrenceId && candidate.expectedScheduleNodeId && candidate.expectedStartAt
+    && candidate.temporal.shape === 'fixed_range' && candidate.temporal.startAt
+    && boundInterviewRescheduleMatches(snapshot, candidate)
+    ? [{ opportunityId: candidate.target.opportunityId, occurrenceId: candidate.target.occurrenceId,
+      scheduleNodeId: candidate.expectedScheduleNodeId, previousStartAt: candidate.expectedStartAt,
+      nextStartAt: candidate.temporal.startAt, timezone: candidate.temporal.timezone }] : [])
+}
+
 const providerCandidate = z.discriminatedUnion('kind', [
+  z.object({ ...common, kind: z.literal('occurrence_rescheduled'), occurrenceKind: z.literal('interview'), target,
+    previousStartAt: instant, previousTimeEvidence: evidence, newTimeEvidence: evidence, temporal: fixedInterviewTime }).strict(),
   z.object({ ...common, ...userJobFactsShape, kind: z.literal('user_opportunity') }).strict(),
   z.object({ ...common, kind: z.literal('application_action'), target,
     plannedDate: date.optional(), scheduledTemporal: actionTemporal.optional() }).strict(),
@@ -85,8 +109,14 @@ const contextSchema = z.object({
   source: semanticIntakeSchema.shape.source,
   statementMode: semanticIntakeSchema.shape.statementMode,
   temporalResolutionBasis: z.enum(['user_explicit', 'source_explicit']),
+  contextRefs: aiCaptureContextRefsSchema,
+  verifiedInterviewReschedules: z.array(z.object({ opportunityId: boundedText(240), occurrenceId: boundedText(320),
+    scheduleNodeId: boundedText(320), previousStartAt: instant, nextStartAt: instant, timezone }).strict()).max(12).optional(),
   opportunities: z.array(z.object({ opportunityId: boundedText(240), company: boundedText(120), role: boundedText(180) }).strict()).max(10_000),
 }).strict().superRefine((value, ctx) => {
+  if (value.contextRefs?.some(ref => !value.opportunities.some(item => `opportunity:${item.opportunityId}` === ref))) {
+    ctx.addIssue({ code: 'custom', path: ['contextRefs'], message: 'Selected job is not in this trusted workspace.' })
+  }
   if (new Set(value.opportunities.map(item => item.opportunityId)).size !== value.opportunities.length) {
     ctx.addIssue({ code: 'custom', path: ['opportunities'], message: 'Duplicate trusted opportunity IDs.' })
   }
@@ -149,6 +179,13 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
       const parsed = aiCaptureProviderOutputSchema.safeParse(rawOutput)
       if (!parsed.success) return review('invalid_output', [], [{ candidateIndex: null, field: 'output', message: 'Provider output does not match the bounded contract.' }])
       const issues: AiCaptureIssue[] = parsed.data.clarifications.map(item => ({ candidateIndex: item.candidateIndex, field: item.field, message: item.question }))
+      // This bounded whole notice proves exactly its reschedule(s), not extra
+      // tasks or a replacement new invitation invented by the provider.
+      const verifiedChanges = context.verifiedInterviewReschedules ?? []
+      if (verifiedChanges.length && (parsed.data.candidates.length !== verifiedChanges.length
+        || parsed.data.candidates.some(candidate => candidate.kind !== 'occurrence_rescheduled'))) {
+        issues.push({ candidateIndex: null, field: 'unsupported', message: 'This complete reschedule notice cannot create unrelated facts or tasks.' })
+      }
       const candidates: SemanticCandidate[] = []
       const singletonTargets = new Set<string>()
       parsed.data.candidates.forEach((proposal, index) => {
@@ -164,6 +201,8 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
             identityText(item.company) === identityText(facts.target.company!) && identityText(item.role) === identityText(facts.target.role!)) : []
           if (matches.length !== 1) issue('identity', 'Resolve one exact existing job before confirming this batch.')
           else resolvedTarget = { opportunityId: matches[0].opportunityId, company: matches[0].company, role: matches[0].role }
+          const selectedId = context.contextRefs?.[0]?.slice('opportunity:'.length)
+          if (selectedId && resolvedTarget?.opportunityId !== selectedId) issue('identity', 'The proposal does not match the selected job.')
         }
         if (facts.kind === 'user_opportunity') {
           try { normalizedUserJobFacts(facts) } catch { issue('identity', 'Job facts require valid company, role, source and deadline values.') }
@@ -183,12 +222,39 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
         if (('plannedDate' in facts && facts.plannedDate) && ('scheduledTemporal' in facts && facts.scheduledTemporal)) {
           issue('time', 'Use one explicit plan representation rather than competing dates and times.')
         }
+        let reschedule: { expectedScheduleNodeId: string; expectedStartAt: string } | undefined
+        if (facts.kind === 'occurrence_rescheduled') {
+          const matches = (context.verifiedInterviewReschedules ?? []).filter(item => item.opportunityId === resolvedTarget?.opportunityId
+            && Date.parse(item.previousStartAt) === Date.parse(facts.previousStartAt)
+            && Date.parse(item.nextStartAt) === Date.parse(facts.temporal.startAt) && item.timezone === facts.temporal.timezone)
+          const validSpan = (part: z.infer<typeof evidence>) => part.start >= span.start && part.end <= span.end && part.end > part.start
+            && context.text.slice(part.start, part.end) === part.quote
+          const oldSpan = facts.previousTimeEvidence, newSpan = facts.newTimeEvidence
+          const options = { receivedAt: context.referenceTime, timezone: context.timezone, mode: 'fixed' as const }
+          const oldTime = resolveSourceTemporal(oldSpan.quote, options), newTime = resolveSourceTemporal(newSpan.quote, options)
+          if (!validSpan(oldSpan) || !validSpan(newSpan) || oldSpan.start < newSpan.end && newSpan.start < oldSpan.end
+            || oldTime?.shape !== 'fixed_range' || newTime?.shape !== 'fixed_range'
+            || Date.parse(oldTime.startAt ?? '') !== Date.parse(facts.previousStartAt)
+            || Date.parse(newTime.startAt ?? '') !== Date.parse(facts.temporal.startAt)
+            || facts.temporal.timezone !== context.timezone) issue('evidence', 'Original and replacement times need complete, consistent source evidence.')
+          if (matches.length !== 1 || Date.parse(facts.previousStartAt) <= Date.parse(context.referenceTime)
+            || Date.parse(facts.temporal.startAt) <= Date.parse(context.referenceTime)
+            || Date.parse(facts.previousStartAt) === Date.parse(facts.temporal.startAt)) {
+            issue('unsupported', 'This reschedule needs one verified whole notice with explicit original and replacement times; no change is saved.')
+          } else {
+            const match = matches[0]!
+            resolvedTarget = { ...resolvedTarget!, occurrenceId: match.occurrenceId, scheduleNodeId: match.scheduleNodeId, occurrenceKind: 'interview' }
+            reschedule = { expectedScheduleNodeId: match.scheduleNodeId, expectedStartAt: match.previousStartAt }
+          }
+        }
+        const candidateFacts = facts.kind === 'occurrence_rescheduled' ? { kind: facts.kind, temporal: facts.temporal } : facts
         const candidate: SemanticCandidate = {
-          ...facts,
+          ...candidateFacts,
+          ...reschedule,
           id: `ai-capture:${index + 1}`,
           ...('target' in facts ? { target: resolvedTarget } : {}),
-          ...('temporal' in facts && facts.temporal ? { temporal: { ...facts.temporal, resolutionBasis: context.temporalResolutionBasis },
-            timingMode: facts.timingMode ?? (facts.temporal.shape === 'fixed_range' ? 'fixed' : 'deadline') } : {}),
+          ...('temporal' in facts && facts.temporal ? { temporal: { ...facts.temporal, resolutionBasis: facts.kind === 'occurrence_rescheduled' ? 'source_explicit' : context.temporalResolutionBasis },
+            ...(facts.kind === 'process_event' ? { timingMode: facts.timingMode ?? (facts.temporal.shape === 'fixed_range' ? 'fixed' : 'deadline') } : {}) } : {}),
           ...('scheduledTemporal' in facts && facts.scheduledTemporal ? { scheduledTemporal: { ...facts.scheduledTemporal, resolutionBasis: context.temporalResolutionBasis } } : {}),
           objectConfidence: confidence, eventConfidence: confidence, temporalConfidence: confidence,
           evidenceRefs: [`${context.source.sourceRecordId}#text=${span.start}:${span.end}`],
@@ -196,7 +262,8 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
         } as SemanticCandidate
         if ('scheduledTemporal' in candidate && candidate.scheduledTemporal && !isExplicitActionArrangement(candidate.scheduledTemporal)) issue('time', 'Action arrangements require an explicit user-chosen time.')
         if (isPreparationCandidate(candidate)) issue('unsupported', 'Preparation tasks are retired.')
-        const singletonKey = facts.kind === 'user_opportunity'
+        const singletonKey = facts.kind === 'occurrence_rescheduled' && resolvedTarget?.occurrenceId ? `reschedule:${resolvedTarget.occurrenceId}`
+          : facts.kind === 'user_opportunity'
           ? JSON.stringify(['user_opportunity', identityText(facts.company), identityText(facts.role)])
           : ['application_action', 'application_submitted', 'opportunity_deadline'].includes(facts.kind) && resolvedTarget?.opportunityId
             ? `${facts.kind}:${resolvedTarget.opportunityId}` : undefined
@@ -212,7 +279,7 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
       if (issues.length) return review('clarification_required', candidates, issues)
       if (!candidates.length) return review('no_write', [], [])
       const bound = semanticIntakeSchema.safeParse({ contractVersion: 1, inputId: context.inputId, source: context.source,
-        statementMode: context.statementMode, originalText: context.text, candidates })
+        statementMode: context.statementMode, originalText: context.text, ...(context.contextRefs?.length ? { contextRefs: context.contextRefs } : {}), candidates })
       if (!bound.success) return review('invalid_output', [], [{ candidateIndex: null, field: 'output', message: 'Candidate facts are incompatible with Semantic Intake.' }])
       observation = freeze(bound.data as SemanticIntakeObservation)
       return review('ready_for_review', candidates, [])

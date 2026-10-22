@@ -40,12 +40,12 @@ describe('AI capture browser contract', () => {
   it('passes only durable review identity through existing command receipts and uses exact base revision', async () => {
     const result = await confirmAiCapture({ accountKey: 'user-a', commandId: 'command', text: '买咖啡', preview: preview() })
     expect(mocks.execute).toHaveBeenCalledWith('user-a', { type: 'ai_capture_confirm', value: { requestId: 'request-1' } },
-      { commandId: 'command', baseRevision: 4, captureOriginalText: '买咖啡' })
+      { commandId: 'command', baseRevision: 4, captureOriginalText: '买咖啡', captureContextRefs: [] })
     expect(result.undo).toEqual({ kind: 'connected', accountKey: 'user-a', targetCommandId: 'command' })
   })
   it('recovers an uncertain save using the existing command without any model or preview request', async () => {
     await confirmAiCapture({ accountKey: 'user-a', commandId: 'command', text: '买咖啡', recover: true })
-    expect(mocks.confirm).toHaveBeenCalledWith('user-a', 'command'); expect(mocks.execute).not.toHaveBeenCalled(); expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(mocks.confirm).toHaveBeenCalledWith('user-a', 'command', { expectedContextRefs: [] }); expect(mocks.execute).not.toHaveBeenCalled(); expect(mocks.fetch).not.toHaveBeenCalled()
   })
   it('blocks clarification and no-write even if a server incorrectly sets canCommit', async () => {
     mocks.fetch.mockResolvedValue(response({ review: { status: 'no_write', statementMode: 'question', candidates: [], issues: [] } }))
@@ -77,4 +77,24 @@ it('rejects an invalid saved AI preview timezone before sending a preview reques
   mocks.workspace.mockResolvedValue({ version: 'txn:4', snapshot: { data: { timePlanning: { timezone: 'Unknown/Place' } } } })
   await expect(previewAiCapture('明天14点面试', 'user-invalid-zone', 'invalid-zone-request')).rejects.toThrow('AI_CAPTURE_TIMEZONE_REQUIRED')
   expect(mocks.fetch).not.toHaveBeenCalled()
+})
+
+it('binds immutable selected context to preview identity and never confirms a different selected job', async () => {
+  const refs = ['opportunity:a'], requestId = 'context-bound-request'
+  mocks.fetch.mockResolvedValue(response({ requestId }))
+  const value = await previewAiCapture('买咖啡', 'user-a', requestId, refs)
+  refs[0] = 'opportunity:b'
+  expect(value.ai.contextRefs).toEqual(['opportunity:a'])
+  expect(JSON.parse(mocks.fetch.mock.calls[0][1].body).contextRefs).toEqual(['opportunity:a'])
+  expect(isCurrentAiPreview(value, '买咖啡', 'user-a', ['opportunity:b'])).toBe(false)
+  await expect(previewAiCapture('买咖啡', 'user-a', requestId, ['opportunity:b'])).rejects.toThrow('AI_CAPTURE_REQUEST_ID_REUSED')
+  await expect(confirmAiCapture({ accountKey: 'user-a', commandId: 'context-command', text: '买咖啡', preview: value, contextRefs: ['opportunity:b'] })).rejects.toThrow('AI_CAPTURE_REVIEW_REQUIRED')
+  expect(mocks.fetch).toHaveBeenCalledOnce(); expect(mocks.execute).not.toHaveBeenCalled()
+  await confirmAiCapture({ accountKey: 'user-a', commandId: 'context-command', text: '买咖啡', preview: value, contextRefs: ['opportunity:a'] })
+  expect(mocks.execute.mock.calls[0][2].captureContextRefs).toEqual(['opportunity:a'])
+})
+it('passes current selected context to receipt recovery without doing model interpretation or a new command', async () => {
+  await confirmAiCapture({ accountKey: 'user-a', commandId: 'context-recovery', text: '买咖啡', recover: true, contextRefs: ['opportunity:b'] })
+  expect(mocks.confirm).toHaveBeenCalledWith('user-a', 'context-recovery', { expectedContextRefs: ['opportunity:b'] })
+  expect(mocks.fetch).not.toHaveBeenCalled(); expect(mocks.execute).not.toHaveBeenCalled()
 })

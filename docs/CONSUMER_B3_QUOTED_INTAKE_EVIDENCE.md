@@ -313,3 +313,47 @@ cover node identity, pointer-down/read-resolution/pointer-up, and an already ope
 editor's draft/focus through resolution. They require hosted browser execution;
 source review and unit/build success alone are not browser-pass evidence. This
 fix addresses Today freshness transitions, not every possible app-loading mount.
+
+### Default-off AI preview parity for existing interview reschedules
+
+The AI candidate allowlist now represents the existing bounded imported-notice
+reschedule flow, rather than creating another interview for an existing one.
+Admission still requires explicit outer import intent, one complete absolute
+old/new time notice, one current scheduled interview, exact company/role, the
+saved workspace timezone, and trusted latest-node/old-time preconditions.
+The existing whole-message intake parser proves that bounded notice; matching
+timestamp substrings alone do not remove negation, alternatives, foreign timezones,
+rounds, durations or other unresolved qualifiers. Unsupported natural-language
+reschedules still require clarification. This is not general model-quality evidence.
+
+Stable opportunity/occurrence/node IDs are supplied only by the authenticated
+server snapshot. The model receives no inventory, selected IDs or stored notes.
+The verified whole notice permits exactly its reschedule candidate, not unrelated
+manual tasks or a substituted new invitation. Imported timing remains
+source_explicit. No actual original employer-message timestamp is invented;
+existing processing/audit time is not evidence of when the employer sent it.
+Completion/cancellation remain outside the AI allowlist, rather than guessing an
+actual completion/cancellation timestamp.
+
+Selected context now travels through explicit preview identity, immutable input
+binding, stored observation and confirmation. A different selected job invalidates
+the preview and requires another explicit request. Composer recovery with changed
+or unknown legacy context only looks up the original receipt; it cannot resend it
+as the current input. Successful legacy receipt reconciliation preserves an
+unknown-owner same-text draft and does not claim that draft was saved. Existing
+background reconnect may still replay the original authorized frozen command;
+that is distinct from a changed-context composer's receipt-only confirmation.
+Only context IDs were added to existing pending metadata, not additional raw-text
+storage or a cross-refresh draft ownership guarantee.
+
+Offline evidence covers whole-clause rejection, foreign/ambiguous/terminal/stale
+occurrences, provider-ID rejection, exact candidate coverage, source provenance,
+selected-context identity, legacy receipt lookup, and the real preview handler to
+authoritative confirmation, replay, Undo and lost-CAS path. The local full suite
+passes 365 suites / 4718 tests with types and production build. AI-enabled browser
+fixtures separately exercise job switching and successful explicit/background
+legacy recovery; hosted execution is required before they count as browser passes.
+All transports in this evidence are synthetic. No provider activation, paid call,
+production SQL activation, new credential, permission or capture geometry changed.
+The canonical A17 live funded discovery/scheduled-run evidence and real AI quality
+acceptance remain open; this bounded parity does not close those release gates.

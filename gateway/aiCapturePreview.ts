@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import { aiCaptureProviderOutputSchema, createAiCaptureContractSession, type AiCaptureTrustedContext } from './aiCaptureContract.js'
+import { aiCaptureProviderOutputSchema, aiCaptureContextRefsSchema, createAiCaptureContractSession, type AiCaptureTrustedContext } from './aiCaptureContract.js'
 import { semanticIntakeSchema } from './semanticIntake.js'
 import { webStatementMode } from '../src/webSemanticInterpretation.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -12,6 +12,7 @@ export const aiCapturePreviewInputSchema = z.object({
   timezone: z.string().min(1).max(120).refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true } catch { return false } }),
   requestId: z.string().min(5).regex(/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,119}$/),
   expectedRevision: z.number().int().nonnegative(),
+  contextRefs: aiCaptureContextRefsSchema,
 }).strict()
 export type AiCapturePreviewInput = z.infer<typeof aiCapturePreviewInputSchema>
 export const aiCaptureModelOutputSchema = z.object({
@@ -75,7 +76,7 @@ export async function prepareAiCapturePreview(input: AiCapturePreviewInput, cont
   // This is immutable server preparation, not user confirmation or write authority.
   const observation = review.status === 'ready_for_review' ? semanticIntakeSchema.parse({ contractVersion: 1,
     inputId: trusted.inputId, source: trusted.source, statementMode: review.statementMode,
-    originalText: input.text, candidates: review.candidates }) : null
+    originalText: input.text, ...(trusted.contextRefs?.length ? { contextRefs: trusted.contextRefs } : {}), candidates: review.candidates }) : null
   return { review, observation }
 }
 
