@@ -1,3 +1,4 @@
+import { MCP_MAX_REQUEST_BODY_BYTES } from './mcpResourceLimits.js'
 import { configuredConsumerTestCohort, consumerTestAccountAllowed } from './consumerTestCohort.js'
 import { createOwnerScopedManagementRuntime } from './scopedManagementRuntime.js'
 import { createOwnerBusinessManagementRuntime } from './businessManagementRuntime.js'
@@ -205,6 +206,7 @@ export async function authenticatedRemoteMcpFetch(request: Request) {
         externalCapabilities,
         proposalSigningKey: env('PJSDAS_TOKEN_ENCRYPTION_KEY'),
       }),
+      { maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES },
     )
     return handler.fetch(request)
   } catch (caught) {

@@ -1,3 +1,4 @@
+import { MCP_MAX_TOOL_INPUT_ELEMENTS } from './mcpResourceLimits.js'
 import type { ScopedManagementRuntime } from './scopedManagementRuntime.js'
 import { getOpportunityManagementSchema, executeOpportunityManagementSchema, restoreOpportunityManagementSchema } from './opportunityManagementTools.js'
 import { getPlanningManagementSchema, executePlanningManagementSchema, restorePlanningManagementSchema } from './planningManagementTools.js'
@@ -123,7 +124,7 @@ export function createPjsdasMcpServer(
   if (options.consumerBusinessOnly || options.scopedManagement?.business) {
     const server = new McpServer(
       { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
-      { instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable. If consent is missing, direct the user to https://todayaction.com/?connect=1 to sign in and initialize or connect their own workspace, then https://todayaction.com/?scoped_access=1 to choose business permission for this plugin. The same permission page supports revocation; never grant permission on the user\'s behalf.' },
+      { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS, instructions: 'TodayAction controlled consumer access supports only explicitly authorized business version 7: manual actions and application groups. Use the three consumer business tools; each call checks the current account/client grant. Missing or revoked consent does not authorize any workspace read or write. Other domains and legacy tools are unavailable. If consent is missing, direct the user to https://todayaction.com/?connect=1 to sign in and initialize or connect their own workspace, then https://todayaction.com/?scoped_access=1 to choose business permission for this plugin. The same permission page supports revocation; never grant permission on the user\'s behalf.' },
     )
     if (options.scopedManagement?.business) registerConsumerBusinessTools(server, options.scopedManagement.business)
     return server
@@ -234,7 +235,7 @@ export function createPjsdasMcpServer(
 
   const server = new McpServer(
     { name: 'pjsdas', version: options.version ?? '1.10.0-alpha.1' },
-    { instructions: instructions.join(' ') },
+    { instructions: instructions.join(' '), maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS },
   )
 
   server.registerTool('get_external_capabilities', {
