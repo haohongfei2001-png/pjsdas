@@ -528,7 +528,11 @@ export function buildWebSemanticInterpretation(
     executableCandidates.unshift(explicitCompletion)
   }
 
+  // The strict whole-input completion reader may fully consume a clause the
+  // legacy progress parser leaves unresolved (for example a contextual event).
+  // Remove only that same recognized completion, never an ambiguous sibling.
   const convertedUnresolved = plan.unresolved
+    .filter(item => !explicitCompletion || explicitCompletionKind(item.sourceText, mode, opportunities) !== explicitKind)
     .map((item) => ({ operation: item, candidate: unresolvedCandidate(item, opportunities) }))
   const candidates = [
     ...executableCandidates,

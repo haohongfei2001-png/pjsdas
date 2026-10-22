@@ -257,3 +257,13 @@ not general semantic understanding or a claim that every paraphrase is solved.
 PR286 combines these admission fixes with saved-timezone parity. Hosted checks
 must pass on the final exact head before merge; model activation and A17 remain
 separate outstanding boundaries.
+
+Browser verification additionally caught a real contextual-completion regression:
+a strict fully recognized “这次面试已经完成了。” still carried unresolved debt
+from the older parser. The correction consumes only the same strictly recognized
+completion clause; unknown sibling clauses remain whole-message blockers. Actual
+local/connected/offline regressions were RED before the correction. The unchanged
+CGR-03 browser assertion still requires a genuinely completed schedule occurrence.
+Quoted/withdrawn browser cases now require zero additional command admission,
+revision, receipt or data change, rather than expecting an empty server command;
+their successful import, repeat, reload and rescheduling assertions remain intact.
