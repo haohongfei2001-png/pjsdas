@@ -1,3 +1,5 @@
+import { createCaptureDraftOwnership } from './capture/draftOwnership.js'
+import { semanticContextKey } from './semanticCompletionContext.js'
 import { createAiRequestIdentity } from './capture/aiRequestIdentity.js'
 import { createPortal } from 'react-dom'
 import { aiCandidateDetails } from './capture/aiCandidateDetails.js'
@@ -30,6 +32,7 @@ import {
   findAccountPendingSemanticOperation,
   readAccountDraft,
   saveAccountDraft,
+  rememberCaptureDraftContext,
   UnknownCommandOutcomeError,
   ConnectedProjectionPendingError,
   CommandBlockedByPendingProjectionError,
@@ -231,14 +234,23 @@ export default function TellPjsdasCapture({
   const previewIdentity = useRef<unknown[]>([])
   const settledPreviewIdentity = useRef<readonly unknown[] | undefined>(undefined)
   const fileReadIdentity = useRef<unknown[]>([])
-  const inputIdentity = [open, text, manualMode, correctionMode, busy, cloud.session, recoveryLocked]
+  const contextIdentity = semanticContextKey(contextRefs)
+  const draftOwnership = useRef(createCaptureDraftOwnership())
+  draftOwnership.current.view(open, accountKey, contextIdentity)
+  const currentContextIdentity = useRef(contextIdentity)
+  currentContextIdentity.current = contextIdentity
+  const commandContextIdentity = useRef<string | undefined>(undefined)
+  const inputIdentity = [open, text, manualMode, correctionMode, busy, cloud.session, recoveryLocked, contextIdentity]
   if (inputIdentity.some((value, index) => value !== fileReadIdentity.current[index])) {
     fileReadEpochRef.current += 1
     fileReadIdentity.current = inputIdentity
   }
-  const parsedIdentity = [open, text, manualMode, correctionMode, cloud.session, previewRequest]
+  useLayoutEffect(() => {
+    if (open && accountKey) rememberCaptureDraftContext(accountKey, contextRefs)
+  }, [open, accountKey, contextIdentity])
+  const parsedIdentity = [open, text, manualMode, correctionMode, cloud.session, previewRequest, contextIdentity]
   if (settledPreviewIdentity.current && parsedIdentity.some((value, index) => value !== settledPreviewIdentity.current![index])) settledPreviewIdentity.current = undefined
-  const identity = [...inputIdentity, previewRequest]
+  const identity = [...inputIdentity, previewRequest, contextIdentity]
   if (identity.some((value, index) => value !== previewIdentity.current[index])) {
     previewPresentation.current.invalidate()
     previewIdentity.current = identity
@@ -374,6 +386,7 @@ export default function TellPjsdasCapture({
     const resumable = userId && connectedWorkspaceAuthorityEnabled() && initial
       ? findAccountPendingSemanticOperation(userId, initial)
       : undefined
+    if (textRef.current !== initial) draftOwnership.current.edit()
     textRef.current = initial
     const manual = readManualJobDraft(initial)
     setManualMode(Boolean(manual))
@@ -391,6 +404,7 @@ export default function TellPjsdasCapture({
     setDecisionCount(0)
     setUnresolvedCount(0)
     setUndo(undefined)
+    commandContextIdentity.current = resumable ? semanticContextKey(resumable.contextRefs) : undefined
     setStableCommandId(resumable?.commandId)
   }, [open, cloud.session?.user.id])
 
@@ -406,6 +420,14 @@ export default function TellPjsdasCapture({
         return
       }
       if (detail.localProjection !== 'applied') return
+      if (commandContextIdentity.current !== currentContextIdentity.current) {
+        setStableCommandId(undefined)
+        commandContextIdentity.current = undefined
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '上一条操作已核对；当前岗位的输入没有提交。' : 'The previous action was reconciled; this job’s input was not submitted.')
+        return
+      }
       setStableCommandId(undefined)
       setSaveState('saved')
       if (detail.resultStatus === 'APPLIED' || detail.resultStatus === 'ALREADY_APPLIED') {
@@ -451,7 +473,7 @@ export default function TellPjsdasCapture({
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
       if (modelCapture) processedAiRequest.current = aiRequest!.requestId
-      void (modelCapture ? previewAiCapture(text, accountKey!, aiRequest!.requestId) : previewWebSemanticCapture(text))
+      void (modelCapture ? previewAiCapture(text, accountKey!, aiRequest!.requestId) : previewWebSemanticCapture(text, { contextRefs }))
         .then((next) => {
           presentation.publish(() => { settledPreviewIdentity.current = parsedIdentity; setPreview(next); setPreviewBusy(false) })
         })
@@ -474,7 +496,7 @@ export default function TellPjsdasCapture({
       presentation.cancel()
       window.clearTimeout(id)
     }
-  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked, modelCapture, aiRequest])
+  }, [open, text, busy, manualMode, correctionMode, cloud.session, previewRequest, recoveryLocked, modelCapture, aiRequest, contextIdentity])
 
   useEffect(() => { if (!open || manualMode || correctionMode) setAiRequest(undefined) }, [open, manualMode, correctionMode])
 
@@ -517,6 +539,10 @@ export default function TellPjsdasCapture({
     const operation = operationLifecycle.current.begin(sheetRef.current, document, invokedControl)
     if (!operation) return
     const submittedText = text
+    const submittedDraftOwnership = draftOwnership.current.capture()
+    const submittedContextIdentity = recoveryLocked ? commandContextIdentity.current ?? contextIdentity : contextIdentity
+    commandContextIdentity.current = submittedContextIdentity
+    if (connected && accountKey) rememberCaptureDraftContext(accountKey, contextRefs)
     if (commandId) setStableCommandId(commandId)
     setBusy(true)
     setSaveState('saving')
@@ -538,18 +564,29 @@ export default function TellPjsdasCapture({
         if (operation.isCurrent()) {
           saveAccountDraft(cloud.session!.user.id, 'tell-pjsdas', submittedText)
           setSaveState('offline')
-          setMessage(zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.')
+          setMessage(submittedContextIdentity !== currentContextIdentity.current
+            ? (zh ? '上一条操作仍在等待联网；当前岗位的输入没有提交。' : 'The previous action is waiting for connection; this job’s input was not submitted.')
+            : (zh ? '已保存在此设备，联网后自动提交。' : 'Saved on this device; it will submit when connected.'))
         }
         return
       }
       if ((result.status === 'APPLIED' || result.status === 'DECISION_REQUIRED') && cloud.session && !connectedWorkspaceAuthorityEnabled()) {
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
-      if (result.status === 'APPLIED') {
+      const sameContext = submittedContextIdentity === currentContextIdentity.current
+      const ownsSubmittedDraft = draftOwnership.current.owns(submittedDraftOwnership, submittedContextIdentity)
+      if (result.status === 'APPLIED' && ownsSubmittedDraft) {
         if (closedDraftRef.current?.accountKey === accountKey && closedDraftRef.current.text === submittedText) closedDraftRef.current = undefined
         if (connected && accountKey && readAccountDraft(accountKey, 'tell-pjsdas') === submittedText) clearAccountDraft(accountKey, 'tell-pjsdas')
       }
-      if (operation.isCurrent() || result.status === 'APPLIED' && operation.canReconcileDraft(submittedText, textRef.current)) {
+      if (!sameContext && operation.isCurrent()) {
+        setStableCommandId(undefined)
+        commandContextIdentity.current = undefined
+        setSaveState('saved')
+        setAuthoritativeSaveConfirmed(false)
+        setMessage(zh ? '上一条操作已核对；当前岗位的输入没有提交。' : 'The previous action was reconciled; this job’s input was not submitted.')
+      }
+      if (sameContext && ownsSubmittedDraft && (operation.isCurrent() || result.status === 'APPLIED' && operation.canReconcileDraft(submittedText, textRef.current))) {
         setError('')
         setUndo(result.undo)
         setDecisionCount(result.decisionRequestIds.length)
@@ -558,9 +595,10 @@ export default function TellPjsdasCapture({
         setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
         setStableCommandId(undefined)
         if (result.status === 'NO_WRITE') {
-          setMessage(zh
-            ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
-            : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
+          setMessage(result.unresolved.length
+            ? (zh ? '内容仍有待澄清的片段，整条输入尚未保存。请补充后重新核对。' : 'Some details still need clarification. None of this input was saved; clarify it and review again.')
+            : (zh ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
+              : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.'))
         } else if (result.status === 'ALREADY_APPLIED') {
           setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
         } else {
@@ -587,7 +625,9 @@ export default function TellPjsdasCapture({
     } catch (caught) {
       if (!operation.isCurrent()) return
       const detail = caught instanceof Error ? caught.message : String(caught)
-      setError(detail)
+      setError(submittedContextIdentity !== currentContextIdentity.current
+        ? (zh ? '上一条操作仍未核对完成；当前岗位的输入没有提交。' : 'The previous action remains unresolved; this job’s input was not submitted.') + ' ' + detail
+        : detail)
       if (caught instanceof WorkspaceWriteAuthError) setSaveState('auth_unconfirmed')
       else if (caught instanceof UnknownCommandOutcomeError) setSaveState('unknown')
       else if (caught instanceof ConnectedProjectionPendingError) setSaveState('confirmed_pending')
@@ -630,6 +670,7 @@ export default function TellPjsdasCapture({
   }
 
   function editText(value: string) {
+    draftOwnership.current.edit()
     textRef.current = value
     if (saveState === 'conflict' && stableCommandId && cloud.session) {
       discardAccountPendingOperation(cloud.session.user.id, stableCommandId)
@@ -637,6 +678,7 @@ export default function TellPjsdasCapture({
     }
     setText(value)
     if (cloud.session && connectedWorkspaceAuthorityEnabled()) {
+      rememberCaptureDraftContext(cloud.session.user.id, contextRefs)
       saveAccountDraft(cloud.session.user.id, 'tell-pjsdas', value)
     }
     setMessage('')
@@ -786,10 +828,10 @@ export default function TellPjsdasCapture({
           <section ref={previewSectionRef} tabIndex={-1} className="cgr-understanding" aria-label={zh ? '整理结果' : 'Interpretation preview'} aria-live="polite" aria-busy={previewBusy}>
             <div className="cgr-understanding-head">
               <strong>{previewBusy ? (zh ? '正在理解…' : 'Understanding…') : modelCapture && !preview ? (zh ? '点击箭头开始 AI 理解' : 'Use the arrow to interpret with AI') : (zh ? 'TodayAction 理解为' : 'TodayAction understands')}</strong>
-              <span data-state={saveState}>
+              <span data-state={saveState === 'saved' && !authoritativeSaveConfirmed ? 'idle' : saveState}>
                 {saveState === 'auth_unconfirmed' ? (zh ? '等待账号确认' : 'Waiting for account confirmation')
                   : saveState === 'saving' ? (zh ? '正在保存' : 'Saving')
-                  : saveState === 'saved' ? (zh ? '已保存' : 'Saved')
+                  : saveState === 'saved' && authoritativeSaveConfirmed ? (zh ? '已保存' : 'Saved')
                   : saveState === 'unknown' ? (zh ? '等待确认' : 'Confirming')
                   : saveState === 'confirmed_pending' ? (zh ? '服务器已确认，本机待刷新' : 'Server confirmed; device refresh pending')
                     : saveState === 'blocked_by_pending' ? (zh ? '尚未发送' : 'Not sent')

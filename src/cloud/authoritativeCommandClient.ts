@@ -1,3 +1,4 @@
+import { semanticContextKey } from '../semanticCompletionContext.js'
 import { validateWorkspaceDelta, type WorkspaceDelta } from '../workspaceDelta.js'
 import { captureAccountCacheLease, AccountCacheChangedError } from './accountCacheLease.js'
 import { captureWorkspaceWriteLease } from './workspaceWriteLease.js'
@@ -172,7 +173,19 @@ export function findAccountPendingSemanticOperation(accountKey: string, original
     status: match.status,
     originalText: match.command.type === 'semantic_intake' ? match.command.value.originalText : match.captureOriginalText ?? '',
     lastError: match.lastError,
+    contextRefs: match.command.type === 'semantic_intake' ? match.command.value.contextRefs ?? [] : undefined,
   }
+}
+
+// No draft text or new persistence: this only remembers which open composer
+// currently owns the existing account draft during this browser lifetime.
+const captureDraftContexts = new WeakMap<object, Map<string, string>>()
+export function rememberCaptureDraftContext(accountKey: string, contextRefs: readonly string[]) {
+  const store = storage()
+  if (!store) return
+  let contexts = captureDraftContexts.get(store)
+  if (!contexts) { contexts = new Map(); captureDraftContexts.set(store, contexts) }
+  contexts.set(accountKey, semanticContextKey(contextRefs))
 }
 
 export function saveAccountDraft(accountKey: string, name: string, value: string) {
@@ -184,7 +197,9 @@ export function readAccountDraft(accountKey: string, name: string) {
 }
 
 export function clearAccountDraft(accountKey: string, name: string) {
-  storage()?.removeItem(draftKey(accountKey, name))
+  const store = storage()
+  store?.removeItem(draftKey(accountKey, name))
+  if (store && name === 'tell-pjsdas') captureDraftContexts.get(store)?.delete(accountKey)
 }
 
 export function createConnectedCommandId(prefix = 'web') {
@@ -560,24 +575,33 @@ export async function queueConnectedBusinessCommand(
 }
 
 export async function confirmConnectedCommand(accountKey: string, commandId: string,
-  options: { allowProjectionPending?: boolean } = {}): Promise<ConnectedCommandResponse> {
+  options: { allowProjectionPending?: boolean; receiptOnly?: boolean; expectedContextRefs?: readonly string[] } = {}): Promise<ConnectedCommandResponse> {
   const writeLease = captureWorkspaceWriteLease(accountKey)
-  return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
-  try {
-    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
-    if (recovered) {
-      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
-      return recovered
+  const pending = readPending(accountKey).find(item => item.commandId === commandId)
+  const contextChanged = options.expectedContextRefs !== undefined && (!pending
+    || pending.command?.type !== 'semantic_intake'
+    || semanticContextKey(pending.command.value.contextRefs) !== semanticContextKey(options.expectedContextRefs))
+  const receiptOnly = options.receiptOnly || contextChanged
+  const recover = async () => {
+    try {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+        return recovered
+      }
+    } catch (caught) {
+      if (caught instanceof ConnectedProjectionPendingError) throw caught
+      throw new UnknownCommandOutcomeError('暂时无法核对服务器回执。原操作仍已保留，请稍后重试。')
     }
-  } catch (caught) {
-    if (caught instanceof ConnectedProjectionPendingError) throw caught
-    throw new UnknownCommandOutcomeError('暂时无法核对服务器回执。原操作仍已保留，请稍后重试。')
+    const existing = readPending(accountKey).find((item) => item.commandId === commandId)
+    if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+    if (receiptOnly) throw new UnknownCommandOutcomeError('原操作尚无可确认回执；为避免部分写入，未重新发送。请先核对待处理操作。')
+    if (existing) return submitPending(accountKey, existing)
+    throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
   }
-  const existing = readPending(accountKey).find((item) => item.commandId === commandId)
-  if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
-  if (existing) return submitPending(accountKey, existing)
-  throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
-  }), options.allowProjectionPending, writeLease.assertCurrent)
+  // Do not join a concurrent resend flight when the caller requested a read.
+  return forCaller(await (receiptOnly ? recover() : oneCommandFlight(accountKey, commandId, recover)),
+    options.allowProjectionPending, writeLease.assertCurrent)
 }
 
 export async function undoConnectedBusinessCommand(
@@ -673,6 +697,11 @@ function clearRecoveredSemanticDraft(accountKey: string, pending: PendingCommand
   if (pending.action !== 'command' || pending.command?.type !== 'semantic_intake') return
   if (result.outcome !== 'COMMITTED' && result.outcome !== 'ALREADY_APPLIED') return
   if (result.result?.status !== 'APPLIED' && result.result?.status !== 'ALREADY_APPLIED') return
+  const store = storage()
+  const knownContext = store ? captureDraftContexts.get(store)?.get(accountKey) : undefined
+  const originalContext = semanticContextKey(pending.command.value.contextRefs)
+  // Unknown ownership after reload is not proof that same-text B belongs to A.
+  if (knownContext !== undefined ? knownContext !== originalContext : originalContext !== '[]') return
   const originalText = pending.command.value.originalText
   if (readAccountDraft(accountKey, 'tell-pjsdas') === originalText) {
     clearAccountDraft(accountKey, 'tell-pjsdas')

@@ -33,6 +33,7 @@ import {
   readAccountDraft,
   replayAccountPendingOperations,
   saveAccountDraft,
+  rememberCaptureDraftContext,
   UnknownCommandOutcomeError,
   ConnectedProjectionPendingError,
   PreExecutionCommandError,
@@ -545,4 +546,154 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(listAccountPendingOperations('account-a')).toEqual([])
     expect(await replayAccountPendingOperations('account-a')).toEqual([])
   })
+
+it('receipt-only recovery preserves a queued envelope without resending when its receipt is absent', async () => {
+  const commandId = 'web-action:receipt-only'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  const before = listAccountPendingOperations('account-a')
+  vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+    expect(JSON.parse(String(init?.body))).toEqual({ action: 'receipt', commandId, projection: 'snapshot' })
+    return response({ found: false })
+  })
+  await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(listAccountPendingOperations('account-a')).toEqual(before)
+})
+
+it('receipt-only recovery still reconciles an existing committed receipt', async () => {
+  const commandId = 'web-action:receipt-only-found'
+  vi.mocked(fetchBackend).mockResolvedValue(response({ found: true, revision: 8, workspaceVersion: 'txn:8',
+    schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED', result: { status: 'APPLIED' } } }))
+  const result = await confirmConnectedCommand('account-a', commandId, { receiptOnly: true })
+  expect(result).toMatchObject({ outcome: 'ALREADY_APPLIED', localProjection: 'applied' })
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0]![1]!.body))).toEqual({ action: 'receipt', commandId, projection: 'snapshot' })
+})
+
+
+it('receipt-only recovery does not resend after a failed receipt lookup', async () => {
+  const commandId = 'web-action:receipt-only-unavailable'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  const before = listAccountPendingOperations('account-a')
+  vi.mocked(fetchBackend).mockRejectedValue(new Error('synthetic receipt unavailable'))
+  await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0]![1]!.body)).action).toBe('receipt')
+  expect(listAccountPendingOperations('account-a')).toEqual(before)
+})
+
+
+it('receipt-only lookup does not join a concurrently held same-ID resend', async () => {
+  const commandId = 'web-action:receipt-only-concurrent'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const actions: string[] = []
+  vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+    const body = JSON.parse(String(init?.body)); actions.push(body.action)
+    if (body.action === 'receipt') return response({ found: false })
+    if (body.action === 'read') return response({ revision: 7, workspaceVersion: 'txn:7', schemaVersion: 4, snapshot: snapshot() })
+    expect(body.action).toBe('command')
+    entered(); await gate
+    return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() })
+  })
+  const writer = confirmConnectedCommand('account-a', commandId)
+  await started
+  try {
+    await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+    expect(actions.filter(action => action === 'command')).toHaveLength(1)
+    expect(actions.filter(action => action === 'receipt')).toHaveLength(2)
+  } finally { release(); await writer }
+})
+
+  describe('context-bound confirmation of a frozen semantic command', () => {
+    async function queueContext(suffix = '') {
+      const commandId = 'web-semantic:context-bound' + suffix
+      const fingerprint = await fingerprintWorkspace(snapshot())
+      patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+      await queueConnectedBusinessCommand('account-a', { type: 'semantic_intake', value: {
+        contractVersion: 1, inputId: 'context-input-001', statementMode: 'assertion', originalText: '这次面试已经完成了。',
+        contextRefs: ['opportunity:a'], candidates: [],
+        source: { kind: 'web', sourceId: 'web', sourceRecordId: 'capture-a', observedAt: '2026-10-22T10:00:00.000Z', timezone: 'UTC' },
+      } }, { commandId })
+      return commandId
+    }
+    it.each(['absent', 'failed'] as const)('different context only reads an %s receipt and preserves A', async outcome => {
+      const commandId = await queueContext(), before = listAccountPendingOperations('account-a')
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        expect(JSON.parse(String(init?.body)).action).toBe('receipt')
+        if (outcome === 'failed') throw new Error('synthetic lookup failure')
+        return response({ found: false })
+      })
+      await expect(confirmConnectedCommand('account-a', commandId, { expectedContextRefs: ['opportunity:b'] })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+      expect(fetchBackend).toHaveBeenCalledTimes(1); expect(listAccountPendingOperations('account-a')).toEqual(before)
+      expect(findAccountPendingSemanticOperation('account-a')).toMatchObject({ commandId, contextRefs: ['opportunity:a'] })
+    })
+    it('different context may recover an existing A receipt but never dispatch B', async () => {
+      const commandId = await queueContext()
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        expect(JSON.parse(String(init?.body)).action).toBe('receipt')
+        return response({ found: true, revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(),
+          receipt: { commandId, status: 'COMMITTED', result: { status: 'APPLIED' } } })
+      })
+      expect(await confirmConnectedCommand('account-a', commandId, { expectedContextRefs: ['opportunity:b'] })).toMatchObject({ outcome: 'ALREADY_APPLIED' })
+      expect(fetchBackend).toHaveBeenCalledTimes(1); expect(listAccountPendingOperations('account-a')).toEqual([])
+    })
+    it.each(['a', 'b', 'unknown'] as const)('background replay preserves or clears only its proven %s draft owner', async context => {
+      const commandId = await queueContext()
+      const originalText = '这次面试已经完成了。'
+      saveAccountDraft('account-a', 'tell-pjsdas', originalText)
+      if (context !== 'unknown') rememberCaptureDraftContext('account-a', [`opportunity:${context}`])
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (body.action === 'receipt') return response({ found: false })
+        expect(body.command.value.contextRefs).toEqual(['opportunity:a'])
+        return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(), result: { status: 'APPLIED' } })
+      })
+      await replayAccountPendingOperations('account-a')
+      expect(listAccountPendingOperations('account-a')).toEqual([])
+      expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe(context === 'a' ? '' : originalText)
+    })
+    it('a new same-context command renews draft ownership after the previous clear', async () => {
+      for (const suffix of ['-first', '-second']) {
+        await queueContext(suffix)
+        saveAccountDraft('account-a', 'tell-pjsdas', '这次面试已经完成了。')
+        // The composer remembers the active owner on every edit/submission;
+        // closing preserves this memory until background completion.
+        rememberCaptureDraftContext('account-a', ['opportunity:a'])
+        vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+          if (JSON.parse(String(init?.body)).action === 'receipt') return response({ found: false })
+          return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(), result: { status: 'APPLIED' } })
+        })
+        await replayAccountPendingOperations('account-a')
+        expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe('')
+      }
+    })
+    it('unchanged context permits only the frozen original A envelope', async () => {
+      const commandId = await queueContext()
+      const original = listAccountPendingOperations('account-a')[0]!.command
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (body.action === 'receipt') return response({ found: false })
+        expect(body.command).toEqual(original)
+        return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot(), result: { status: 'APPLIED' } })
+      })
+      expect(await confirmConnectedCommand('account-a', commandId, { expectedContextRefs: ['opportunity:a', 'opportunity:a'] })).toMatchObject({ outcome: 'COMMITTED' })
+      expect(fetchBackend).toHaveBeenCalledTimes(2)
+    })
+  })
+
 })

@@ -1,3 +1,4 @@
+import { resolvePlanningTimezone, validPlanningTimezone } from './timePlanningPreferences.js'
 import { fetchBackend } from './backendEndpoints.js'
 import { captureAccountCacheLease } from './cloud/accountCacheLease.js'
 import { getAccountAccessToken } from './cloud/cloudClient.js'
@@ -22,7 +23,9 @@ export async function previewAiCapture(text: string, accountKey: string, request
     assertCurrent()
     const revision = /^txn:(\d+)$/.exec(workspace.version)?.[1]
     if (revision === undefined) throw new Error('AI_CAPTURE_WORKSPACE_REQUIRED: 请先同步已连接的工作区。')
-    binding = previewBindings.get(bindingKey) ?? { text, expectedRevision: Number(revision), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
+    const timezone = resolvePlanningTimezone(workspace.snapshot.data.timePlanning, Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+    if (!validPlanningTimezone(timezone)) throw new Error('AI_CAPTURE_TIMEZONE_REQUIRED: 请先核对工作区时区，再整理输入。')
+    binding = previewBindings.get(bindingKey) ?? { text, expectedRevision: Number(revision), timezone }
     previewBindings.set(bindingKey, binding)
     if (previewBindings.size > 100) previewBindings.delete(previewBindings.keys().next().value!)
   }

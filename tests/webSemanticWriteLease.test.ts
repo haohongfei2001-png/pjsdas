@@ -1,3 +1,4 @@
+import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { webcrypto } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Opportunity, SemanticCandidate } from '../src/model.js'
@@ -28,7 +29,7 @@ vi.mock('../src/cloud/authoritativeCommandClient.js', () => ({
   undoConnectedBusinessCommand: boundary.undo,
   createConnectedCommandId: boundary.commandId,
 }))
-import { resolveWebDecision, submitWebSemanticCapture, undoWebSemanticChange, type LocalSemanticUndoToken } from '../src/webSemanticIntake.js'
+import { previewWebSemanticCapture, resolveWebDecision, submitWebSemanticCapture, undoWebSemanticChange, type LocalSemanticUndoToken } from '../src/webSemanticIntake.js'
 
 const NOW = new Date('2026-10-08T10:00:00.000Z')
 const TEXT = 'Example Co Product Manager 已投递成功。'
@@ -364,7 +365,7 @@ describe('explicit connected account retains the authoritative command paths', (
     expect(result.status).toBe(mode === 'queue' ? 'QUEUED' : mode === 'confirm' ? 'ALREADY_APPLIED' : 'APPLIED')
     const selected = boundary[mode]
     expect(selected).toHaveBeenCalledTimes(1)
-    if (mode === 'confirm') expect(selected).toHaveBeenCalledWith('account-a', CAPTURE.commandId)
+    if (mode === 'confirm') expect(selected).toHaveBeenCalledWith('account-a', CAPTURE.commandId, { expectedContextRefs: [] })
     else expect(selected).toHaveBeenCalledWith('account-a', expect.objectContaining({ type: 'semantic_intake', value: expect.objectContaining({ originalText: TEXT }) }), { commandId: CAPTURE.commandId })
     expect(current).toEqual(before)
     expect(boundary.replace).not.toHaveBeenCalled()
@@ -401,4 +402,410 @@ describe('explicit connected account retains the authoritative command paths', (
     await expect(pending).rejects.toBeInstanceOf(AccountCacheChangedError)
     expectNoMutation(before)
   })
+})
+
+
+describe('whole-message interpretation admission', () => {
+  const mixed = TEXT + ' 火星公司 未知岗位 面试通知：2026年10月25日14:30'
+  it.each(['local', 'connected', 'offline'] as const)('does not commit a supported subset through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    const before = structuredClone(current)
+    const parsed = interpretation.buildWebSemanticInterpretation(mixed, current.data.opportunities, current, [], NOW, 'UTC')
+    expect(parsed.candidates.length).toBeGreaterThan(0)
+    expect(parsed.unresolved.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(mixed, { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe('NO_WRITE')
+    expect(result.unresolved).toEqual(parsed.unresolved)
+    expectNoMutation(before)
+  })
+  it.each(['local', 'connected', 'offline'] as const)('preserves a complete assertion with explicitly quoted context through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    const text = TEXT + '\n> 火星公司 未知岗位 面试通知：2026年10月25日14:30'
+    const parsed = interpretation.buildWebSemanticInterpretation(text, current.data.opportunities, current, [], NOW, 'UTC')
+    expect(parsed.unresolved).toEqual([])
+    expect(parsed.ignored.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe(mode === 'offline' ? 'QUEUED' : 'APPLIED')
+  })
+  it('still recovers an already-submitted command rather than hiding its receipt behind new interpretation debt', async () => {
+    bindAccount()
+    const result = await submitWebSemanticCapture(mixed, { ...CAPTURE, accountKey: 'account-a', confirmExisting: true })
+    expect(result.status).toBe('ALREADY_APPLIED')
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', CAPTURE.commandId, { receiptOnly: true, expectedContextRefs: [] })
+    expect(boundary.execute).not.toHaveBeenCalled()
+    expect(boundary.queue).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('actual Tell entrypoint workspace timezone parity', () => {
+  beforeEach(() => {
+    vi.stubEnv('TZ', 'UTC'); bindAccount()
+    current.data.opportunities[0]!.company = '京东'
+    current.data.opportunities[0]!.role = 'AI产品经理'
+  })
+  afterEach(() => vi.unstubAllEnvs())
+  const notice = '京东 AI产品经理 面试通知：2026年10月25日14:30'
+  it('uses saved timezone for preview and submitted observation despite a different host timezone', async () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('UTC')
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+08:00', timezone: 'Asia/Shanghai' } }])
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-parity' })
+    const observation = boundary.execute.mock.calls[0]![1].value
+    expect(observation.source.timezone).toBe('Asia/Shanghai')
+    expect(observation.candidates).toEqual(preview.candidates)
+  })
+  it('commits the same appointment instant as Gmail for the saved workspace zone', async () => {
+    setAccountCacheSession(null); clearLocalWorkspaceBinding(); boundary.authorityEnabled.mockReturnValue(false)
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const gmail = gmailSemanticRecordFromMessage({ id: 'synthetic-zone-parity', threadId: 'synthetic-thread',
+      internalDate: String(NOW.getTime()), payload: { mimeType: 'text/plain',
+        headers: [{ name: 'Subject', value: '京东 AI产品经理 招聘进展' }],
+        body: { data: Buffer.from(notice).toString('base64url') } } }, current.data.opportunities, NOW, 'Asia/Shanghai')!
+    const result = await submitWebSemanticCapture(notice, { now: NOW, commandId: 'local-zone-parity' })
+    expect(result.status).toBe('APPLIED')
+    expect(current.data.scheduleNodes).toHaveLength(1)
+    expect(current.data.scheduleNodes![0]!.temporal).toMatchObject({ startAt: '2026-10-25T14:30:00+08:00', timezone: 'Asia/Shanghai' })
+    expect(current.data.scheduleNodes![0]!.temporal.startAt).toBe((gmail.observation.candidates[0] as any).temporal.startAt)
+  })
+  it('preserves an explicit timezone override in submission', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture(notice, { ...CAPTURE, accountKey: 'account-a', timezone: 'UTC' })
+    expect(boundary.execute.mock.calls[0]![1].value.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+00:00', timezone: 'UTC' } }])
+  })
+  it('does not silently replace an invalid saved timezone with host timezone', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Unknown/Place', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.unresolved.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a' })
+    expect(result.status).toBe('NO_WRITE')
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+  it('keeps the existing browser fallback only when no workspace timezone was saved', async () => {
+    delete current.data.timePlanning
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+00:00', timezone: 'UTC' } }])
+  })
+  it('queues the saved-zone observation and never reparses a receipt into a new write', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-queued', queueOffline: true })
+    expect(boundary.queue.mock.calls[0]![1].value.candidates).toMatchObject([{ temporal: { timezone: 'Asia/Shanghai' } }])
+    current.data.timePlanning.timezone = 'UTC'
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-queued', confirmExisting: true })
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', 'zone-queued', { expectedContextRefs: [] })
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+  it('keeps date-only evidence date-only after applying a saved timezone', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture('京东 AI产品经理 面试通知：2026年10月25日', { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { precision: 'date', date: '2026-10-25' } }])
+    expect((preview.candidates[0] as any).temporal.startAt).toBeUndefined()
+    expect((preview.candidates[0] as any).temporal.endAt).toBeUndefined()
+  })
+  it('does not turn an untimed submission into an appointment', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture('京东 AI产品经理 已投递成功', { now: NOW, accountKey: 'account-a' })
+    const candidates = boundary.execute.mock.calls[0]![1].value.candidates
+    expect(candidates).toMatchObject([{ kind: 'application_submitted' }])
+    expect(candidates[0].temporal).toBeUndefined()
+  })
+
+})
+
+
+describe('non-assertion actual capture admission', () => {
+  const inputs = [
+    '京东 AI产品经理 不要记录为已投递成功',
+    '京东 AI产品经理 已投递成功了吗',
+    '京东 AI产品经理 是否已投递成功',
+    '京东 AI产品经理 并没有投递成功',
+    '是否京东 AI产品经理 已投递成功',
+    '京东 AI产品经理 申请已提交但失败了',
+    '京东 AI产品经理 尚未投递成功',
+    '京东 AI产品经理 未投递成功',
+    '京东 AI产品经理 没投递成功',
+    '京东 AI产品经理 不是已投递成功',
+    '京东 AI产品经理 假如已投递成功',
+    '京东 AI产品经理 例如已投递成功',
+    '京东 AI产品经理 已投递成功吗。京东 AI产品经理 已投递成功',
+  ]
+  beforeEach(() => {
+    current.data.opportunities[0]!.company = '京东'
+    current.data.opportunities[0]!.role = 'AI产品经理'
+  })
+  for (const mode of ['local', 'connected', 'offline'] as const) {
+    it.each(inputs)(mode + ' does not save or queue non-facts: %s', async text => {
+      if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+      else bindAccount()
+      const before = structuredClone(current)
+      const preview = await previewWebSemanticCapture(text, { now: NOW })
+      expect(preview.candidates).toEqual([])
+      const result = await submitWebSemanticCapture(text, { ...CAPTURE,
+        accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+      expect(result.status).toBe('NO_WRITE')
+      expectNoMutation(before)
+    })
+  }
+  it('recovers a prior receipt without reissuing a now non-asserting input', async () => {
+    bindAccount()
+    const result = await submitWebSemanticCapture(inputs[1]!, { ...CAPTURE, accountKey: 'account-a', confirmExisting: true })
+    expect(result.status).toBe('ALREADY_APPLIED')
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', CAPTURE.commandId, { receiptOnly: true, expectedContextRefs: [] })
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('submission intent fence positive controls', () => {
+  it.each([
+    ['京东', 'AI产品经理', '已投递成功'],
+    ['京东', 'AI产品经理', '申请已提交'],
+    ['Example Co', 'Product Manager', '已投递成功'],
+    ['是否科技', '不要记录测试经理', '已投递成功'],
+    ['没有科技', '失败分析工程师', '申请已提交'],
+  ])('keeps literal identity %s %s and assertion %s', async (company, role, evidence) => {
+    setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+    Object.assign(current.data.opportunities[0]!, { company, role })
+    const result = await submitWebSemanticCapture(`${company} ${role} ${evidence}`, CAPTURE)
+    // Preserve the existing confirmation requirement for the less explicit wording.
+    expect(result.status).toBe(evidence === '申请已提交' ? 'DECISION_REQUIRED' : 'APPLIED')
+    expect(current.data.opportunities[0]!.processStage).toBe(evidence === '申请已提交' ? 'not_applied' : 'screening')
+  })
+  it.each(['不要记录为已投递成功', '已投递成功了吗'])('ignores quoted older %s instead of suppressing the current assertion', async old => {
+    setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+    const result = await submitWebSemanticCapture(TEXT + '\n> 旧岗位 ' + old, CAPTURE)
+    expect(result.status).toBe('APPLIED')
+  })
+  it.each(['local', 'connected', 'offline'] as const)('does not admit a supported sibling with a nonassertive submission through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    current.data.opportunities.push({ ...opportunity('opp-2'), company: '阿里', role: '产品经理' })
+    const before = structuredClone(current)
+    const result = await submitWebSemanticCapture(TEXT + ' 阿里 产品经理 不要记录为已投递成功', { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+  })
+})
+
+
+it('does not erase a prohibition that repeats a literal company label', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '不要', role: '产品经理' })
+  const before = structuredClone(current)
+  const result = await submitWebSemanticCapture('不要 产品经理 不要记录为已投递成功', CAPTURE)
+  expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+})
+
+
+it.each(['今天处理申请失败的问题', '今天整理未提交的报销单', '今天整理如何使用报销系统的文档', '今天提交关于是否参加活动的申请'])('preserves non-recruiting task evidence: %s', async text => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  const preview = await previewWebSemanticCapture(text, { now: NOW })
+  expect(preview.unresolved).toEqual([])
+  expect(preview.candidates).toEqual([expect.objectContaining({ kind: 'manual_action' })])
+  expect((await submitWebSemanticCapture(text, CAPTURE)).status).toBe('APPLIED')
+})
+
+it('preserves supported no-space quoted identity labels', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '是否科技', role: 'AI产品经理' })
+  const result = await submitWebSemanticCapture('是否科技“AI产品经理”已投递成功', CAPTURE)
+  expect(result.status).toBe('APPLIED')
+})
+
+
+it('keeps literal known identities inside an explicitly imported notice', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '是否科技', role: 'AI产品经理' })
+  current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+  const text = '请导入以下面试通知\n> 是否科技 AI产品经理 面试通知：2026年10月25日14:30'
+  const preview = await previewWebSemanticCapture(text, { now: NOW })
+  expect(preview.unresolved).toEqual([])
+  expect(preview.candidates).toEqual([expect.objectContaining({ kind: 'process_event' })])
+  expect((await submitWebSemanticCapture(text, { ...CAPTURE, timezone: 'Asia/Shanghai' })).status).toBe('APPLIED')
+})
+
+describe('fully consumed contextual completion admission', () => {
+  beforeEach(() => {
+    current.data.opportunities[0]!.processStage = 'interview'
+    current.data.scheduleNodes = [{
+      id: 'schedule:context:v1', occurrenceId: 'context-interview', version: 1,
+      opportunityId: 'opp-1', kind: 'interview', state: 'scheduled',
+      temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'UTC',
+        startAt: '2026-10-07T12:00:00.000Z', endAt: '2026-10-07T13:00:00.000Z', resolutionBasis: 'user_explicit' },
+      constraintKind: 'employer_hard', evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
+      createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(),
+    }]
+  })
+  it.each(['local', 'connected', 'offline'] as const)('does not leave legacy parser debt for an exact completion through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    const text = '这次面试已经完成了。'
+    const preview = await previewWebSemanticCapture(text, { now: NOW })
+    expect(preview.unresolved).toEqual([])
+    expect(preview.candidates).toEqual([expect.objectContaining({ kind: 'occurrence_completed' })])
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['context-interview'],
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe(mode === 'offline' ? 'QUEUED' : 'APPLIED')
+    if (mode === 'local') expect(current.data.scheduleNodes!.some(node => node.occurrenceId === 'context-interview' && node.state === 'completed')).toBe(true)
+  })
+  it('does not discard an unresolved sibling alongside a contextual completion', async () => {
+    setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+    const before = structuredClone(current)
+    const result = await submitWebSemanticCapture('这次面试已经完成了。火星公司 未知岗位 面试通知：2026年10月25日14:30', CAPTURE)
+    expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+  })
+})
+
+describe('browser quoted-withdrawal fixtures have no command admission', () => {
+  const notice = '京东 AI产品经理 面试通知，请于2026年9月25日 14:30参加视频面试'
+  const imported = `请导入以下转发的面试通知。\n-----Forwarded message-----\n${notice}`
+  it.each([
+    `以下是转发的面试通知。\n-----Forwarded message-----\n${notice}`,
+    `请保存以下引用的面试通知。\n> ${notice}\n先不要导入`,
+    `${imported}；https://meet.example.test/room，非本人面试`,
+    `${imported}；地点：会议室A 非本人面试`,
+    '请导入以下岗位说明。\n> 公司：示例科技\n> 岗位：AI产品经理\n> 地点：上海\n> 招聘链接：https://careers.example.test/jobs/pm-2027\n> 申请截止：2026-10-30\n先不要导入，这只是示例。',
+  ])('rejects the complete unsupported/withdrawn input before dispatch: %s', async text => {
+    bindAccount()
+    Object.assign(current.data.opportunities[0]!, { company: '京东', role: 'AI产品经理' })
+    const before = structuredClone(current)
+    const preview = await previewWebSemanticCapture(text, { now: NOW })
+    expect(preview.candidates).toEqual([])
+    expect(preview.unresolved.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE, accountKey: 'account-a' })
+    expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+  })
+})
+
+describe('selected opportunity completion never falls through to another job', () => {
+  const text = '这次面试已经完成了。'
+  function setup(state: 'scheduled' | 'completed' | 'missing' | 'multiple') {
+    current = fixture([opportunity('a', 'Analyst'), opportunity('b', 'Engineer')])
+    const node = (id: string, opportunityId: string, state: 'scheduled' | 'completed') => ({
+      id: `schedule:${id}:v1`, occurrenceId: id, opportunityId, kind: 'interview' as const, state,
+      temporal: { shape: 'fixed_range' as const, precision: 'datetime' as const, timezone: 'UTC',
+        startAt: '2026-10-07T12:00:00.000Z', endAt: '2026-10-07T13:00:00.000Z', resolutionBasis: 'user_explicit' as const },
+      constraintKind: 'employer_hard' as const, evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [], version: 1,
+      createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(),
+    })
+    current.data.scheduleNodes = [node('b-event', 'b', 'scheduled')]
+    if (state !== 'missing') current.data.scheduleNodes.push(node('a-event', 'a', state === 'completed' ? 'completed' : 'scheduled'))
+    if (state === 'multiple') current.data.scheduleNodes.push(node('a-round2', 'a', 'scheduled'))
+    boundary.execute.mockImplementation(async (_account: string, command: { value: Parameters<typeof semantics.applySemanticIntake>[1] }) => {
+      const result = semantics.applySemanticIntake(current, command.value, { authorized: true, workspaceRevision: '1', now: NOW })
+      if (result.changed) { current = result.snapshot; commits++ }
+      return { outcome: 'COMMITTED', result: { status: result.status, summary: result.summary, decisionRequestIds: result.decisionRequests.map(x => x.id) } }
+    })
+  }
+  for (const route of ['local', 'connected', 'offline'] as const) {
+    it.each(['completed', 'missing'] as const)(`${route}: selected %s interview cannot complete B`, async state => {
+      setup(state); if (route !== 'local') bindAccount()
+      const before = structuredClone(current)
+      const preview = await previewWebSemanticCapture(text, { now: NOW, contextRefs: ['opportunity:a'] })
+      expect(preview.candidates).toEqual([]); expect(preview.unresolved.length).toBeGreaterThan(0)
+      const result = await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['opportunity:a'],
+        ...(route === 'local' ? {} : { accountKey: 'account-a', queueOffline: route === 'offline' }) })
+      expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+    })
+    it(`${route}: active A is selected among two active jobs`, async () => {
+      setup('scheduled'); if (route !== 'local') bindAccount()
+      const b = structuredClone(current.data.scheduleNodes!.find(x => x.opportunityId === 'b'))
+      const preview = await previewWebSemanticCapture(text, { now: NOW, contextRefs: ['opportunity:a'] })
+      expect(preview.candidates[0]?.target).toMatchObject({ opportunityId: 'a' })
+      const result = await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['opportunity:a'],
+        ...(route === 'local' ? {} : { accountKey: 'account-a', queueOffline: route === 'offline' }) })
+      expect(result.status).toBe(route === 'offline' ? 'QUEUED' : 'APPLIED')
+      expect(current.data.scheduleNodes!.find(x => x.opportunityId === 'b')).toEqual(b)
+      if (route === 'offline') expect(boundary.queue.mock.calls[0]![1].value.candidates[0].target).toMatchObject({ opportunityId: 'a' })
+      else expect(current.data.scheduleNodes!.some(x => x.opportunityId === 'a' && x.state === 'completed')).toBe(true)
+    })
+  }
+  it.each([['opportunity:missing'], ['opportunity:a', 'opportunity:b']])('rejects missing or ambiguous context %j', async (...contextRefs) => {
+    setup('scheduled'); const before = structuredClone(current)
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs })
+    expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+  })
+  it('keeps multiple A rounds as a decision and never offers B', async () => {
+    setup('multiple'); const before = structuredClone(current.data.scheduleNodes)
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['opportunity:a'] })
+    expect(result.status).toBe('DECISION_REQUIRED'); expect(current.data.scheduleNodes).toEqual(before)
+    expect(current.data.decisionRequests?.[0]?.choices.some(x => x.resolution?.occurrenceId === 'b-event')).toBe(false)
+  })
+  it.each([
+    { opportunityId: 'b', occurrenceId: 'b-event' },
+    { opportunityId: 'a', occurrenceId: 'b-event' },
+    { opportunityId: 'a', scheduleNodeId: 'schedule:b-event:v1' },
+    { occurrenceId: 'b-event' },
+    { opportunityId: 'missing', occurrenceKind: 'interview' as const },
+  ])('authoritative whole-message guard rejects forged target %j', target => {
+    setup('scheduled'); const before = structuredClone(current)
+    const result = semantics.applySemanticIntake(current, {
+      contractVersion: 1, inputId: 'context-guard-0001', statementMode: 'assertion', contextRefs: ['opportunity:a'],
+      source: { kind: 'web', sourceId: 'web-context', sourceRecordId: 'capture-1', observedAt: NOW.toISOString(), timezone: 'UTC' },
+      candidates: [
+        { id: 'otherwise-valid-job', kind: 'user_opportunity', company: 'Third Co', role: 'Reviewer', objectConfidence: 'high', eventConfidence: 'high' },
+        { id: 'forged-completion', kind: 'occurrence_completed', objectConfidence: 'high', eventConfidence: 'high', target },
+      ],
+    }, { authorized: true, workspaceRevision: '1', now: NOW })
+    expect(result.status).toBe('NO_WRITE'); expect(result.changed).toBe(false)
+    expect(result.receipt).toBeUndefined(); expect(result.decisionRequests).toEqual([])
+    expect(result.snapshot).toEqual(before); expect(current).toEqual(before)
+  })
+  it('rejects the selected context after its occurrence completed on the server', async () => {
+    setup('scheduled')
+    const preview = await previewWebSemanticCapture(text, { now: NOW, contextRefs: ['opportunity:a'] })
+    current.data.scheduleNodes!.find(node => node.opportunityId === 'a')!.state = 'completed'
+    const before = structuredClone(current)
+    const result = semantics.applySemanticIntake(current, {
+      contractVersion: 1, inputId: 'context-stale-0001', statementMode: 'assertion', contextRefs: ['opportunity:a'],
+      source: { kind: 'web', sourceId: 'web-context', sourceRecordId: 'capture-1', observedAt: NOW.toISOString(), timezone: 'UTC' },
+      candidates: preview.candidates,
+    }, { authorized: true, workspaceRevision: '1', now: NOW })
+    expect(result.status).toBe('NO_WRITE'); expect(result.changed).toBe(false); expect(result.snapshot).toEqual(before)
+  })
+  it('refuses a mismatched account before resolving a selected context', async () => {
+    setup('scheduled'); bindAccount('account-b'); const before = structuredClone(current)
+    await expect(submitWebSemanticCapture(text, { ...CAPTURE, accountKey: 'account-a', contextRefs: ['opportunity:a'] })).rejects.toThrow()
+    expectNoMutation(before)
+  })
+
+  it('rejects a multi-clause completion that names a different job before offline admission', async () => {
+    setup('scheduled'); bindAccount(); const before = structuredClone(current)
+    const mixed = 'Example Co Analyst 面试已经完成了。Example Co Engineer 面试已经完成了。'
+    const preview = await previewWebSemanticCapture(mixed, { now: NOW, contextRefs: ['opportunity:a'] })
+    expect(preview.candidates).toEqual([]); expect(preview.unresolved.length).toBeGreaterThan(0)
+    expect((await submitWebSemanticCapture(mixed, { ...CAPTURE, accountKey: 'account-a', queueOffline: true, contextRefs: ['opportunity:a'] })).status).toBe('NO_WRITE')
+    expectNoMutation(before)
+  })
+  it('rechecks saved A occurrence ownership when answering a delayed round choice', async () => {
+    setup('multiple')
+    await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['opportunity:a'] })
+    const request = current.data.decisionRequests![0]!
+    const choice = request.choices.find(item => item.resolution?.occurrenceId === 'a-event')!
+    expect(choice).toBeDefined()
+    current.data.scheduleNodes!.find(node => node.occurrenceId === 'a-event')!.opportunityId = 'b'
+    const before = structuredClone(current)
+    expect(() => semantics.resolveSemanticDecision(current, request.id, choice.id, NOW)).toThrow(/selected opportunity/)
+    expect(current).toEqual(before); expect(request.state).toBe('open')
+  })
+
+  it('a completed latest version cannot expose its historical active version as a target', async () => {
+    setup('scheduled')
+    const prior = current.data.scheduleNodes!.find(node => node.opportunityId === 'a')!
+    current.data.scheduleNodes!.push({ ...structuredClone(prior), id: 'schedule:a-event:v2', version: 2, state: 'completed' })
+    const before = structuredClone(current)
+    expect((await submitWebSemanticCapture(text, { ...CAPTURE, contextRefs: ['opportunity:a'] })).status).toBe('NO_WRITE')
+    expectNoMutation(before)
+  })
+  it('conflicting explicit job identity cannot override selected context', async () => {
+    setup('scheduled'); const before = structuredClone(current)
+    expect((await submitWebSemanticCapture('Example Co Engineer 面试已经完成了。', { ...CAPTURE, contextRefs: ['opportunity:a'] })).status).toBe('NO_WRITE')
+    expectNoMutation(before)
+  })
+
 })

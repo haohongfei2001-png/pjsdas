@@ -205,3 +205,111 @@ General quoted job descriptions, richer forwarded headers/source timestamps,
 general rescheduling and unsupported round identity still require dedicated
 interpretation and acceptance. A17 genuine first search plus a subsequent
 scheduler-triggered run remains pending. Paid Discovery stays OFF.
+
+## New deterministic Tell whole-input admission — 2026-10-22
+
+Canonical §8/A18 requires resolving the intended message before saving a subset.
+The real Web adapter previously accepted a supported submission clause beside an
+unresolved unknown-job interview clause: local and connected calls returned
+APPLIED, while offline admission returned QUEUED. Three new adapter regressions
+were RED before this correction, with actual interpretation/domain code.
+
+New deterministic Tell admission now returns NO_WRITE before local replacement,
+remote command dispatch or offline queueing whenever interpretation has unresolved
+fragments. The full draft remains available and the message states that none of
+it was saved. Typed manual candidates and intentionally ignored quoted context
+are not blocked by this guard. This is conservative: unsupported prose remains
+unresolved; it does not claim broad natural-language understanding.
+
+For an existing uncertain command, incomplete interpretation permits receipt-only
+recovery, not resend. Absent/failed lookup preserves the original pending envelope;
+a committed receipt retains existing safe projection behavior. Receipt-only reads
+do not join another same-ID resend flight. This does not retroactively quarantine
+legacy outbox entries or change Gmail historical receipt/reconciliation behavior.
+
+Tests cover local/connected/offline no-subset admission, positive quoted context,
+existing receipt recovery, absent/failed receipt reads, and a concurrent held writer.
+This is a separate slice after PR282; exact-head release gates remain required.
+
+Local integrated verification: 363 files / 4,576 tests, TypeScript checks and
+production build passed. Independent review found no remaining caller-path blocker.
+
+
+## Bounded nonassertive submission protection — 2026-10-22
+
+Actual Tell entrypoint regressions exposed negated, prohibited, failed and
+question-form submissions being promoted by a positive keyword into facts.
+Local replacement, connected dispatch and offline admission were all affected.
+The current correction classifies unquoted current text first, treats exact
+paired known identity labels literally, and preserves unsupported/negative
+submission intent as non-writing rather than guessing success. It also avoids
+queuing or dispatching nonasserting observations, while allowing receipt-only
+recovery of an already uncertain operation.
+
+Positive controls preserve actual success statements, the existing confirmation
+requirement for less explicit submission wording, literal qualifier words in
+company/role labels, quoted old questions, explicit imported notices with URL
+query parameters, and mixed-message all-or-nothing admission. Independent review
+found and corrected an overbroad URL question check and repeated-identity-token
+masking; both retain regression coverage. These are finite conservative guards,
+not general semantic understanding or a claim that every paraphrase is solved.
+
+PR286 combines these admission fixes with saved-timezone parity. Hosted checks
+must pass on the final exact head before merge; model activation and A17 remain
+separate outstanding boundaries.
+
+Browser verification additionally caught a real contextual-completion regression:
+a strict fully recognized “这次面试已经完成了。” still carried unresolved debt
+from the older parser. The correction consumes only the same strictly recognized
+completion clause; unknown sibling clauses remain whole-message blockers. Actual
+local/connected/offline regressions were RED before the correction. The unchanged
+CGR-03 browser assertion still requires a genuinely completed schedule occurrence.
+Quoted/withdrawn browser cases now require zero additional command admission,
+revision, receipt or data change, rather than expecting an empty server command;
+their successful import, repeat, reload and rescheduling assertions remain intact.
+
+## Contextual completion ownership — 2026-10-22
+
+A two-job actual-entrypoint probe demonstrated that a generic completion could
+fall through from selected job A (already completed or missing interview) to B's
+scheduled interview. Both local and connected domain execution reproduced the
+wrong-job mutation; offline admission queued the wrong target. The former
+single-interview browser fixture could not detect this.
+
+The selected existing opportunity now constrains both preview and submission.
+Missing, conflicting or ambiguous context never becomes global fallback. The
+authoritative semantic batch rechecks candidate occurrence ownership before any
+business write, receipt or decision, and delayed decision execution rechecks the
+latest occurrence owner at the mutation point. Multiple active rounds within A
+still require a decision, without offering B. Context is not authorization and
+cannot bypass the existing account lease or authoritative workspace snapshot.
+
+Pending command envelopes remain frozen. Changing context permits receipt-only
+lookup, not resending or retargeting; absent/failed receipts preserve the pending
+operation. Late or background A success cannot consume an identical-text B draft
+or present A's success as B's. Ownership bookkeeping is memory-only and stores no
+new raw text; unknown ownership after reload retains the existing draft rather
+than inventing a cross-refresh guarantee. Existing background replay stays bound
+to the originally authorized envelope and passes the new authoritative guard.
+
+Regression coverage includes local/connected/offline two-job paths, missing and
+completed A, terminal latest versions, multiple A rounds, explicit conflicting
+identities, mixed-message rejection, forged cross-job IDs, delayed decision
+ownership changes, mismatched accounts, receipt recovery and background draft
+cleanup. Browser cases retain genuine schedule-state assertions and add held
+A-request → B-view → original-receipt recovery with B text and schedule unchanged.
+No paid capability, production migration, credential or resolved capture geometry was changed.
+
+### Bootstrap capture continuity
+
+The previous head's UI trace showed the provisional Today `+` being replaced by
+its resolved-layout counterpart during the first native click. No editor mounted;
+this was not an autofocus failure or an AI-model failure. Today now retains one
+capture DOM parent across initial/unavailable and resolved workspace states, and
+keeps the provisional layout still through a primary pointer press until the
+native click completes. Immediate input remains available; the resolved layout,
+44px target and focus assertions are unchanged. Controlled browser regressions
+cover node identity, pointer-down/read-resolution/pointer-up, and an already open
+editor's draft/focus through resolution. They require hosted browser execution;
+source review and unit/build success alone are not browser-pass evidence. This
+fix addresses Today freshness transitions, not every possible app-loading mount.

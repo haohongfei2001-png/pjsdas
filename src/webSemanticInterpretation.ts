@@ -1,3 +1,4 @@
+import { selectedCompletionOpportunity, completionMatchesContext } from './semanticCompletionContext.js'
 import { isPreparationTaskText } from './preparationRetirement.js'
 import { readImportedInterviewReschedule } from './boundInterviewReschedule.js'
 import { resolveSourceTemporal } from './sourceTemporal.js'
@@ -29,7 +30,9 @@ export function webStatementMode(text: string): SemanticStatementMode {
   const trimmed = text.trim()
   if (/(改写|润色|翻译|重写|rewrite|translate)/i.test(trimmed)) return 'rewrite_request'
   if (/^(?:如果|假如|假设|比如|例如|举例|hypothetical|for example)/i.test(trimmed)) return 'hypothetical'
-  if (/[?？]\s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)\b/i.test(trimmed)) return 'question'
+  if (/？|\?(?=\s|$)/.test(trimmed) || /(?:^|[。！？；;\n])\s*(?:岗位\s*)?(?:是否|是不是|要不要|该不该|怎么|如何|为什么)/.test(trimmed)
+    || /[吗么呢](?=[。！!；;\n]|\s*$)/.test(trimmed)
+    || /^(?:what|should|how|why)\b/i.test(trimmed)) return 'question'
   if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)
     || (/^“[^\n]*”$/.test(trimmed) || /^"[^\n]*"$/.test(trimmed))) return 'quote'
   return 'assertion'
@@ -353,6 +356,7 @@ function explicitCompletionCandidate(
   plan: ReturnType<typeof parseProgressUpdate>,
   opportunities: Opportunity[],
   baseline: PJSDASSnapshot,
+  contextOpportunityId?: string,
 ): SemanticCandidate | undefined {
   const kind = explicitCompletionKind(text, mode, opportunities)
   if (!kind) return undefined
@@ -361,7 +365,7 @@ function explicitCompletionCandidate(
   const exactMentions = opportunities
     .filter((item) => text.includes(item.company) && text.includes(item.role))
     .map((item) => item.id)
-  const candidateIds = [...new Set([...ids, ...exactMentions])]
+  const candidateIds = [...new Set([...ids, ...exactMentions, ...(contextOpportunityId ? [contextOpportunityId] : [])])]
 
   const latestByOccurrence = new Map<string, NonNullable<PJSDASSnapshot['data']['scheduleNodes']>[number]>()
   for (const node of baseline.data.scheduleNodes ?? []) {
@@ -373,7 +377,7 @@ function explicitCompletionCandidate(
   if (candidateIds.length === 1) nodes = nodes.filter((node) => node.opportunityId === candidateIds[0])
 
   const target = candidateIds.length === 1
-    ? { opportunityId: candidateIds[0], occurrenceKind: kind }
+    ? { opportunityId: candidateIds[0], occurrenceKind: kind, ...(contextOpportunityId && nodes.length === 1 ? { occurrenceId: nodes[0]!.occurrenceId } : {}) }
     : nodes.length === 1
       ? { occurrenceId: nodes[0]!.occurrenceId, occurrenceKind: kind }
       : { occurrenceKind: kind }
@@ -403,6 +407,7 @@ export function buildWebSemanticInterpretation(
   references: CanonicalJobReference[],
   now = new Date(),
   timezone = baseline.data.timePlanning?.timezone,
+  contextRefs: readonly string[] = [],
 ) {
   const importedJob = readExplicitStructuredQuotedJob(text)
   if (importedJob) {
@@ -414,13 +419,29 @@ export function buildWebSemanticInterpretation(
       unresolved: candidate ? [] : ['引用岗位说明需要明确的公司、岗位与受支持的完整字段，本次未写入。'], ignored: [] }
   }
   const importedNotice = explicitlyImportedNotice(text)
-  const mode = webStatementMode(importedNotice?.outer ?? text)
+  const current = importedNotice ?? withoutQuotedContext(text)
+  // Known company/role labels are identity, not linguistic qualifiers.
+  let intentText = current.text
+  const escapeIdentity = (label: string) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const job of opportunities) {
+    if (job.company && job.role) {
+      const pairedIdentity = new RegExp(`${escapeIdentity(job.company)}(?:\\s+[“"]?|[“"])${escapeIdentity(job.role)}[”"]?`, 'g')
+      intentText = intentText.replace(pairedIdentity, '岗位')
+    }
+  }
+  const mode = webStatementMode(importedNotice?.outer ?? (intentText || text))
   if (mode !== 'assertion' && mode !== 'current_intent') {
     return { mode, candidates: [], unresolved: [], ignored: [] }
   }
-  const current = importedNotice ?? withoutQuotedContext(text)
-  if (importedNotice && (webStatementMode(current.text) !== 'assertion'
-    || /编造|伪造|虚构|假设|例如|比如|不要|并非|不是真|忽略.{0,16}指令|(?:请|帮我).{0,30}(?:记录|创建|生成|导入|保存|删除|修改)|fabricat|invent|hypothetical|for example|ignore.{0,20}instructions/i.test(current.text))) {
+  // Bounded negative evidence must not be promoted by a positive keyword
+  // embedded in the same clause. Ask for clarification instead of inferring
+  // success from a prohibition, failed submission, or negated fact.
+  if (/(?:已投递成功|投递成功|申请已提交|申请成功|提交成功)/.test(intentText)
+    && /(?:不要|请勿|禁止|别).{0,16}(?:记录|保存|写入|投递|申请|提交)|(?:并非|并没有|并未|尚未|未能|没有|没能|不曾|不是|未|没|假如|假设|例如|比如|如果).{0,16}(?:投递|申请|提交)|(?:投递|申请|提交).{0,16}(?:失败|未成功|不成功|没(?:有)?成功)/.test(intentText)) {
+    return { mode, candidates: [], unresolved: ['输入包含禁止记录、否定或失败信息，不能据此记录成功事实。'], ignored: [] }
+  }
+  if (importedNotice && (webStatementMode(intentText) !== 'assertion'
+    || /编造|伪造|虚构|假设|例如|比如|不要|并非|不是真|忽略.{0,16}指令|(?:请|帮我).{0,30}(?:记录|创建|生成|导入|保存|删除|修改)|fabricat|invent|hypothetical|for example|ignore.{0,20}instructions/i.test(intentText))) {
     return { mode, candidates: [], unresolved: ['引用正文包含假设、否定或操作指令，不能作为确定的招聘通知写入。'], ignored: [] }
   }
   if (importedNotice && /改期|改到|改为|调整为|reschedul/i.test(current.text)) {
@@ -471,7 +492,12 @@ export function buildWebSemanticInterpretation(
       && clause.includes(operation.company) && clause.includes(operation.role))
   })
   if (conflictingCompletion) return { mode, candidates: [], unresolved: ['同一岗位的完成事实与新的截止义务需要区分具体轮次，本次未写入。'], ignored: [] }
-  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline)
+  const completionContext = selectedCompletionOpportunity(baseline, contextRefs)
+  const explicitCompletion = explicitCompletionCandidate(current.text, mode, plan, opportunities, baseline, completionContext.opportunityId)
+  if (explicitCompletion && (completionContext.error || (completionContext.opportunityId
+    && !completionMatchesContext(baseline, explicitCompletion, completionContext.opportunityId)))) {
+    return { mode, candidates: [], unresolved: [completionContext.error ?? '当前岗位没有明确可完成的对应安排，整条输入尚未保存。请核对岗位与事件。'], ignored: [] }
+  }
   const explicitKind = explicitCompletion?.target?.occurrenceKind
   const executableOperations = explicitCompletion && explicitKind
     ? plan.executable.filter((operation) => explicitCompletionKind(operation.sourceText, mode, opportunities) !== explicitKind)
@@ -510,13 +536,22 @@ export function buildWebSemanticInterpretation(
     executableCandidates.unshift(explicitCompletion)
   }
 
+  // The strict whole-input completion reader may fully consume a clause the
+  // legacy progress parser leaves unresolved (for example a contextual event).
+  // Remove only that same recognized completion, never an ambiguous sibling.
   const convertedUnresolved = plan.unresolved
+    .filter(item => !explicitCompletion || explicitCompletionKind(item.sourceText, mode, opportunities) !== explicitKind)
     .map((item) => ({ operation: item, candidate: unresolvedCandidate(item, opportunities) }))
   const candidates = [
     ...executableCandidates,
     ...convertedUnresolved.flatMap((item) => item.candidate ? [item.candidate] : []),
   ]
 
+  if (candidates.some(candidate => candidate.kind === 'occurrence_completed')
+    && (completionContext.error || (completionContext.opportunityId && candidates.some(candidate => candidate.kind === 'occurrence_completed'
+      && !completionMatchesContext(baseline, candidate, completionContext.opportunityId!))))) {
+    return { mode, candidates: [], unresolved: [completionContext.error ?? '完成事件与当前岗位上下文不一致，整条输入尚未保存。'], ignored: [] }
+  }
   return {
     mode,
     candidates,

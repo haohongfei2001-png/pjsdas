@@ -113,14 +113,15 @@ for (const width of [320, 390, 1440]) {
       `${IMPORT}；https://meet.example.test/room，非本人面试`,
       `${IMPORT}；地点：会议室A 非本人面试`,
     ]
-    for (const [index, text] of texts.entries()) {
+    for (const text of texts) {
       await page.getByLabel('要告诉 TodayAction 的内容', { exact: true }).fill(text)
       await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
       await expect(page.locator('.cgr-understanding li')).toHaveCount(0)
       await page.getByRole('button', { name: '确认并保存', exact: true }).click()
-      await expect(page.locator('.cgr-capture-receipt')).toContainText('没有被当作当前事实写入')
-      expect(server.commands).toHaveLength(index + 1)
-      expect(server.commands[index]).toMatchObject({ candidates: [], status: 'NO_WRITE' })
+      await expect(page.locator('.cgr-capture-receipt')).toContainText('整条输入尚未保存')
+      expect(server.commands).toHaveLength(0)
+      expect(server.revision()).toBe(1)
+      expect(server.receiptCount()).toBe(0)
       expect(server.snapshot().data).toEqual(before)
     }
     await page.reload()
@@ -160,13 +161,15 @@ test('explicit structured quoted job saves only an Opportunity, repeats safely, 
   expect(server.snapshot().data.opportunities).toEqual(first.opportunities)
   expect(await localJobs()).toEqual(expected)
   const beforeWithdrawal = structuredClone(server.snapshot().data)
+  const beforeWithdrawalRevision = server.revision(), beforeWithdrawalReceipts = server.receiptCount()
   await input.fill(text + '\n先不要导入，这只是示例。')
   await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
   await expect(page.locator('.cgr-understanding li')).toHaveCount(0)
   await page.getByRole('button', { name: '确认并保存', exact: true }).click()
-  await expect(page.locator('.cgr-capture-receipt')).toContainText('没有被当作当前事实写入')
-  expect(server.commands).toHaveLength(3)
-  expect(server.commands[2]).toMatchObject({ status: 'NO_WRITE', candidates: [] })
+  await expect(page.locator('.cgr-capture-receipt')).toContainText('整条输入尚未保存')
+  expect(server.commands).toHaveLength(2)
+  expect(server.receiptCount()).toBe(beforeWithdrawalReceipts)
+  expect(server.revision()).toBe(beforeWithdrawalRevision)
   expect(server.snapshot().data).toEqual(beforeWithdrawal)
   expect(await localJobs()).toEqual(expected)
 })
@@ -195,15 +198,17 @@ test('explicit interview reschedule keeps one occurrence and rejects the old not
   expect(await localBusiness(page)).toEqual({ processEvents: changed.processEvents, scheduleNodes: changed.scheduleNodes })
   await page.reload()
   await expect(page.getByRole('dialog', { name: '告诉 TodayAction', exact: true })).toBeVisible()
+  const committedCommands = server.commands.length
   for (const text of [change, IMPORT]) {
     await input.fill(text)
     await expect(page.locator('.cgr-understanding')).toHaveAttribute('aria-busy', 'false')
     await expect(page.locator('.cgr-understanding li')).toHaveCount(0)
     await page.getByRole('button', { name: '确认并保存', exact: true }).click()
-    await expect(page.locator('.cgr-capture-receipt')).toContainText('没有被当作当前事实写入')
+    await expect(page.locator('.cgr-capture-receipt')).toContainText('整条输入尚未保存')
     expect(server.snapshot().data).toEqual(changed)
     expect(server.revision()).toBe(committedRevision)
     expect(server.receiptCount()).toBe(committedReceipts)
+    expect(server.commands).toHaveLength(committedCommands)
     expect(await localBusiness(page)).toEqual({ processEvents: changed.processEvents, scheduleNodes: changed.scheduleNodes })
   }
 })
