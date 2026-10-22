@@ -36,6 +36,10 @@ for (const gesture of ['pressed', 'editing'] as const) test(`capture survives bo
     const box = await button.boundingBox(); expect(box).not.toBeNull()
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
     await page.mouse.down()
+    // Compare the same held state: the existing global :active style translates
+    // every button by 1px. That intentional press feedback is not bootstrap movement.
+    await expect(button).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 1)')
+    const pressedBox = await button.boundingBox(); expect(pressedBox).not.toBeNull()
     release(); await response
     // Observe the installed cloud snapshot, not just receipt of HTTP bytes.
     await expect.poll(() => page.evaluate(async () => {
@@ -45,7 +49,7 @@ for (const gesture of ['pressed', 'editing'] as const) test(`capture survives bo
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     await expect(page.getByText('正在确认最新状态…', { exact: true })).toBeVisible()
     expect(await original!.evaluate(node => node.isConnected && node === document.querySelector('.tsui-tell-button'))).toBe(true)
-    expect(await button.boundingBox()).toEqual(box)
+    expect(await button.boundingBox()).toEqual(pressedBox)
     await page.mouse.up()
     await expect(input).toBeFocused()
   } else {
