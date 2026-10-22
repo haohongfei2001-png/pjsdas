@@ -951,3 +951,67 @@ describe('immutable AI preview authoritative confirmation', () => {
     expect(h.ledger).toHaveLength(0); expect(h.state().current.data.actions).toHaveLength(2)
   })
 })
+
+import { createAiCapturePreviewHandler } from '../gateway/aiCapturePreviewHandler.js'
+import { latestScheduleOccurrence } from '../src/scheduleNodes.js'
+
+describe('bounded reschedule through real preview handler and authoritative confirmation', () => {
+  async function prepareReschedule() {
+    const initial = upgradeSnapshotToLatest(snapshot())
+    initial.data.scheduleNodes = [{ id: 'trusted-interview-v1', occurrenceId: 'trusted-interview', opportunityId: 'opp-1', version: 1,
+      kind: 'interview', state: 'scheduled', constraintKind: 'employer_hard', temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai',
+        startAt: '2030-10-25T14:30:00+08:00', resolutionBasis: 'source_explicit' }, evidenceRefs: [], sourceVersionRefs: [], relatedActionIds: [], relatedPrepIds: [],
+      createdAt: '2026-10-22T00:00:00Z', updatedAt: '2026-10-22T00:00:00Z' }]
+    const text = '请导入以下转发的面试通知。\n-----Forwarded message-----\nAlpha Role A 面试改期通知：原定2030年10月25日14:30，改为2030年10月26日15:30'
+    const evidence = (quote: string) => ({ start: text.indexOf(quote), end: text.indexOf(quote) + quote.length, quote })
+    const rows: any[] = []
+    const transport = vi.fn(async (_request, before) => {
+      await before()
+      return JSON.stringify({ statementMode: 'current_intent', interpretation: { contractVersion: 1, clarifications: [], candidates: [{
+        kind: 'occurrence_rescheduled', occurrenceKind: 'interview', target: { company: 'Alpha', role: 'Role A' }, confidence: 'high', evidence: evidence(text),
+        previousStartAt: '2030-10-25T14:30:00+08:00', previousTimeEvidence: evidence('2030年10月25日14:30'), newTimeEvidence: evidence('2030年10月26日15:30'),
+        temporal: { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2030-10-26T15:30:00+08:00' },
+      }] } })
+    })
+    const ledger = {
+      read: async () => rows[0] ?? null,
+      admit: async (value: any) => { rows.push({ user_id: value.userId, request_id: value.requestId, payload_hash: value.payloadHash, text: value.text,
+        timezone: value.timezone, reference_time: value.referenceTime, expected_revision: value.expectedRevision,
+        expires_at: new Date(Date.now() + 900_000).toISOString(), status: 'DISPATCHED', review: null, observation: null }) },
+      finish: async (value: any) => { Object.assign(rows[0], { status: value.status, review: value.review, observation: value.observation }) },
+    }
+    const handler = createAiCapturePreviewHandler({ supabaseUrl: 'https://example.test', supabasePublishableKey: 'synthetic-key', allowedOrigins: ['https://app.example.test'],
+      fetchImpl: async () => json({ id: 'user-a' }), authorizeIdentity: async () => ({ allowed: true }),
+      readWorkspace: async () => ({ userId: 'user-a', workspaceId: 'ws-1', revision: 1, schemaVersion: initial.version, snapshot: initial }),
+      now: () => new Date('2026-10-22T00:00:00Z'), runtime: { transport, ledger, beforeDispatch: async () => {}, reservationUnits: 1 } })
+    const response = await handler(new Request('https://backend.example.test/api/workspace?surface=ai-capture-preview', {
+      method: 'POST', headers: { origin: 'https://app.example.test', authorization: 'Bearer synthetic-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ text, timezone: 'Asia/Shanghai', requestId: 'ai-reschedule-review', expectedRevision: 1, contextRefs: ['opportunity:opp-1'] }) }))
+    expect(response.status).toBe(200)
+    expect((await response.json()).canCommit).toBe(true)
+    expect(rows[0].observation.contextRefs).toEqual(['opportunity:opp-1'])
+    expect(rows[0].observation.candidates[0].temporal.resolutionBasis).toBe('source_explicit')
+    expect(rows[0].observation.source).not.toHaveProperty('assertedAt')
+    expect(transport).toHaveBeenCalledOnce()
+    expect(JSON.stringify(transport.mock.calls[0][0])).not.toContain('trusted-interview')
+    return { initial, rows, command: { commandId: 'ai-reschedule-confirm', baseRevision: 1, command: { type: 'ai_capture_confirm', value: { requestId: 'ai-reschedule-review' } } } }
+  }
+  it('reschedules the existing occurrence, replays once, and restores it through authoritative Undo', async () => {
+    const { initial, rows, command } = await prepareReschedule(), h = harness(initial, {}, {}, rows)
+    expect(await h.executor.execute(h.principal, command)).toMatchObject({ outcome: 'COMMITTED', result: { status: 'APPLIED' } })
+    expect(latestScheduleOccurrence(h.state().current.data.scheduleNodes!, 'trusted-interview')?.temporal.startAt).toBe('2030-10-26T15:30:00+08:00')
+    expect(h.state().current.data.actions).toEqual(initial.data.actions)
+    expect(h.state().current.data.processEvents).toEqual(initial.data.processEvents)
+    expect(await h.executor.execute(h.principal, command)).toMatchObject({ outcome: 'ALREADY_APPLIED' })
+    expect(h.ledger).toHaveLength(1)
+    expect(await h.executor.undo(h.principal, { commandId: 'undo-ai-reschedule', targetCommandId: command.commandId })).toMatchObject({ outcome: 'COMMITTED' })
+    expect(latestScheduleOccurrence(h.state().current.data.scheduleNodes!, 'trusted-interview')?.id).toBe('trusted-interview-v1')
+  })
+  it('fails a lost CAS once without rebasing or partial writes', async () => {
+    const { initial, rows, command } = await prepareReschedule()
+    let attempts = 0
+    const h = harness(initial, {}, { beforeCommit: ({ current }) => { attempts++; return json([{ outcome: 'CONFLICT', workspace_id: 'ws-1', revision: 2, snapshot: current, receipt: {} }]) } }, rows)
+    await expect(h.executor.execute(h.principal, command)).rejects.toMatchObject({ code: 'AI_CAPTURE_STALE' })
+    expect(attempts).toBe(1); expect(h.ledger).toEqual([]); expect(h.state().current.data).toEqual(initial.data)
+  })
+})

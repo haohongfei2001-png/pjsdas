@@ -142,3 +142,29 @@ for (const secondaryMode of ['manual', 'review'] as const) {
     expect(f.commands).toHaveLength(0)
   })
 }
+
+test('switching selected jobs invalidates a late AI preview and requires a new explicit request identity', async ({ page }) => {
+  const f = await setup(page, 'ready', true)
+  await page.keyboard.press('Escape')
+  async function openJob(company: string) {
+    await page.locator('.tsui-primary-nav').getByRole('button', { name: /岗位库|Jobs/ }).click()
+    await page.locator('.opportunity-decision-row').filter({ hasText: company }).click()
+    await page.locator('.job-detail-capture').click()
+  }
+  await openJob('A公司')
+  await f.input.fill('同一段合成输入')
+  await f.organize.click()
+  await expect.poll(() => f.previews.length).toBe(1)
+  expect(f.previews[0].contextRefs).toEqual(['opportunity:A-opp-1'])
+  await page.keyboard.press('Escape')
+  await openJob('第二公司')
+  await expect(f.input).toHaveValue('同一段合成输入')
+  f.release()
+  await expect(page.locator('.cgr-understanding')).not.toContainText('模型理解的合成任务')
+  await f.organize.click()
+  await expect.poll(() => f.previews.length).toBe(2)
+  expect(f.previews[1].contextRefs).toEqual(['opportunity:A-opp-2'])
+  expect(f.previews[1].requestId).not.toBe(f.previews[0].requestId)
+  await expect(page.locator('.cgr-understanding')).toContainText('模型理解的合成任务')
+  expect(f.commands).toHaveLength(0)
+})

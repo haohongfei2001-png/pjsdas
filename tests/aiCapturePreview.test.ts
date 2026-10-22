@@ -144,3 +144,19 @@ describe('real installed AI SDK with synthetic network only', () => {
     await expect(call(buildAiCaptureModelRequest(input, '2026-10-19T00:00:00Z'), async () => undefined)).rejects.toThrow(); expect(network).toHaveBeenCalledOnce()
   })
 })
+
+it('validates selected context against authenticated workspace and never sends it to the model', async () => {
+  const f = fixture()
+  const selected = { ...input, requestId: 'context-preview', contextRefs: ['opportunity:secret-job-id'] }
+  const response = await f.request(selected)
+  expect(response.status).toBe(200)
+  expect(f.ledger.finish.mock.calls[0][0].observation.contextRefs).toEqual(selected.contextRefs)
+  expect(JSON.stringify(f.transport.mock.calls[0][0])).not.toContain('secret-job-id')
+  expect((await f.request({ ...selected, contextRefs: [] })).status).toBe(409)
+  expect(f.transport).toHaveBeenCalledOnce()
+})
+it.each([['opportunity:foreign'], ['opportunity:secret-job-id', 'opportunity:second'], ['schedule:foreign']])('rejects invalid or foreign selected context %s before dispatch', async contextRefs => {
+  const f = fixture(), response = await f.request({ ...input, contextRefs })
+  expect([400, 409]).toContain(response.status)
+  expect(f.transport).not.toHaveBeenCalled(); expect(f.beforeDispatch).not.toHaveBeenCalled()
+})

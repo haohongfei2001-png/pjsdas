@@ -170,7 +170,7 @@ export default function TellPjsdasCapture({
   const [busy, setBusy] = useState(false)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewRequest, setPreviewRequest] = useState(0)
-  const [aiRequest, setAiRequest] = useState<{ text: string; accountKey: string; requestId: string }>()
+  const [aiRequest, setAiRequest] = useState<{ text: string; accountKey: string; requestId: string; contextRefs?: readonly string[] }>()
   const processedAiRequest = useRef<string | undefined>(undefined)
   const aiRequestIdentity = useRef(createAiRequestIdentity())
   const [fileReading, setFileReading] = useState(false)
@@ -226,7 +226,7 @@ export default function TellPjsdasCapture({
 
   const connected = Boolean(cloud.session && connectedWorkspaceAuthorityEnabled())
   const modelCapture = aiCaptureEnabled() && !manualMode
-  const currentAiPreview = isCurrentAiPreview(storedPreview, text, accountKey) ? storedPreview : undefined
+  const currentAiPreview = isCurrentAiPreview(storedPreview, text, accountKey, contextRefs) ? storedPreview : undefined
   const preview = modelCapture ? currentAiPreview : storedPreview && 'ai' in storedPreview ? undefined : storedPreview
   const recoveryLocked = saveState === 'unknown' || saveState === 'reauth' || saveState === 'confirmed_pending' || saveState === 'offline'
 
@@ -404,7 +404,7 @@ export default function TellPjsdasCapture({
     setDecisionCount(0)
     setUnresolvedCount(0)
     setUndo(undefined)
-    commandContextIdentity.current = resumable ? semanticContextKey(resumable.contextRefs) : undefined
+    commandContextIdentity.current = resumable?.contextRefs !== undefined ? semanticContextKey(resumable.contextRefs) : undefined
     setStableCommandId(resumable?.commandId)
   }, [open, cloud.session?.user.id])
 
@@ -463,7 +463,7 @@ export default function TellPjsdasCapture({
       setPreviewBusy(false)
       return
     }
-    if (modelCapture && (!connected || !aiRequest || aiRequest.text !== text || aiRequest.accountKey !== accountKey)) {
+    if (modelCapture && (!connected || !aiRequest || aiRequest.text !== text || aiRequest.accountKey !== accountKey || semanticContextKey(aiRequest.contextRefs) !== contextIdentity)) {
       setPreview(undefined)
       setPreviewBusy(false)
       return
@@ -473,7 +473,7 @@ export default function TellPjsdasCapture({
     setPreviewBusy(true)
     const id = window.setTimeout(() => {
       if (modelCapture) processedAiRequest.current = aiRequest!.requestId
-      void (modelCapture ? previewAiCapture(text, accountKey!, aiRequest!.requestId) : previewWebSemanticCapture(text, { contextRefs }))
+      void (modelCapture ? previewAiCapture(text, accountKey!, aiRequest!.requestId, contextRefs) : previewWebSemanticCapture(text, { contextRefs }))
         .then((next) => {
           presentation.publish(() => { settledPreviewIdentity.current = parsedIdentity; setPreview(next); setPreviewBusy(false) })
         })
@@ -540,7 +540,7 @@ export default function TellPjsdasCapture({
     if (!operation) return
     const submittedText = text
     const submittedDraftOwnership = draftOwnership.current.capture()
-    const submittedContextIdentity = recoveryLocked ? commandContextIdentity.current ?? contextIdentity : contextIdentity
+    const submittedContextIdentity = recoveryLocked ? commandContextIdentity.current : contextIdentity
     commandContextIdentity.current = submittedContextIdentity
     if (connected && accountKey) rememberCaptureDraftContext(accountKey, contextRefs)
     if (commandId) setStableCommandId(commandId)
@@ -552,7 +552,7 @@ export default function TellPjsdasCapture({
     setUnresolvedCount(0)
     try {
       const result = modelCapture ? await confirmAiCapture({ accountKey: accountKey!, commandId: commandId!, text,
-        preview: currentAiPreview as AiCapturePreview | undefined, recover: recoveryLocked }) : await submitWebSemanticCapture(text, {
+        preview: currentAiPreview as AiCapturePreview | undefined, recover: recoveryLocked, contextRefs }) : await submitWebSemanticCapture(text, {
         accountKey: cloud.session?.user.id,
         commandId,
         contextRefs,
@@ -574,7 +574,7 @@ export default function TellPjsdasCapture({
         await ensureAuthoritativePersistence(true, cloud.syncNow)
       }
       const sameContext = submittedContextIdentity === currentContextIdentity.current
-      const ownsSubmittedDraft = draftOwnership.current.owns(submittedDraftOwnership, submittedContextIdentity)
+      const ownsSubmittedDraft = submittedContextIdentity !== undefined && draftOwnership.current.owns(submittedDraftOwnership, submittedContextIdentity)
       if (result.status === 'APPLIED' && ownsSubmittedDraft) {
         if (closedDraftRef.current?.accountKey === accountKey && closedDraftRef.current.text === submittedText) closedDraftRef.current = undefined
         if (connected && accountKey && readAccountDraft(accountKey, 'tell-pjsdas') === submittedText) clearAccountDraft(accountKey, 'tell-pjsdas')
@@ -736,7 +736,7 @@ export default function TellPjsdasCapture({
       processedAiRequest.current = undefined
       // A retry of the same input asks for its durable result, never buys a
       // second inference after an unknown response. Edits get a new identity.
-      setAiRequest(aiRequestIdentity.current.forInput(text, accountKey, () => createConnectedCommandId('ai-capture')))
+      setAiRequest(aiRequestIdentity.current.forInput(text, accountKey, () => createConnectedCommandId('ai-capture'), contextRefs))
     }
     setPreviewRequest(value => value + 1)
     previewSectionRef.current?.focus()

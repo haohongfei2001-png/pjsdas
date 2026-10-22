@@ -1,3 +1,4 @@
+import { verifiedAiInterviewReschedules } from './aiCaptureContract.js'
 import { aiCapturePayloadHash, type AiCaptureLedger } from './aiCaptureLedger.js'
 import { aiCapturePreviewInputSchema, prepareAiCapturePreview, type AiCaptureTransport } from './aiCapturePreview.js'
 import { createSupabaseIdentityResolver, type PjsdasIdentity } from './supabaseIdentity.js'
@@ -48,6 +49,7 @@ export function createAiCapturePreviewHandler(config: {
       const existing = await config.runtime.ledger.read(identity.userId, input.requestId)
       const workspace = await config.readWorkspace(identity.userId)
       if (!workspace || workspace.userId !== identity.userId) return respond(403, { code: 'WORKSPACE_NOT_AVAILABLE' })
+      if (input.contextRefs?.some(ref => !workspace.snapshot.data.opportunities.some(job => `opportunity:${job.id}` === ref))) return respond(409, { code: 'AI_CAPTURE_CONTEXT_CHANGED', retryable: false })
       if (existing) {
         if (existing.payload_hash !== payloadHash) return respond(409, { code: 'AI_CAPTURE_REQUEST_ID_REUSED', retryable: false })
         if (!existing.review || !['READY', 'BLOCKED', 'COMMITTED'].includes(existing.status)) return respond(409, { code: 'AI_CAPTURE_RESULT_UNKNOWN', retryable: false })
@@ -64,6 +66,8 @@ export function createAiCapturePreviewHandler(config: {
         trigger: 'explicit_user_request', ownerKey: identity.userId, inputId: `ai:${input.requestId}`, receiptId: `ai:${input.requestId}`,
         text: input.text, timezone: input.timezone, referenceTime, workspaceRevision: `txn:${workspace.revision}`, temporalResolutionBasis: 'user_explicit',
         source: { kind: 'web', sourceId: 'todayaction-web', sourceRecordId: input.requestId, sourceVersion: '1', observedAt: referenceTime, timezone: input.timezone },
+        contextRefs: input.contextRefs,
+        verifiedInterviewReschedules: verifiedAiInterviewReschedules(input.text, workspace.snapshot, referenceTime, input.timezone),
         opportunities: workspace.snapshot.data.opportunities.map(item => ({ opportunityId: item.id, company: item.company, role: item.role })),
       }, config.runtime.transport, async () => {
         const current = await config.readWorkspace(identity.userId)
