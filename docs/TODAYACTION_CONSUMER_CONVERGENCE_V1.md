@@ -2,8 +2,18 @@
 
 Package: `TODAYACTION-CONSUMER-CONVERGENCE-v1`  
 Owner decision: **APPROVED — 2026-10-07 (Asia/Shanghai)**  
-Implementation status: **NOT STARTED by this documentation change**  
-Next implementation batch: **B1 — business semantics and authoritative boundaries**
+Original planning snapshot (2026-10-07): **NOT STARTED by that documentation change; B1 was next**
+
+## Implementation checkpoint — 2026-10-22
+
+The original documentation-only scope below is historical, not the current runtime status.
+Existing implementation and evidence are already present; this checkpoint does not declare
+all B1–B4 acceptance complete.
+
+- B3 AI capture foundation: [PR282](https://github.com/haohongfei2001-png/pjsdas/pull/282) merged as `c1fba00b`, exact-head checks passed, and public release manifest/health matched. The model path remains disabled by default; production migration, funding/policy activation and real-provider quality validation were not performed.
+- Current finite B3 correction: [PR286](https://github.com/haohongfei2001-png/pjsdas/pull/286) covers whole-message admission, receipt-only uncertain recovery, saved-timezone parity and bounded nonassertive-input protection. It is under exact-head verification, not yet a released-complete claim. See [quoted intake evidence](CONSUMER_B3_QUOTED_INTAKE_EVIDENCE.md) and [timezone evidence](CONSUMER_B3_GMAIL_RESCHEDULE_EVIDENCE.md).
+- B2/A17 remains open: genuine funded search and a later scheduler-triggered execution need actual acceptance evidence. No paid capability is enabled by this checkpoint.
+- B4 overall closure remains open while A17 and live AI acceptance are outstanding. No percentage completion or broad natural-language-understanding claim is implied.
 
 ## Owner amendment — 2026-10-18
 

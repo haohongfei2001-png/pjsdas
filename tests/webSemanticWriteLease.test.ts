@@ -516,3 +516,115 @@ describe('actual Tell entrypoint workspace timezone parity', () => {
   })
 
 })
+
+
+describe('non-assertion actual capture admission', () => {
+  const inputs = [
+    '京东 AI产品经理 不要记录为已投递成功',
+    '京东 AI产品经理 已投递成功了吗',
+    '京东 AI产品经理 是否已投递成功',
+    '京东 AI产品经理 并没有投递成功',
+    '是否京东 AI产品经理 已投递成功',
+    '京东 AI产品经理 申请已提交但失败了',
+    '京东 AI产品经理 尚未投递成功',
+    '京东 AI产品经理 未投递成功',
+    '京东 AI产品经理 没投递成功',
+    '京东 AI产品经理 不是已投递成功',
+    '京东 AI产品经理 假如已投递成功',
+    '京东 AI产品经理 例如已投递成功',
+    '京东 AI产品经理 已投递成功吗。京东 AI产品经理 已投递成功',
+  ]
+  beforeEach(() => {
+    current.data.opportunities[0]!.company = '京东'
+    current.data.opportunities[0]!.role = 'AI产品经理'
+  })
+  for (const mode of ['local', 'connected', 'offline'] as const) {
+    it.each(inputs)(mode + ' does not save or queue non-facts: %s', async text => {
+      if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+      else bindAccount()
+      const before = structuredClone(current)
+      const preview = await previewWebSemanticCapture(text, { now: NOW })
+      expect(preview.candidates).toEqual([])
+      const result = await submitWebSemanticCapture(text, { ...CAPTURE,
+        accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+      expect(result.status).toBe('NO_WRITE')
+      expectNoMutation(before)
+    })
+  }
+  it('recovers a prior receipt without reissuing a now non-asserting input', async () => {
+    bindAccount()
+    const result = await submitWebSemanticCapture(inputs[1]!, { ...CAPTURE, accountKey: 'account-a', confirmExisting: true })
+    expect(result.status).toBe('ALREADY_APPLIED')
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', CAPTURE.commandId, { receiptOnly: true })
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('submission intent fence positive controls', () => {
+  it.each([
+    ['京东', 'AI产品经理', '已投递成功'],
+    ['京东', 'AI产品经理', '申请已提交'],
+    ['Example Co', 'Product Manager', '已投递成功'],
+    ['是否科技', '不要记录测试经理', '已投递成功'],
+    ['没有科技', '失败分析工程师', '申请已提交'],
+  ])('keeps literal identity %s %s and assertion %s', async (company, role, evidence) => {
+    setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+    Object.assign(current.data.opportunities[0]!, { company, role })
+    const result = await submitWebSemanticCapture(`${company} ${role} ${evidence}`, CAPTURE)
+    // Preserve the existing confirmation requirement for the less explicit wording.
+    expect(result.status).toBe(evidence === '申请已提交' ? 'DECISION_REQUIRED' : 'APPLIED')
+    expect(current.data.opportunities[0]!.processStage).toBe(evidence === '申请已提交' ? 'not_applied' : 'screening')
+  })
+  it.each(['不要记录为已投递成功', '已投递成功了吗'])('ignores quoted older %s instead of suppressing the current assertion', async old => {
+    setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+    const result = await submitWebSemanticCapture(TEXT + '\n> 旧岗位 ' + old, CAPTURE)
+    expect(result.status).toBe('APPLIED')
+  })
+  it.each(['local', 'connected', 'offline'] as const)('does not admit a supported sibling with a nonassertive submission through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    current.data.opportunities.push({ ...opportunity('opp-2'), company: '阿里', role: '产品经理' })
+    const before = structuredClone(current)
+    const result = await submitWebSemanticCapture(TEXT + ' 阿里 产品经理 不要记录为已投递成功', { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+  })
+})
+
+
+it('does not erase a prohibition that repeats a literal company label', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '不要', role: '产品经理' })
+  const before = structuredClone(current)
+  const result = await submitWebSemanticCapture('不要 产品经理 不要记录为已投递成功', CAPTURE)
+  expect(result.status).toBe('NO_WRITE'); expectNoMutation(before)
+})
+
+
+it.each(['今天处理申请失败的问题', '今天整理未提交的报销单', '今天整理如何使用报销系统的文档', '今天提交关于是否参加活动的申请'])('preserves non-recruiting task evidence: %s', async text => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  const preview = await previewWebSemanticCapture(text, { now: NOW })
+  expect(preview.unresolved).toEqual([])
+  expect(preview.candidates).toEqual([expect.objectContaining({ kind: 'manual_action' })])
+  expect((await submitWebSemanticCapture(text, CAPTURE)).status).toBe('APPLIED')
+})
+
+it('preserves supported no-space quoted identity labels', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '是否科技', role: 'AI产品经理' })
+  const result = await submitWebSemanticCapture('是否科技“AI产品经理”已投递成功', CAPTURE)
+  expect(result.status).toBe('APPLIED')
+})
+
+
+it('keeps literal known identities inside an explicitly imported notice', async () => {
+  setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false)
+  Object.assign(current.data.opportunities[0]!, { company: '是否科技', role: 'AI产品经理' })
+  current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+  const text = '请导入以下面试通知\n> 是否科技 AI产品经理 面试通知：2026年10月25日14:30'
+  const preview = await previewWebSemanticCapture(text, { now: NOW })
+  expect(preview.unresolved).toEqual([])
+  expect(preview.candidates).toEqual([expect.objectContaining({ kind: 'process_event' })])
+  expect((await submitWebSemanticCapture(text, { ...CAPTURE, timezone: 'Asia/Shanghai' })).status).toBe('APPLIED')
+})

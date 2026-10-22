@@ -233,3 +233,27 @@ This is a separate slice after PR282; exact-head release gates remain required.
 
 Local integrated verification: 363 files / 4,576 tests, TypeScript checks and
 production build passed. Independent review found no remaining caller-path blocker.
+
+
+## Bounded nonassertive submission protection — 2026-10-22
+
+Actual Tell entrypoint regressions exposed negated, prohibited, failed and
+question-form submissions being promoted by a positive keyword into facts.
+Local replacement, connected dispatch and offline admission were all affected.
+The current correction classifies unquoted current text first, treats exact
+paired known identity labels literally, and preserves unsupported/negative
+submission intent as non-writing rather than guessing success. It also avoids
+queuing or dispatching nonasserting observations, while allowing receipt-only
+recovery of an already uncertain operation.
+
+Positive controls preserve actual success statements, the existing confirmation
+requirement for less explicit submission wording, literal qualifier words in
+company/role labels, quoted old questions, explicit imported notices with URL
+query parameters, and mixed-message all-or-nothing admission. Independent review
+found and corrected an overbroad URL question check and repeated-identity-token
+masking; both retain regression coverage. These are finite conservative guards,
+not general semantic understanding or a claim that every paraphrase is solved.
+
+PR286 combines these admission fixes with saved-timezone parity. Hosted checks
+must pass on the final exact head before merge; model activation and A17 remain
+separate outstanding boundaries.

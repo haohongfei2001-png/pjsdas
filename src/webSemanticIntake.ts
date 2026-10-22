@@ -145,8 +145,10 @@ export async function submitWebSemanticCapture(
   // earlier uncertain command even if today's interpretation is incomplete.
   const recovering = Boolean(options.accountKey && connectedWorkspaceAuthorityEnabled()
     && options.confirmExisting && !options.queueOffline)
-  if (interpretation.unresolved.length && !recovering) {
-    return { status: 'NO_WRITE', summary: '内容仍有待澄清的片段，整条输入尚未保存。',
+  const nonWriting = interpretation.unresolved.length > 0
+    || !['assertion', 'current_intent'].includes(interpretation.mode)
+  if (nonWriting && !recovering) {
+    return { status: 'NO_WRITE', summary: interpretation.unresolved.length ? '内容仍有待澄清的片段，整条输入尚未保存。' : '疑问、引用或假设不是确定事实，本次未写入。',
       unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
   }
   const recordId = options.commandId ?? `capture:${now.getTime()}:${stableHash(trimmed)}`
@@ -177,7 +179,7 @@ export async function submitWebSemanticCapture(
         unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
     }
     const authoritative = options.confirmExisting
-      ? (interpretation.unresolved.length
+      ? (nonWriting
         ? await confirmConnectedCommand(options.accountKey, commandId, { receiptOnly: true })
         : await confirmConnectedCommand(options.accountKey, commandId))
       : await executeConnectedBusinessCommand(options.accountKey, {

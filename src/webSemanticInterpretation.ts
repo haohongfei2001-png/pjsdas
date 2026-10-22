@@ -29,7 +29,9 @@ export function webStatementMode(text: string): SemanticStatementMode {
   const trimmed = text.trim()
   if (/(改写|润色|翻译|重写|rewrite|translate)/i.test(trimmed)) return 'rewrite_request'
   if (/^(?:如果|假如|假设|比如|例如|举例|hypothetical|for example)/i.test(trimmed)) return 'hypothetical'
-  if (/[?？]\s*$/.test(trimmed) || /^(?:是否|是不是|要不要|该不该|怎么|如何|为什么|what|should|how|why)\b/i.test(trimmed)) return 'question'
+  if (/？|\?(?=\s|$)/.test(trimmed) || /(?:^|[。！？；;\n])\s*(?:岗位\s*)?(?:是否|是不是|要不要|该不该|怎么|如何|为什么)/.test(trimmed)
+    || /[吗么呢](?=[。！!；;\n]|\s*$)/.test(trimmed)
+    || /^(?:what|should|how|why)\b/i.test(trimmed)) return 'question'
   if (/^(?:引用|原话|quote)\s*[:：]/i.test(trimmed)
     || (/^“[^\n]*”$/.test(trimmed) || /^"[^\n]*"$/.test(trimmed))) return 'quote'
   return 'assertion'
@@ -414,13 +416,29 @@ export function buildWebSemanticInterpretation(
       unresolved: candidate ? [] : ['引用岗位说明需要明确的公司、岗位与受支持的完整字段，本次未写入。'], ignored: [] }
   }
   const importedNotice = explicitlyImportedNotice(text)
-  const mode = webStatementMode(importedNotice?.outer ?? text)
+  const current = importedNotice ?? withoutQuotedContext(text)
+  // Known company/role labels are identity, not linguistic qualifiers.
+  let intentText = current.text
+  const escapeIdentity = (label: string) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const job of opportunities) {
+    if (job.company && job.role) {
+      const pairedIdentity = new RegExp(`${escapeIdentity(job.company)}(?:\\s+[“"]?|[“"])${escapeIdentity(job.role)}[”"]?`, 'g')
+      intentText = intentText.replace(pairedIdentity, '岗位')
+    }
+  }
+  const mode = webStatementMode(importedNotice?.outer ?? (intentText || text))
   if (mode !== 'assertion' && mode !== 'current_intent') {
     return { mode, candidates: [], unresolved: [], ignored: [] }
   }
-  const current = importedNotice ?? withoutQuotedContext(text)
-  if (importedNotice && (webStatementMode(current.text) !== 'assertion'
-    || /编造|伪造|虚构|假设|例如|比如|不要|并非|不是真|忽略.{0,16}指令|(?:请|帮我).{0,30}(?:记录|创建|生成|导入|保存|删除|修改)|fabricat|invent|hypothetical|for example|ignore.{0,20}instructions/i.test(current.text))) {
+  // Bounded negative evidence must not be promoted by a positive keyword
+  // embedded in the same clause. Ask for clarification instead of inferring
+  // success from a prohibition, failed submission, or negated fact.
+  if (/(?:已投递成功|投递成功|申请已提交|申请成功|提交成功)/.test(intentText)
+    && /(?:不要|请勿|禁止|别).{0,16}(?:记录|保存|写入|投递|申请|提交)|(?:并非|并没有|并未|尚未|未能|没有|没能|不曾|不是|未|没|假如|假设|例如|比如|如果).{0,16}(?:投递|申请|提交)|(?:投递|申请|提交).{0,16}(?:失败|未成功|不成功|没(?:有)?成功)/.test(intentText)) {
+    return { mode, candidates: [], unresolved: ['输入包含禁止记录、否定或失败信息，不能据此记录成功事实。'], ignored: [] }
+  }
+  if (importedNotice && (webStatementMode(intentText) !== 'assertion'
+    || /编造|伪造|虚构|假设|例如|比如|不要|并非|不是真|忽略.{0,16}指令|(?:请|帮我).{0,30}(?:记录|创建|生成|导入|保存|删除|修改)|fabricat|invent|hypothetical|for example|ignore.{0,20}instructions/i.test(intentText))) {
     return { mode, candidates: [], unresolved: ['引用正文包含假设、否定或操作指令，不能作为确定的招聘通知写入。'], ignored: [] }
   }
   if (importedNotice && /改期|改到|改为|调整为|reschedul/i.test(current.text)) {
