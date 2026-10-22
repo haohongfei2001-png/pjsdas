@@ -151,18 +151,36 @@ test('a previous successful save is not replayed over a newer authoritative valu
 test('capture below the tasks aligns with the brand and preserves repeated close and draft recovery', async ({ page }, info) => {
   await localStart(page)
   const button = page.locator('.tsui-capture-region .tsui-tell-button')
-  await expect(button).toHaveText('＋告诉 TodayAction')
+  await expect(button).toHaveText('＋')
   await expect(button).toHaveAccessibleName('＋ 告诉 TodayAction')
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 844 })
     const box = await button.boundingBox()
-    expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44)
+    expect(box!.width).toBe(44); expect(box!.height).toBe(44)
     const brand = (await page.locator('.tsui-brand').boundingBox())!
     expect(Math.abs(box!.x - brand.x)).toBeLessThanOrEqual(1)
     expect(await page.locator('.tsui-topbar .tsui-tell-button').count()).toBe(0)
+    await page.mouse.move(width - 2, 2)
+    await info.attach(`plus-only-collapsed-${width}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' })
+    await button.click()
+    const pointerInput = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+    const frame = page.locator('.cgr-capture-composer')
+    await expect(pointerInput).toBeFocused()
+    await expect(frame).toHaveCSS('border-top-width', '1px')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(223, 229, 238)')
+    await expect(frame).toHaveCSS('outline-style', 'none')
+    await expect(pointerInput).toHaveCSS('outline-style', 'none')
+    await page.keyboard.type('鼠标展开后输入')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(223, 229, 238)')
+    await info.attach(`fine-chat-pointer-${width}`, { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' })
+    await button.click()
+    await expect(pointerInput).toHaveCount(0)
     await button.focus(); await page.keyboard.press('Enter')
     await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
     const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
+    await expect(frame).toHaveCSS('border-top-width', '1px')
+    await expect(frame).toHaveCSS('border-top-color', 'rgb(101, 122, 158)')
+    await expect(frame).toHaveCSS('outline-style', 'none')
     await input.fill('未提交的草稿')
     await expect(button).toHaveAccessibleName('关闭')
     await expect(button).toHaveAttribute('aria-expanded', 'true')
@@ -188,7 +206,7 @@ test('capture below the tasks aligns with the brand and preserves repeated close
     await expect(button).toBeFocused()
   }
   await page.evaluate(() => localStorage.setItem('pjsdas-ui-language', 'en')); await page.reload()
-  await expect(button).toHaveText('＋Tell TodayAction'); await expect(button).toHaveAccessibleName('＋ Tell TodayAction')
+  await expect(button).toHaveText('＋'); await expect(button).toHaveAccessibleName('＋ Tell TodayAction')
 })
 
 test('Settings no longer exposes a second time planner and visiting it preserves stored preferences', async ({ page }) => {
@@ -227,11 +245,16 @@ test('primary navigation names pages without duplicate visual content headings',
 
 test('opening capture from body restores focus to its entry on Escape', async ({ page }) => {
   await localStart(page)
-  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
-  await page.keyboard.press('Control+k')
-  await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(page.locator('.tsui-capture-region .tsui-tell-button')).toBeFocused()
+  for (const shortcut of ['Control+k', 'Meta+k']) {
+    await page.mouse.click(1, 1)
+    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+    await page.keyboard.press(shortcut)
+    await expect(page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })).toBeFocused()
+    await expect(page.locator('.cgr-capture-composer')).toHaveCSS('border-top-color', 'rgb(101, 122, 158)')
+    await expect(page.locator('.cgr-capture-composer')).toHaveCSS('outline-style', 'none')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.tsui-capture-region .tsui-tell-button')).toBeFocused()
+  }
 })
 
 

@@ -132,7 +132,7 @@ test('TA-02 loaded surfaces retain identifiers, detail, capture and keyboard foc
   if (!before) {
     const outline=await page.locator('.tsui-tell-button').evaluate(x=>({width:getComputedStyle(x).outlineWidth,style:getComputedStyle(x).outlineStyle}))
     expect(outline.style).toBe('solid')
-    expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(3)
+    expect(outline.width).toBe('1px')
   }
   await page.goto(base+'settings')
   await expect(page.getByRole('heading',{name:before?'账号与跨设备数据':'账号',exact:true})).toBeVisible()
