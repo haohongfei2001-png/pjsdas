@@ -545,4 +545,77 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(listAccountPendingOperations('account-a')).toEqual([])
     expect(await replayAccountPendingOperations('account-a')).toEqual([])
   })
+
+it('receipt-only recovery preserves a queued envelope without resending when its receipt is absent', async () => {
+  const commandId = 'web-action:receipt-only'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  const before = listAccountPendingOperations('account-a')
+  vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+    expect(JSON.parse(String(init?.body))).toEqual({ action: 'receipt', commandId, projection: 'snapshot' })
+    return response({ found: false })
+  })
+  await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(listAccountPendingOperations('account-a')).toEqual(before)
+})
+
+it('receipt-only recovery still reconciles an existing committed receipt', async () => {
+  const commandId = 'web-action:receipt-only-found'
+  vi.mocked(fetchBackend).mockResolvedValue(response({ found: true, revision: 8, workspaceVersion: 'txn:8',
+    schemaVersion: 4, snapshot: snapshot(), receipt: { commandId, status: 'COMMITTED', result: { status: 'APPLIED' } } }))
+  const result = await confirmConnectedCommand('account-a', commandId, { receiptOnly: true })
+  expect(result).toMatchObject({ outcome: 'ALREADY_APPLIED', localProjection: 'applied' })
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0]![1]!.body))).toEqual({ action: 'receipt', commandId, projection: 'snapshot' })
+})
+
+
+it('receipt-only recovery does not resend after a failed receipt lookup', async () => {
+  const commandId = 'web-action:receipt-only-unavailable'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  const before = listAccountPendingOperations('account-a')
+  vi.mocked(fetchBackend).mockRejectedValue(new Error('synthetic receipt unavailable'))
+  await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+  expect(fetchBackend).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(String(vi.mocked(fetchBackend).mock.calls[0]![1]!.body)).action).toBe('receipt')
+  expect(listAccountPendingOperations('account-a')).toEqual(before)
+})
+
+
+it('receipt-only lookup does not join a concurrently held same-ID resend', async () => {
+  const commandId = 'web-action:receipt-only-concurrent'
+  const fingerprint = await fingerprintWorkspace(snapshot())
+  patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: fingerprint })
+  await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+    commandId, kind: 'set_action_status', actionId: 'action-a', status: 'done',
+  } })
+  let release!: () => void, entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const actions: string[] = []
+  vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+    const body = JSON.parse(String(init?.body)); actions.push(body.action)
+    if (body.action === 'receipt') return response({ found: false })
+    if (body.action === 'read') return response({ revision: 7, workspaceVersion: 'txn:7', schemaVersion: 4, snapshot: snapshot() })
+    expect(body.action).toBe('command')
+    entered(); await gate
+    return response({ outcome: 'COMMITTED', revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4, snapshot: snapshot() })
+  })
+  const writer = confirmConnectedCommand('account-a', commandId)
+  await started
+  try {
+    await expect(confirmConnectedCommand('account-a', commandId, { receiptOnly: true })).rejects.toBeInstanceOf(UnknownCommandOutcomeError)
+    expect(actions.filter(action => action === 'command')).toHaveLength(1)
+    expect(actions.filter(action => action === 'receipt')).toHaveLength(2)
+  } finally { release(); await writer }
+})
+
 })

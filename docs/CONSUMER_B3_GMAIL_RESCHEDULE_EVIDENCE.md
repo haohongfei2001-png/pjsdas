@@ -142,3 +142,30 @@ separate real-service prerequisite. No real mail or workspace was written during
 these tests. Preserve domain/read compatibility and existing exact arrangement
 guards if reverting an adapter; use guarded compensation rather than replacing
 an entire workspace. This slice introduces no database migration.
+
+## Actual Tell entrypoint timezone parity — 2026-10-22
+
+The earlier pure-interpreter equivalence checks did not exercise the composer
+entry adapters. Actual preview/submission used browser timezone ahead of the saved
+workspace preference, producing an eight-hour difference from Gmail under a UTC
+host and Asia/Shanghai workspace. A second RED showed invalid saved timezone being
+silently replaced by the browser zone.
+
+The Web entry adapters now preserve explicit caller overrides, then use a present
+saved workspace timezone, with the existing browser/UTC fallback only when absent.
+Invalid/empty preferences are not replaced with a guessed zone. Default-off AI
+preview uses the fetched workspace preference too, rejects invalid timezone before
+preview dispatch, and retains its original timezone/revision for unchanged request
+IDs. Two additional AI client regressions were RED before that change.
+
+Tests exercise actual preview/submission, a local domain commit compared with the
+Gmail parsed appointment instant, invalid/absent preferences, explicit override,
+date-only precision, untimed facts, offline queueing and receipt recovery after a
+preference change. Synthetic AI tests verify immutable retry binding. No production
+model request, paid activation, historical timestamp rewrite or UI redesign occurs.
+These changes do not claim adapter equivalence without a shared saved preference,
+nor broaden supported natural-language forms or live Gmail collection.
+
+Local UTC full verification passed 363 files / 4,586 tests, TypeScript and production
+build. Independent scoped review was clean, including shuffled AI retry tests.
+Exact-head hosted gates and release remain separate requirements.

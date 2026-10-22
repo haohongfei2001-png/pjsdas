@@ -1,3 +1,4 @@
+import { gmailSemanticRecordFromMessage } from '../gateway/gmailAutomation.js'
 import { webcrypto } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Opportunity, SemanticCandidate } from '../src/model.js'
@@ -28,7 +29,7 @@ vi.mock('../src/cloud/authoritativeCommandClient.js', () => ({
   undoConnectedBusinessCommand: boundary.undo,
   createConnectedCommandId: boundary.commandId,
 }))
-import { resolveWebDecision, submitWebSemanticCapture, undoWebSemanticChange, type LocalSemanticUndoToken } from '../src/webSemanticIntake.js'
+import { previewWebSemanticCapture, resolveWebDecision, submitWebSemanticCapture, undoWebSemanticChange, type LocalSemanticUndoToken } from '../src/webSemanticIntake.js'
 
 const NOW = new Date('2026-10-08T10:00:00.000Z')
 const TEXT = 'Example Co Product Manager 已投递成功。'
@@ -401,4 +402,117 @@ describe('explicit connected account retains the authoritative command paths', (
     await expect(pending).rejects.toBeInstanceOf(AccountCacheChangedError)
     expectNoMutation(before)
   })
+})
+
+
+describe('whole-message interpretation admission', () => {
+  const mixed = TEXT + ' 火星公司 未知岗位 面试通知：2026年10月25日14:30'
+  it.each(['local', 'connected', 'offline'] as const)('does not commit a supported subset through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    const before = structuredClone(current)
+    const parsed = interpretation.buildWebSemanticInterpretation(mixed, current.data.opportunities, current, [], NOW, 'UTC')
+    expect(parsed.candidates.length).toBeGreaterThan(0)
+    expect(parsed.unresolved.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(mixed, { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe('NO_WRITE')
+    expect(result.unresolved).toEqual(parsed.unresolved)
+    expectNoMutation(before)
+  })
+  it.each(['local', 'connected', 'offline'] as const)('preserves a complete assertion with explicitly quoted context through %s', async mode => {
+    if (mode === 'local') { setAccountCacheSession(null); boundary.authorityEnabled.mockReturnValue(false) }
+    else bindAccount()
+    const text = TEXT + '\n> 火星公司 未知岗位 面试通知：2026年10月25日14:30'
+    const parsed = interpretation.buildWebSemanticInterpretation(text, current.data.opportunities, current, [], NOW, 'UTC')
+    expect(parsed.unresolved).toEqual([])
+    expect(parsed.ignored.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(text, { ...CAPTURE,
+      accountKey: mode === 'local' ? undefined : 'account-a', queueOffline: mode === 'offline' })
+    expect(result.status).toBe(mode === 'offline' ? 'QUEUED' : 'APPLIED')
+  })
+  it('still recovers an already-submitted command rather than hiding its receipt behind new interpretation debt', async () => {
+    bindAccount()
+    const result = await submitWebSemanticCapture(mixed, { ...CAPTURE, accountKey: 'account-a', confirmExisting: true })
+    expect(result.status).toBe('ALREADY_APPLIED')
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', CAPTURE.commandId, { receiptOnly: true })
+    expect(boundary.execute).not.toHaveBeenCalled()
+    expect(boundary.queue).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('actual Tell entrypoint workspace timezone parity', () => {
+  beforeEach(() => {
+    vi.stubEnv('TZ', 'UTC'); bindAccount()
+    current.data.opportunities[0]!.company = '京东'
+    current.data.opportunities[0]!.role = 'AI产品经理'
+  })
+  afterEach(() => vi.unstubAllEnvs())
+  const notice = '京东 AI产品经理 面试通知：2026年10月25日14:30'
+  it('uses saved timezone for preview and submitted observation despite a different host timezone', async () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('UTC')
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+08:00', timezone: 'Asia/Shanghai' } }])
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-parity' })
+    const observation = boundary.execute.mock.calls[0]![1].value
+    expect(observation.source.timezone).toBe('Asia/Shanghai')
+    expect(observation.candidates).toEqual(preview.candidates)
+  })
+  it('commits the same appointment instant as Gmail for the saved workspace zone', async () => {
+    setAccountCacheSession(null); clearLocalWorkspaceBinding(); boundary.authorityEnabled.mockReturnValue(false)
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const gmail = gmailSemanticRecordFromMessage({ id: 'synthetic-zone-parity', threadId: 'synthetic-thread',
+      internalDate: String(NOW.getTime()), payload: { mimeType: 'text/plain',
+        headers: [{ name: 'Subject', value: '京东 AI产品经理 招聘进展' }],
+        body: { data: Buffer.from(notice).toString('base64url') } } }, current.data.opportunities, NOW, 'Asia/Shanghai')!
+    const result = await submitWebSemanticCapture(notice, { now: NOW, commandId: 'local-zone-parity' })
+    expect(result.status).toBe('APPLIED')
+    expect(current.data.scheduleNodes).toHaveLength(1)
+    expect(current.data.scheduleNodes![0]!.temporal).toMatchObject({ startAt: '2026-10-25T14:30:00+08:00', timezone: 'Asia/Shanghai' })
+    expect(current.data.scheduleNodes![0]!.temporal.startAt).toBe((gmail.observation.candidates[0] as any).temporal.startAt)
+  })
+  it('preserves an explicit timezone override in submission', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture(notice, { ...CAPTURE, accountKey: 'account-a', timezone: 'UTC' })
+    expect(boundary.execute.mock.calls[0]![1].value.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+00:00', timezone: 'UTC' } }])
+  })
+  it('does not silently replace an invalid saved timezone with host timezone', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Unknown/Place', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.unresolved.length).toBeGreaterThan(0)
+    const result = await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a' })
+    expect(result.status).toBe('NO_WRITE')
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+  it('keeps the existing browser fallback only when no workspace timezone was saved', async () => {
+    delete current.data.timePlanning
+    const preview = await previewWebSemanticCapture(notice, { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { startAt: '2026-10-25T14:30:00+00:00', timezone: 'UTC' } }])
+  })
+  it('queues the saved-zone observation and never reparses a receipt into a new write', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-queued', queueOffline: true })
+    expect(boundary.queue.mock.calls[0]![1].value.candidates).toMatchObject([{ temporal: { timezone: 'Asia/Shanghai' } }])
+    current.data.timePlanning.timezone = 'UTC'
+    await submitWebSemanticCapture(notice, { now: NOW, accountKey: 'account-a', commandId: 'zone-queued', confirmExisting: true })
+    expect(boundary.confirm).toHaveBeenCalledWith('account-a', 'zone-queued')
+    expect(boundary.execute).not.toHaveBeenCalled()
+  })
+  it('keeps date-only evidence date-only after applying a saved timezone', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    const preview = await previewWebSemanticCapture('京东 AI产品经理 面试通知：2026年10月25日', { now: NOW })
+    expect(preview.candidates).toMatchObject([{ temporal: { precision: 'date', date: '2026-10-25' } }])
+    expect((preview.candidates[0] as any).temporal.startAt).toBeUndefined()
+    expect((preview.candidates[0] as any).temporal.endAt).toBeUndefined()
+  })
+  it('does not turn an untimed submission into an appointment', async () => {
+    current.data.timePlanning = { version: 1, timezone: 'Asia/Shanghai', updatedAt: NOW.toISOString() }
+    await submitWebSemanticCapture('京东 AI产品经理 已投递成功', { now: NOW, accountKey: 'account-a' })
+    const candidates = boundary.execute.mock.calls[0]![1].value.candidates
+    expect(candidates).toMatchObject([{ kind: 'application_submitted' }])
+    expect(candidates[0].temporal).toBeUndefined()
+  })
+
 })

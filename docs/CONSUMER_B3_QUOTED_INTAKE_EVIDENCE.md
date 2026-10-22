@@ -205,3 +205,31 @@ General quoted job descriptions, richer forwarded headers/source timestamps,
 general rescheduling and unsupported round identity still require dedicated
 interpretation and acceptance. A17 genuine first search plus a subsequent
 scheduler-triggered run remains pending. Paid Discovery stays OFF.
+
+## New deterministic Tell whole-input admission — 2026-10-22
+
+Canonical §8/A18 requires resolving the intended message before saving a subset.
+The real Web adapter previously accepted a supported submission clause beside an
+unresolved unknown-job interview clause: local and connected calls returned
+APPLIED, while offline admission returned QUEUED. Three new adapter regressions
+were RED before this correction, with actual interpretation/domain code.
+
+New deterministic Tell admission now returns NO_WRITE before local replacement,
+remote command dispatch or offline queueing whenever interpretation has unresolved
+fragments. The full draft remains available and the message states that none of
+it was saved. Typed manual candidates and intentionally ignored quoted context
+are not blocked by this guard. This is conservative: unsupported prose remains
+unresolved; it does not claim broad natural-language understanding.
+
+For an existing uncertain command, incomplete interpretation permits receipt-only
+recovery, not resend. Absent/failed lookup preserves the original pending envelope;
+a committed receipt retains existing safe projection behavior. Receipt-only reads
+do not join another same-ID resend flight. This does not retroactively quarantine
+legacy outbox entries or change Gmail historical receipt/reconciliation behavior.
+
+Tests cover local/connected/offline no-subset admission, positive quoted context,
+existing receipt recovery, absent/failed receipt reads, and a concurrent held writer.
+This is a separate slice after PR282; exact-head release gates remain required.
+
+Local integrated verification: 363 files / 4,576 tests, TypeScript checks and
+production build passed. Independent review found no remaining caller-path blocker.

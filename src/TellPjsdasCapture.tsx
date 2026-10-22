@@ -558,9 +558,10 @@ export default function TellPjsdasCapture({
         setAuthoritativeSaveConfirmed(result.status === 'APPLIED' || result.status === 'ALREADY_APPLIED')
         setStableCommandId(undefined)
         if (result.status === 'NO_WRITE') {
-          setMessage(zh
-            ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
-            : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.')
+          setMessage(result.unresolved.length
+            ? (zh ? '内容仍有待澄清的片段，整条输入尚未保存。请补充后重新核对。' : 'Some details still need clarification. None of this input was saved; clarify it and review again.')
+            : (zh ? '没有被当作当前事实写入：这段内容是问题、引用，或缺少可确认事实。'
+              : 'Nothing was written: this was read-only, a question/quote, or did not contain a confirmable fact.'))
         } else if (result.status === 'ALREADY_APPLIED') {
           setMessage(zh ? '服务器确认这条来源已经处理过，没有重复写入。' : 'The server confirmed this source was already handled; no duplicate was created.')
         } else {

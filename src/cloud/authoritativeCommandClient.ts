@@ -560,24 +560,28 @@ export async function queueConnectedBusinessCommand(
 }
 
 export async function confirmConnectedCommand(accountKey: string, commandId: string,
-  options: { allowProjectionPending?: boolean } = {}): Promise<ConnectedCommandResponse> {
+  options: { allowProjectionPending?: boolean; receiptOnly?: boolean } = {}): Promise<ConnectedCommandResponse> {
   const writeLease = captureWorkspaceWriteLease(accountKey)
-  return forCaller(await oneCommandFlight(accountKey, commandId, async () => {
-  try {
-    const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
-    if (recovered) {
-      if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
-      return recovered
+  const recover = async () => {
+    try {
+      const recovered = await lookupConnectedCommandReceipt(accountKey, commandId)
+      if (recovered) {
+        if (recovered.localProjection === 'applied') removePending(accountKey, commandId)
+        return recovered
+      }
+    } catch (caught) {
+      if (caught instanceof ConnectedProjectionPendingError) throw caught
+      throw new UnknownCommandOutcomeError('暂时无法核对服务器回执。原操作仍已保留，请稍后重试。')
     }
-  } catch (caught) {
-    if (caught instanceof ConnectedProjectionPendingError) throw caught
-    throw new UnknownCommandOutcomeError('暂时无法核对服务器回执。原操作仍已保留，请稍后重试。')
+    const existing = readPending(accountKey).find((item) => item.commandId === commandId)
+    if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
+    if (options.receiptOnly) throw new UnknownCommandOutcomeError('原操作尚无可确认回执；为避免部分写入，未重新发送。请先核对待处理操作。')
+    if (existing) return submitPending(accountKey, existing)
+    throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
   }
-  const existing = readPending(accountKey).find((item) => item.commandId === commandId)
-  if (existing?.status === 'projection_pending') throw new ConnectedProjectionPendingError()
-  if (existing) return submitPending(accountKey, existing)
-  throw new UnknownCommandOutcomeError('无法找到原操作记录；未发送新的操作。请在设置中核对账号状态。')
-  }), options.allowProjectionPending, writeLease.assertCurrent)
+  // Do not join a concurrent resend flight when the caller requested a read.
+  return forCaller(await (options.receiptOnly ? recover() : oneCommandFlight(accountKey, commandId, recover)),
+    options.allowProjectionPending, writeLease.assertCurrent)
 }
 
 export async function undoConnectedBusinessCommand(

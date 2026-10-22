@@ -11,7 +11,7 @@ const preview = (): AiCapturePreview => ({ mode: 'current_intent', candidates: [
   requestId: 'request-1', accountKey: 'user-a', text: '买咖啡', timezone: 'Asia/Shanghai', referenceTime: '2026-10-19T00:00:00Z', workspaceRevision: 4, canCommit: true } })
 const response = (extra = {}) => Response.json({ requestId: 'request-1', referenceTime: '2026-10-19T00:00:00Z', workspaceRevision: 4,
   review: { status: 'ready_for_review', statementMode: 'current_intent', candidates: [], issues: [] }, canCommit: true, ...extra })
-beforeEach(() => { vi.resetAllMocks(); mocks.workspace.mockResolvedValue({ version: 'txn:4' }); mocks.token.mockResolvedValue('synthetic-token'); mocks.fetch.mockResolvedValue(response()); mocks.execute.mockResolvedValue({ outcome: 'COMMITTED', result: { status: 'APPLIED', summary: 'saved' }, receipt: { undoAvailable: true } }); mocks.confirm.mockResolvedValue({ outcome: 'ALREADY_APPLIED', result: { status: 'ALREADY_APPLIED' } }) })
+beforeEach(() => { vi.resetAllMocks(); mocks.workspace.mockResolvedValue({ version: 'txn:4', snapshot: { data: {} } }); mocks.token.mockResolvedValue('synthetic-token'); mocks.fetch.mockResolvedValue(response()); mocks.execute.mockResolvedValue({ outcome: 'COMMITTED', result: { status: 'APPLIED', summary: 'saved' }, receipt: { undoAvailable: true } }); mocks.confirm.mockResolvedValue({ outcome: 'ALREADY_APPLIED', result: { status: 'ALREADY_APPLIED' } }) })
 describe('AI capture browser contract', () => {
   it('sends only the explicit input, timezone, request identity and checked workspace revision', async () => {
     const result = await previewAiCapture('买咖啡', 'user-a', 'request-1'); expect(result.ai.canCommit).toBe(true)
@@ -60,4 +60,21 @@ describe('AI capture browser contract', () => {
     mocks.fetch.mockImplementation(async () => { mocks.assert.mockImplementation(() => { throw new Error('Account changed') }); return response() })
     await expect(previewAiCapture('买咖啡', 'user-a', 'request-1')).rejects.toThrow('Account changed')
   })
+})
+
+
+it('binds AI preview to saved workspace timezone and keeps it immutable on retry', async () => {
+  const requestId = 'saved-zone-retry'
+  mocks.workspace.mockResolvedValue({ version: 'txn:4', snapshot: { data: { timePlanning: { timezone: 'Asia/Shanghai' } } } })
+  mocks.fetch.mockImplementation(async () => response({ requestId }))
+  await previewAiCapture('明天14点面试', 'user-zone', requestId)
+  mocks.workspace.mockResolvedValue({ version: 'txn:5', snapshot: { data: { timePlanning: { timezone: 'UTC' } } } })
+  await previewAiCapture('明天14点面试', 'user-zone', requestId)
+  expect(mocks.fetch.mock.calls.map(call => JSON.parse(call[1].body).timezone)).toEqual(['Asia/Shanghai', 'Asia/Shanghai'])
+  expect(mocks.workspace).toHaveBeenCalledTimes(1)
+})
+it('rejects an invalid saved AI preview timezone before sending a preview request', async () => {
+  mocks.workspace.mockResolvedValue({ version: 'txn:4', snapshot: { data: { timePlanning: { timezone: 'Unknown/Place' } } } })
+  await expect(previewAiCapture('明天14点面试', 'user-invalid-zone', 'invalid-zone-request')).rejects.toThrow('AI_CAPTURE_TIMEZONE_REQUIRED')
+  expect(mocks.fetch).not.toHaveBeenCalled()
 })

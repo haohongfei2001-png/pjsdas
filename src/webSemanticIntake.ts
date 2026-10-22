@@ -108,7 +108,8 @@ export async function previewWebSemanticCapture(
     canonicalReferences(),
     exportLocalSnapshot(),
   ])
-  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC')
+  const timezone = baseline.data.timePlanning?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
+  const interpretation = buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
   return {
     mode: interpretation.mode,
     candidates: interpretation.candidates,
@@ -125,16 +126,29 @@ export async function submitWebSemanticCapture(
   const trimmed = text.trim()
   if (!trimmed) throw new Error('请输入要告诉 TodayAction 的内容。')
   const now = options.now ?? new Date()
-  const timezone = options.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
   const [opportunities, references, baseline] = await Promise.all([
     getAllOpportunities(),
     canonicalReferences(),
     exportLocalSnapshot(),
   ])
+  // Saved workspace planning time is shared with Gmail; the browser locale
+  // must not silently reinterpret a known arrangement after travel/device change.
+  // Preserve explicit callers and do not replace an invalid saved zone.
+  const timezone = options.timezone ?? baseline.data.timePlanning?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC'
   const baselineFingerprint = await fingerprintWorkspace(baseline)
   assertCurrent()
   const interpretation = options.candidates ? { mode: 'current_intent' as const, candidates: options.candidates, unresolved: [], ignored: [] }
     : buildWebSemanticInterpretation(trimmed, opportunities, baseline, references, now, timezone)
+  // A partial interpretation is not authority to save a supported subset of
+  // the same message. Stop before local mutation, remote dispatch or outbox
+  // admission. Receipt recovery remains read-only and must still resolve an
+  // earlier uncertain command even if today's interpretation is incomplete.
+  const recovering = Boolean(options.accountKey && connectedWorkspaceAuthorityEnabled()
+    && options.confirmExisting && !options.queueOffline)
+  if (interpretation.unresolved.length && !recovering) {
+    return { status: 'NO_WRITE', summary: '内容仍有待澄清的片段，整条输入尚未保存。',
+      unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
+  }
   const recordId = options.commandId ?? `capture:${now.getTime()}:${stableHash(trimmed)}`
   const observation: SemanticIntakeObservation = {
     contractVersion: 1,
@@ -163,7 +177,9 @@ export async function submitWebSemanticCapture(
         unresolved: interpretation.unresolved, ignored: interpretation.ignored, decisionRequestIds: [] }
     }
     const authoritative = options.confirmExisting
-      ? await confirmConnectedCommand(options.accountKey, commandId)
+      ? (interpretation.unresolved.length
+        ? await confirmConnectedCommand(options.accountKey, commandId, { receiptOnly: true })
+        : await confirmConnectedCommand(options.accountKey, commandId))
       : await executeConnectedBusinessCommand(options.accountKey, {
           type: 'semantic_intake',
           value: observation,
