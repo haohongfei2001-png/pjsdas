@@ -72,7 +72,7 @@ test('Brand name, accessible capture, language and narrow header preserve the TS
   expect(new URL(page.url()).pathname).toBe(base + 'today')
   await expect(page).toHaveTitle('今天 · TodayAction')
   await dialog.getByRole('button', { name: '更多操作', exact: true }).click()
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.locator('.tsui-capture-region').getByRole('button', { name: '关闭', exact: true }).click()
   for (const width of [390, 360, 320]) {
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })

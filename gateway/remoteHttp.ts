@@ -1,3 +1,4 @@
+import { MCP_MAX_REQUEST_BODY_BYTES } from './mcpResourceLimits.js'
 import { createMcpHandler } from '@modelcontextprotocol/server'
 import { createPjsdasMcpServer } from './serverFactory.js'
 import { createFileWorkspaceSource } from './workspaceSource.js'
@@ -23,4 +24,5 @@ export const remoteMcpHandler = createMcpHandler(
     version: REMOTE_GATEWAY_VERSION,
     dataMode: REMOTE_GATEWAY_MODE,
   }),
+  { maxRequestBodySize: MCP_MAX_REQUEST_BODY_BYTES },
 )

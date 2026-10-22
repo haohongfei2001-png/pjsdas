@@ -235,7 +235,7 @@ test('bound cache rejects job and capture while both Auth imports wait, then ret
     expect(delayed.requests).toBeGreaterThan(0)
     await attemptBlockedWrites(page, before, server)
     await page.locator('.cgr-capture-sheet').getByRole('button', { name: '更多操作', exact: true }).click()
-    await page.locator('.cgr-capture-sheet').getByRole('button', { name: '关闭', exact: true }).click()
+    await page.locator('.tsui-capture-region').getByRole('button', { name: '关闭', exact: true }).click()
     delayed.release('continue')
     await expect.poll(() => admission(page)).toEqual({ resolved: true, account: OWNER, owner: OWNER })
 

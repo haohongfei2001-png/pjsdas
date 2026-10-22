@@ -484,8 +484,10 @@ test('refined capture preserves drafts through both secondary entries without wr
   const input = page.getByRole('textbox', { name: '要告诉 TodayAction 的内容' })
   await input.fill('今天提交周报')
   await expect(page.locator('.cgr-understanding')).toContainText('今天提交周报')
-  await input.press('Tab')
-  await expect(page.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await input.press('Shift+Tab')
+  await expect(page.locator('.tsui-capture-region').getByRole('button', { name: '关闭', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(input).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.locator('.cgr-capture-more')).toBeFocused()
   expect(await page.locator('.cgr-capture-more').evaluate(element => getComputedStyle(element).outlineWidth)).toBe('2px')
@@ -596,7 +598,7 @@ for (const width of [1440, 390, 320]) test(`details and settings retain readable
     const footerButtons = page.locator(phase === 'after' ? '.cgr-capture-secondary button' : '.cgr-capture-footer button')
     // Empty composer keeps confirmation out of the initial state. Both secondary entries remain.
     await expect(footerButtons).toHaveCount(phase === 'after' ? 4 : 1)
-    if (phase === 'after') await expect(page.locator('.cgr-capture-composer').getByRole('button', { name: '关闭', exact: true })).toHaveCount(1)
+    if (phase === 'after') await expect(page.locator('.tsui-capture-region').getByRole('button', { name: '关闭', exact: true })).toHaveCount(1)
     for (const button of await footerButtons.all()) {
       await expect(button).toBeInViewport()
       if (phase === 'after') expect(await button.evaluate(element => {
@@ -775,11 +777,12 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   await expect(panel).toHaveAttribute('aria-modal', 'false')
   const anchor = (await opener.boundingBox())!
   const box = (await page.locator('.cgr-capture-popover').boundingBox())!
-  expect(Math.abs(box.x - anchor.x)).toBeLessThanOrEqual(1)
-  expect(box.y).toBeGreaterThanOrEqual(anchor.y + anchor.height)
+  expect(Math.abs(box.x - (anchor.x + anchor.width))).toBeLessThanOrEqual(1)
+  expect(Math.abs(box.y - anchor.y)).toBeLessThanOrEqual(1)
   expect((await page.locator('.cgr-capture-composer').boundingBox())!.height).toBeLessThanOrEqual(60)
   await input.press('Shift+Tab')
   expect(await panel.evaluate(element => element.contains(document.activeElement))).toBe(false)
+  await expect(page.locator('.tsui-capture-region').getByRole('button', { name: '关闭', exact: true })).toBeFocused()
   await page.keyboard.press('Control+Enter')
   expect(mutations).toEqual([])
   await input.click()
@@ -789,8 +792,8 @@ test('inline capture preserves the underlying page and outside clicks remain usa
   await expect(input).toBeFocused()
   await page.setViewportSize({ width: 390, height: 844 })
   const mobile = (await page.locator('.cgr-capture-popover').boundingBox())!
-  expect(mobile.x).toBe(14)
-  expect(mobile.width).toBe(362)
+  expect(mobile.x).toBe(58)
+  expect(mobile.width).toBe(318)
   const outsideTarget = page.locator('.tsui-job-open').last()
   const outsideBox = (await outsideTarget.boundingBox())!
   const occupied = (await page.locator('.cgr-capture-popover').boundingBox())!

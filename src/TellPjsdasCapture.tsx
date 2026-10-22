@@ -142,6 +142,15 @@ export default function TellPjsdasCapture({
   const { lang } = useUiLanguage()
   const cloud = useCloud()
   const zh = lang === 'zh'
+  // Presence is visual only: closed content is inert immediately, while all
+  // existing operation/focus/draft effects continue to follow actual `open`.
+  const [present, setPresent] = useState(open)
+  useEffect(() => {
+    if (open) { setPresent(true); return }
+    if (!inline || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setPresent(false); return }
+    const timer = window.setTimeout(() => setPresent(false), 180)
+    return () => window.clearTimeout(timer)
+  }, [open, inline])
   const [manualMode, setManualMode] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const naturalDraftRef = useRef('')
@@ -240,7 +249,7 @@ export default function TellPjsdasCapture({
     const id = window.setTimeout(() => { if (restoreFocusRef.current) textareaRef.current?.focus({ preventScroll: true }) }, 0)
     return () => {
       window.clearTimeout(id)
-      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
+      if (restoreFocusRef.current && (captureFocusIsVacant(document) || sheet?.contains(document.activeElement) || anchorRef?.current?.contains(document.activeElement))) openerRef.current?.focus({ preventScroll: true })
     }
   }, [open])
 
@@ -300,7 +309,9 @@ export default function TellPjsdasCapture({
     if (!open) return
     const trackFocusOwnership = (event: Event) => {
       if (!(event.target instanceof Node)) return
-      if (sheetRef.current?.contains(event.target)) { restoreFocusRef.current = true; return }
+      // The morphing anchor is the inline composer's close control, not an
+      // outside interaction. Preserve the actual (possibly contextual) opener.
+      if (sheetRef.current?.contains(event.target) || anchorRef?.current?.contains(event.target)) { restoreFocusRef.current = true; return }
       restoreFocusRef.current = false
       operationLifecycle.current.releaseFocus()
     }
@@ -658,7 +669,7 @@ export default function TellPjsdasCapture({
       editText(manualJobDraft(manualDraftRef.current))
     }
   }
-  if (!open) return null
+  if (!open && !present) return null
   const manualJob = readManualJobDraft(text) ?? { company: '', role: '' }
 
 
@@ -680,7 +691,7 @@ export default function TellPjsdasCapture({
 
 
   const content = (
-    <div className={`cgr-capture-popover${inline ? ' cgr-capture-inline' : ''}`} style={inline ? undefined : popoverStyle}>
+    <div className={`cgr-capture-popover${inline ? ' cgr-capture-inline' : ''}`} data-open={open} inert={!open} aria-hidden={!open || undefined} style={inline ? undefined : popoverStyle}>
       <section
         id="tell-pjsdas-composer"
         ref={sheetRef}
@@ -691,10 +702,10 @@ export default function TellPjsdasCapture({
         aria-label={manualMode ? (zh ? '添加岗位' : 'Add job') : (zh ? '告诉 TodayAction' : 'Tell TodayAction')}
       >
         {contextLabel ? <span className="cgr-capture-context">{contextLabel}</span> : null}
-        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}<button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button></div> : null}
+        {manualMode || correctionMode ? <div className="cgr-capture-mode-tools">{moreActions}{!inline ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'}>×</button> : null}</div> : null}
         {correctionMode ? secondaryActions : null}
         {correctionMode ? <button ref={correctionBackRef} type="button" className="text-button cgr-correction-toggle" disabled={busy || recoveryLocked} onClick={() => setCorrectionMode(false)}>{zh ? '返回记录进展' : 'Back to progress capture'}</button> : null}
-        {correctionMode ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : <>
+        {correctionMode ? (open ? <Suspense fallback={<p role="status">{zh ? '正在打开核对入口…' : 'Opening review…'}</p>}><RecordCorrectionReview key={cloud.session?.user.id ?? 'signed-out'} onChanged={onChanged} /></Suspense> : null) : <>
         {manualMode ? <ManualJobFields value={manualJob} onChange={value => { manualDraftRef.current = value; editText(manualJobDraft(value)) }} disabled={busy || recoveryLocked} zh={zh} /> : <>
         <div className="cgr-capture-composer">
         <textarea
@@ -717,7 +728,7 @@ export default function TellPjsdasCapture({
         <div className="cgr-capture-tools">
           <input ref={fileInputRef} type="file" hidden tabIndex={-1} accept=".txt,.md,text/plain,text/markdown" disabled={busy || recoveryLocked || fileReading}
             onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void importTextFile(file) }} />
-          <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'} title={zh ? '收起，保留草稿' : 'Close and keep draft'}>×</button>
+          {!inline ? <button className="cgr-capture-close" type="button" onClick={() => dismissCapture()} aria-label={zh ? '关闭' : 'Close'} title={zh ? '收起，保留草稿' : 'Close and keep draft'}>×</button> : null}
           {moreActions}
           <button type="button" className="cgr-capture-send" aria-label={zh ? '整理输入内容并预览' : 'Organize input and preview'} title={zh ? '整理并预览' : 'Organize and preview'} disabled={!text.trim() || busy || recoveryLocked} onClick={requestPreview}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
