@@ -158,11 +158,25 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
           force,
         })
         const durableCommit = run.completedSourceCount > 0
-        await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run), binding.refreshTokenCiphertext)
+        // Run receipts are authoritative. A later telemetry write can fail or
+        // lose its acknowledgement without undoing any committed jobs. Do not
+        // reclassify the run, retry search, or overwrite it with failure telemetry.
+        let telemetryState: 'recorded' | 'unconfirmed' = 'recorded'
+        try {
+          await store.updateDiscoveryRunState(binding.userId, discoveryAutomationTelemetryPatch(run), binding.refreshTokenCiphertext)
+        } catch {
+          telemetryState = 'unconfirmed'
+        }
         results.push({
           status: run.state,
           producer: run.producer,
           durableCommit,
+          telemetryState,
+          ...(telemetryState === 'unconfirmed' ? { telemetryError: {
+            code: 'DISCOVERY_TELEMETRY_UNCONFIRMED',
+            message: 'The run result is retained, but its status record could not be confirmed. Do not repeat the search to repair telemetry.',
+            retryable: false,
+          } } : {}),
           configured: run.configured,
           dueSourceCount: run.dueSourceCount,
           completedSourceCount: run.completedSourceCount,
@@ -203,12 +217,14 @@ export function createDiscoveryAutomationHandler(config: DiscoveryAutomationHand
 
     const failures = results.filter((item) => item.status === 'failed' || item.status === 'retrieval_failed').length
     const durableCompletedUsers = results.filter((item) => item.durableCommit === true).length
-    return json(failures > 0 ? 207 : 200, {
+    const telemetryUnconfirmedUsers = results.filter(item => item.telemetryState === 'unconfirmed').length
+    return json(failures > 0 || telemetryUnconfirmedUsers > 0 ? 207 : 200, {
       processedUsers: results.length,
       checkedUsers: results.length - failures,
       successfulUsers: results.filter(item => item.status === 'committed').length,
       partialUsers: results.filter(item => item.status === 'committed_with_exceptions').length,
       durableCompletedUsers,
+      telemetryUnconfirmedUsers,
       failedUsers: failures,
       results,
     })

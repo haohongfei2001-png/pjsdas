@@ -59,6 +59,31 @@ describe('complete confirmed scope in bounded immutable batches (offline)', () =
     expect(sourceRequests).toHaveLength(boundary === 'before outbound call' ? 0 : 12)
     if (boundary === 'before outbound call') { expect(work.search).toHaveBeenCalledTimes(calls); expect(work.reserveSearch).toHaveBeenCalledTimes(reservations) }
   })
+  it.each(['lost acknowledgement', 'missing receipt', 'unavailable receipt', 'inconsistent receipt'] as const)('reports the first claim as uncertain after %s without sending paid requests', async boundary => {
+    const { db, work } = largeScope()
+    if (boundary === 'lost acknowledgement') db.lostAck = true
+    else if (boundary === 'unavailable receipt') db.failLedgerAfterCommit = true
+    else if (boundary === 'inconsistent receipt') db.responseTransform = response => ({ ...response, receipt: { ...(response.receipt as object), commandId: 'wrong-receipt' } })
+    else db.ledgerTransform = (rows, url) => url.searchParams.has('command_id') ? [] : rows
+    const result = await work.run()
+    expect(result.uncertainSourceCount).toBeGreaterThan(0)
+    expect(result.sourceErrors?.every(error => error.code === 'DISCOVERY_SEARCH_RESULT_UNCERTAIN')).toBe(true)
+    expect(db.writes.length).toBeGreaterThan(0)
+    expect(work.search).not.toHaveBeenCalled()
+    expect(work.reserveSearch).not.toHaveBeenCalled()
+    expect(work.generateTextImpl).not.toHaveBeenCalled()
+    expect(work.reserveSpend).not.toHaveBeenCalled()
+  })
+  it('does not label a proven checkpoint CAS conflict as an uncertain commit', async () => {
+    const { db, work } = largeScope()
+    db.beforeCommit = () => { db.revision += 1 }
+    const result = await work.run()
+    expect(result.uncertainSourceCount).toBe(0)
+    expect(result.sourceErrors?.every(error => error.code === 'WORKSPACE_CONFLICT')).toBe(true)
+    expect(db.writes).toHaveLength(0)
+    expect(work.search).not.toHaveBeenCalled()
+    expect(work.reserveSearch).not.toHaveBeenCalled()
+  })
   it('stops at the approved budget boundary and retains an explicit uncovered scope without auto retry', async () => {
     const { db, work } = largeScope()
     work.reserveSearch.mockRejectedValueOnce(new WorkspaceSourceError('DISCOVERY_BUDGET_EXHAUSTED', 'Synthetic approved budget is spent'))
@@ -67,6 +92,29 @@ describe('complete confirmed scope in bounded immutable batches (offline)', () =
     db.now = new Date('2027-10-09T20:00:00Z')
     expect(await work.run(true)).toMatchObject({ budgetExhausted: true, remainingQueryCount: 84 })
     expect(work.reserveSearch).toHaveBeenCalledTimes(1); expect(work.search).not.toHaveBeenCalled()
+  })
+  it('accounts for every unattempted source when the budget runs out after a successful query', async () => {
+    const { db, work } = largeScope()
+    const reserve = work.reserveSearch.getMockImplementation()!
+    work.reserveSearch.mockImplementation(async request => {
+      if (work.reserveSearch.mock.calls.length > 1) throw new WorkspaceSourceError('DISCOVERY_BUDGET_EXHAUSTED', 'Synthetic limit reached')
+      return reserve(request)
+    })
+    const result = await work.run()
+    expect(result).toMatchObject({ state: 'committed_with_exceptions', budgetExhausted: true,
+      dueSourceCount: 4, completedSourceCount: 1, failedSourceCount: 0, skippedSourceCount: 3,
+      remainingQueryCount: 83, partialSourceCount: 1, successfulSourceCount: 0, scopeComplete: false })
+    expect(result.completedSourceCount + (result.failedSourceCount ?? 0) + result.skippedSourceCount).toBe(result.dueSourceCount)
+    expect(work.reserveSearch).toHaveBeenCalledTimes(2)
+    expect(work.search).toHaveBeenCalledTimes(1)
+    expect(work.generateTextImpl).not.toHaveBeenCalled()
+    expect(db.snapshot.data.opportunities).toEqual([])
+    db.now = new Date('2027-10-09T20:00:00Z')
+    const resumed = await work.run(true)
+    expect(resumed).toMatchObject({ budgetExhausted: true, remainingQueryCount: 83 })
+    expect(resumed.completedSourceCount + (resumed.failedSourceCount ?? 0) + resumed.skippedSourceCount).toBe(resumed.dueSourceCount)
+    expect(work.reserveSearch).toHaveBeenCalledTimes(2)
+    expect(work.search).toHaveBeenCalledTimes(1)
   })
   it('keeps unsuccessful queries and omitted hits partial after later batches finish', async () => {
     const { work } = largeScope()
