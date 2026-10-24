@@ -18,6 +18,14 @@ all B1–B4 acceptance complete.
 - B2/A17 remains open: genuine funded search and a later scheduler-triggered execution need actual acceptance evidence. No paid capability is enabled by this checkpoint.
 - B4 overall closure remains open while A17 and live AI acceptance are outstanding. No percentage completion or broad natural-language-understanding claim is implied.
 
+## Offline B2 recovery batch — 2026-10-24
+
+The [Discovery recovery evidence](CONSUMER_B2_DISCOVERY_RECOVERY_EVIDENCE.md)
+records corrections for post-commit telemetry failure, partial-budget source
+accounting and initial claim uncertainty. These changes preserve the source-level
+paid-OFF gate and do not complete A17. Exact final checks and publication status
+are recorded with the batch; prior live-activation limitations remain in force.
+
 ## Owner amendment — 2026-10-18
 
 The owner requested removal of Preparation and related tasks throughout TodayAction.

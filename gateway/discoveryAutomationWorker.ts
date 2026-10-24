@@ -621,7 +621,11 @@ export async function runDiscoveryAutomationForBinding(options: {
       createdCount += applied.result.createdOpportunityIds.length
       for (const id of applied.result.touchedOpportunityIds) touched.add(id)
       unresolvedCount += applied.result.run.outcomes.unresolved ?? 0
-      if (exhausted) { budgetExhausted = true; break }
+      if (exhausted) {
+        budgetExhausted = true
+        skippedSourceCount += dueSources.length - completedSourceCount - failedSourceCount - skippedSourceCount
+        break
+      }
     } catch (caught) {
       let code = caught instanceof WorkspaceSourceError ? caught.code : 'DISCOVERY_SOURCE_FAILED'
       const authorityLost = ['AUTH_FORBIDDEN', 'AUTOMATION_AUTH_REQUIRED', 'DISCOVERY_SCOPE_CHANGED'].includes(code)

@@ -1,3 +1,4 @@
+import { UncertainDiscoveryExecution } from './discoveryExecutionOutcome.js'
 import type { DiscoveryAutomationSourcePlan } from '../src/discoveryAutomation.js'
 import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
 import { discoveryScopeBatchSchema, type DiscoveryScopeBatch, type DiscoveryScopeLedgerRecord } from '../src/discoveryScopeBatch.js'
@@ -125,18 +126,30 @@ export async function commitDiscoveryCheckpoint(input: {
           provenance: batchProvenance(input.identity, runId, input.batch, input.budgetHold) } })
     } catch (error) {
       if (error instanceof WorkspaceSourceError && error.code === 'WORKSPACE_CONFLICT' && attempt === 0) continue
-      // A lost claim ACK cannot prove this invocation won. It must not send.
+      // Neither a transport failure nor an invalid/failed commit response
+      // proves the claim was not recorded. Preserve uncertainty from the first
+      // tick; only the original immutable receipt can reconcile it later.
+      if (!(error instanceof WorkspaceSourceError)
+        || ['WORKSPACE_UNAVAILABLE', 'WORKSPACE_COMMIT_FAILED', 'WORKSPACE_INVALID'].includes(error.code)) {
+        throw new UncertainDiscoveryExecution('DISCOVERY_SEARCH_RESULT_UNCERTAIN', 'The search checkpoint outcome is unconfirmed. Reconcile its original receipt before any external request.', false)
+      }
       throw error
     }
-    const recorded = await input.source.readCommandReceipt(command.commandId)
-    if (!recorded) throw new WorkspaceSourceError('DISCOVERY_COMMIT_UNVERIFIED', 'The search checkpoint has no original receipt; do not repeat external work.', false)
-    const receipt = validateDiscoveryReceipt(recorded, command, written.context.workspaceVersion)
-    if (!['COMMITTED', 'ALREADY_APPLIED'].includes(written.commandOutcome ?? '') || written.commandReceipt?.commandId !== command.commandId
-      || written.commandReceipt?.revision !== receipt.revision) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'Search claim response and original receipt disagree.', false)
-    if (written.commandOutcome === 'COMMITTED' && (written.context.workspaceVersion !== `txn:${receipt.revision}`
-      || Number(receipt.revision) !== Number(workspace.context.workspaceVersion?.slice(4)) + 1)) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'A first claim must carry its own new authoritative revision.', false)
-    if (input.budgetHold) await verifyDiscoveryBudgetAdmission(receipt, input.budgetHold)
-    return { firstCommit: written.commandOutcome === 'COMMITTED', receipt }
+    try {
+      const recorded = await input.source.readCommandReceipt(command.commandId)
+      if (!recorded) throw new WorkspaceSourceError('DISCOVERY_COMMIT_UNVERIFIED', 'The search checkpoint has no original receipt; do not repeat external work.', false)
+      const receipt = validateDiscoveryReceipt(recorded, command, written.context.workspaceVersion)
+      if (!['COMMITTED', 'ALREADY_APPLIED'].includes(written.commandOutcome ?? '') || written.commandReceipt?.commandId !== command.commandId
+        || written.commandReceipt?.revision !== receipt.revision) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'Search claim response and original receipt disagree.', false)
+      if (written.commandOutcome === 'COMMITTED' && (written.context.workspaceVersion !== `txn:${receipt.revision}`
+        || Number(receipt.revision) !== Number(workspace.context.workspaceVersion?.slice(4)) + 1)) throw new WorkspaceSourceError('DISCOVERY_RECEIPT_MISMATCH', 'A first claim must carry its own new authoritative revision.', false)
+      if (input.budgetHold) await verifyDiscoveryBudgetAdmission(receipt, input.budgetHold)
+      return { firstCommit: written.commandOutcome === 'COMMITTED', receipt }
+    } catch {
+      // The write already returned. Missing, unavailable or inconsistent
+      // readback cannot turn this claim into a known non-commit.
+      throw new UncertainDiscoveryExecution('DISCOVERY_SEARCH_RESULT_UNCERTAIN', 'The search checkpoint receipt could not be verified. Retain its claim and do not repeat external work.', false)
+    }
   }
   throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Search checkpoint could not pass bounded CAS.', true)
 }
