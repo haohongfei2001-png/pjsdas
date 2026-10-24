@@ -76,3 +76,23 @@ The allowed 产品经理 control still passes; excluded 运营、销售、客服
 
 Local full follow-up verification: 4,733 tests / 366 suites and production build
 passed. Remote required gates and deployment must be verified separately.
+
+## Search-scope save admission follow-up
+
+The explicit scope editor captured its save payload before awaiting persistence,
+but left query, removal, criteria and refinement controls editable. On success
+it cleared the draft, so edits made during the pending save could be lost while
+showing success for the older payload. All editor controls now share the existing
+save-in-progress admission: the existing “Saving…” feedback stays visible and
+failure retains the original draft and re-enables editing. This does not change
+the separate Tell composer or its continuous-input behavior.
+
+Two isolated browser regressions hold an actual mocked command response and
+verify editing/removal/closing admission, one submitted payload, and success or
+failure recovery. Local Chromium could not launch because IPC socket creation
+was denied by the execution environment; the normal escalation path also failed
+at sandbox setup. These browser assertions are NOT locally verified. Required
+remote browser CI must pass before integration; no environment restriction was
+bypassed and no production data was used.
+
+Local non-browser checks: 4,733 tests / 366 suites and production build passed.
