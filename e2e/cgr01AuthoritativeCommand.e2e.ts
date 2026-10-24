@@ -778,6 +778,65 @@ test('B3 job viewed and Search Scope persist across devices through scoped first
   }
 })
 
+for (const result of ['success', 'failure'] as const) {
+  test(`B3 Search Scope locks editable criteria until a pending save settles (${result})`, async ({ page }) => {
+    const state: AccountState = { revision: 7, snapshot: workspace('A'), receipts: new Map() }
+    state.snapshot = applyDiscoveryProfileCommand(state.snapshot, {
+      ...proposeSearchScope('产品经理'), targetRoleQueries: ['产品经理', '产品设计师'], preferredLocations: ['上海'], titleExcludes: ['运营'],
+    }).snapshot
+    const commands: Array<Record<string, any>> = []
+    let releaseSave: (() => void) | undefined
+    await seedInitialSession(page, 'account-a', 'token-a')
+    await page.route(`${BACKEND}/**`, async route => {
+      const request = route.request(), url = new URL(request.url())
+      if (request.method() === 'OPTIONS') return cors(route, {}, 204)
+      if (url.pathname === '/api/health') return cors(route, health())
+      if (url.pathname !== '/api/workspace') return cors(route, { code: 'NOT_FOUND' }, 404)
+      const body = request.postDataJSON() as Record<string, any>
+      const envelope = () => ({ workspaceId: 'ws-a', workspaceVersion: `txn:${state.revision}`, revision: state.revision,
+        schemaVersion: state.snapshot.version, snapshot: state.snapshot })
+      if (body.action === 'read') return cors(route, envelope())
+      if (body.action === 'command') {
+        commands.push(body)
+        expect(body.command.type).toBe('discovery_profile')
+        await new Promise<void>(resolve => { releaseSave = resolve })
+        if (result === 'failure') return cors(route, { code: 'SYNTHETIC_FAILURE', message: 'Scope save temporarily unavailable' }, 503)
+        state.snapshot = applyDiscoveryProfileCommand(state.snapshot, body.command.value).snapshot
+        state.revision += 1
+        return cors(route, { ...envelope(), outcome: 'COMMITTED', receipt: {
+          commandId: body.commandId, receiptId: `command-receipt:${body.commandId}`, status: 'COMMITTED', revision: state.revision,
+          affectedObjects: [{ type: 'discovery_profile', id: 'current' }], result: { type: 'discovery_profile', status: 'APPLIED', summary: 'Saved scope.' },
+        } })
+      }
+      if (body.action === 'commit') throw new Error('Scope edits must not write snapshots')
+      return cors(route, { ...envelope(), found: false })
+    })
+    await page.goto('/pjsdas/library')
+    await expect(page.locator('.ta-scope-summary')).toContainText('产品经理')
+    await page.getByRole('button', { name: '搜索范围', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('检索岗位词 1', { exact: true }).fill('待保存产品经理')
+    await dialog.getByRole('button', { name: '保存搜索范围' }).click()
+    await expect.poll(() => typeof releaseSave).toBe('function')
+    try {
+      for (const input of await dialog.locator('input').all()) await expect(input).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: '删除检索词 1', exact: true })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeVisible()
+      expect(commands).toHaveLength(1)
+      expect(commands[0].command.value.targetRoleQueries).toEqual(['待保存产品经理', '产品设计师'])
+    } finally { releaseSave!() }
+    if (result === 'success') await expect(dialog.getByRole('status')).toContainText('搜索范围已保存')
+    else {
+      await expect(dialog.getByRole('alert')).toBeVisible()
+      await expect(dialog.getByLabel('检索岗位词 1', { exact: true })).toHaveValue('待保存产品经理')
+      for (const input of await dialog.locator('input').all()) await expect(input).toBeEnabled()
+      await expect(dialog.getByRole('button', { name: '删除检索词 1', exact: true })).toBeEnabled()
+    }
+  })
+}
+
 // Hold a real authority response, rather than sleeping until the initial sync happens.
 // Cached identity is admitted before the dialog opens; the remote profile arrives later.
 for (const edit of ['pristine', 'goal', 'query', 'refinement', 'criteria', 'remove', 'save-failure'] as const) {
