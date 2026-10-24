@@ -32,9 +32,11 @@ are part of this work.
 ## Verification
 
 - New regressions were first observed failing on the baseline: five telemetry
-  scenarios, one partial-budget source-accounting scenario and four initial
-  claim-uncertainty scenarios (including inconsistent response proof). A known-CAS non-uncertainty control also passes.
-- Focused integration: 82 tests across five suites passed against this batch.
+  scenarios, one partial-budget source-accounting scenario and initial
+  claim-uncertainty scenarios. Additional inconsistent-response-proof and known-CAS
+  controls also pass.
+- Focused integration: 82 tests across five suites passed before the final
+  inconsistent-receipt regression was added; the final full suite includes it.
 - TypeScript project check passed.
 - Final full suite: 4,729 tests / 366 suites passed. Production build passed.
 - Plugin package contract: 11 Python tests passed. Independent source review
@@ -57,3 +59,20 @@ scheduled run, including account/funding proof and authoritative readback. Real
 AI quality, production activation and owner-account end-to-end acceptance remain
 unperformed. Do not translate these offline passes into a completed product or a
 completion percentage.
+
+## Explicit exclusion list follow-up
+
+The bounded search-scope proposal parser previously kept “不要运营、销售” as
+one literal exclusion. Consequently, neither “产品运营” nor “产品销售” was
+excluded. Explicit Chinese/English list separators (、,，) are now split into
+individual exclusions, matching the existing exact-title/add-title controls.
+Prior criteria are preserved and duplicate terms are removed. This is not an
+expansion into general natural-language interpretation; proposals still require
+confirmation and do not persist or start automation by themselves.
+
+Four failing-before/fixed-after regression inputs cover Chinese and English
+commands and verify the proposal, save payload and actual quality gate together.
+The allowed 产品经理 control still passes; excluded 运营、销售、客服 titles fail.
+
+Local full follow-up verification: 4,733 tests / 366 suites and production build
+passed. Remote required gates and deployment must be verified separately.

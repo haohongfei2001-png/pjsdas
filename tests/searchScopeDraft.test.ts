@@ -15,6 +15,22 @@ describe('B3 explicit search scope proposals', () => {
     expect(excluded.titleExcludes).toEqual(['运营'])
     expect(excluded.targetRoleQueries).toEqual(broad.targetRoleQueries)
   })
+  it.each(['不要运营、销售', '排除运营，销售', 'exclude 运营,销售', 'no 运营, 销售'])('enforces each explicit exclusion in %s without changing prior criteria', input => {
+    const first = proposeSearchScope('不要客服', proposeSearchScope('产品经理'))
+    const before = structuredClone(first)
+    const draft = proposeSearchScope(input, first)
+    expect(draft.titleExcludes).toEqual(['客服', '运营', '销售'])
+    expect(first).toEqual(before)
+    expect(draft.targetRoleQueries).toEqual(first.targetRoleQueries)
+    const saved = mergeDiscoveryScope(undefined, draft, at)
+    expect(discoveryProfileSavePayload(saved).titleExcludes).toEqual(['客服', '运营', '销售'])
+    const candidate = { company: 'A', role: '产品经理', sourceUrl: 'https://example.com/job', sourceTitle: 'Job', sourceEvidenceText: '岗位：产品经理', postingStatus: 'open' as const }
+    for (const role of ['产品运营', '产品销售', '产品客服']) {
+      expect(evaluateDiscoveryCandidate(saved, { ...candidate, role }, undefined, new Date(at)).accepted).toBe(false)
+    }
+    expect(evaluateDiscoveryCandidate(saved, candidate, undefined, new Date(at)).accepted).toBe(true)
+    expect(proposeSearchScope('不要销售、销售， 运营', draft).titleExcludes).toEqual(draft.titleExcludes)
+  })
   it('confirms exact original titles end to end, preserving legacy unrelated facts', () => {
     const raw = { ...createDefaultDiscoveryProfile(at), notes: 'Historical notes', strengths: ['Legacy'] }
     const draft = proposeSearchScope('只要纯产品经理', proposeSearchScope('产品经理'))

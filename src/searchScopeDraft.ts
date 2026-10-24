@@ -10,7 +10,7 @@ export function proposeSearchScope(text: string, previous?: DiscoveryScopeInput)
   const exact = previous && /^(?:完整标题|exact title)\s*[:：]\s*(.+)$/i.exec(input)
   if (exact) return discoveryScopeSchema.parse({ ...base, titleEquals: unique(exact[1].split(/[、,，]/)) })
   const exclusion = /^(?:不要|排除|exclude\s+|no\s+)(.+)$/i.exec(input)
-  if (previous && exclusion) return discoveryScopeSchema.parse({ ...base, titleExcludes: unique([...(base.titleExcludes ?? []), exclusion[1]]) })
+  if (previous && exclusion) return discoveryScopeSchema.parse({ ...base, titleExcludes: unique([...(base.titleExcludes ?? []), ...exclusion[1].split(/[、,，]/)]) })
   if (previous && /^(?:更广一些|更广一点|broader)$/i.test(input)) {
     if (!base.targetRoleQueries.some(value => value === '产品经理')) throw new Error('请直接说明想增加的岗位词。 / Specify the additional job titles.')
     const additions = ['AI 产品经理', 'AI 应用产品经理'].filter(term => !base.targetRoleQueries.includes(term))
