@@ -8,14 +8,10 @@ migration, feature flag, timeout setting, gateway or workflow change.
 The earlier repeated-string / small-receipt fixture establishes a particular
 PostgREST materialization regression. It does **not** demonstrate production
 latency or exclude other costs in structured, less-compressible snapshots.
-A naturally occurring production v4 statement timeout does not become explained
-merely because that flat fixture passes.
 
 The new matrix uses generated synthetic data only. It does not copy, inspect or
 reconstruct private workspace content. In particular, the large-receipt case is
-an independent return-path boundary probe, **not a proposed explanation of the
-observed production timeout**. A bounded production ledger sample had small
-receipts; it was neither the failed request nor the full population.
+an independent return-path boundary probe.
 
 ## Added matrix
 
@@ -58,8 +54,3 @@ timing measurements remain pending the existing SQL CI run. This diagnostic batc
 needs no production deployment and is not evidence that the production timeout
 or Supabase IO risk has been resolved.
 
-The temporary PostgREST connection explicitly uses statement_timeout=8s and
-lock_timeout=8s, with an HTTP session-settings readback before measurement. This
-models the observed authenticator configuration without asserting those were the
-effective settings of the past production request. It changes no production role
-or timeout. HTTP abort limits remain 15s so database cancellation can be observed.
