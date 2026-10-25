@@ -1,0 +1,59 @@
+name: Workspace rows Stage A (synthetic only)
+on:
+  pull_request:
+    paths:
+      - 'gateway/workspaceRows*.ts'
+      - 'tests/workspaceRows*.test.ts'
+      - 'tests/sql/workspace-rows-stage-a.mjs'
+      - 'tests/sql/candidates/workspace-rows-stage-a.sql'
+      - '.github/workflows/workspace-rows-stage-a.yml'
+permissions:
+  contents: read
+jobs:
+  candidate-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-fixture-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix tests/sql
+      - name: Install verified official PostgREST test binary
+        run: |
+          curl --fail --location --retry 2 https://github.com/PostgREST/postgrest/releases/download/v14.5/postgrest-v14.5-linux-static-x86-64.tar.xz -o /tmp/postgrest.tar.xz
+          echo 'ab5cc7e974d4940447991804588cfb8b3f7b2c57b691f0905df04d51ede69470  /tmp/postgrest.tar.xz' | sha256sum --check --strict
+          tar -xJf /tmp/postgrest.tar.xz -C /tmp postgrest
+          /tmp/postgrest --version
+      - name: Initialize disposable fixture roles
+        env:
+          TA_ROW_DATABASE_URL: postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres
+        run: |
+          node --input-type=module <<'JS'
+          import pg from './tests/sql/node_modules/pg/lib/index.js'
+          const db = new pg.Client({ connectionString: process.env.TA_ROW_DATABASE_URL })
+          await db.connect()
+          await db.query('create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls')
+          await db.end()
+          JS
+      - name: Codec and fail-closed adapter tests
+        run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts --maxWorkers=2
+      - name: Real HTTP candidate (no production credentials or deployment)
+        env:
+          TA_ROW_DATABASE_URL: postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres
+          TA_POSTGREST_BIN: /tmp/postgrest
+        run: node --import tsx tests/sql/workspace-rows-stage-a.mjs
