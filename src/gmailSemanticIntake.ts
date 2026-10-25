@@ -185,7 +185,6 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   reconcileExisting?: boolean
 }) {
   if (!input.authorized) throw new Error('Gmail source is not authorized for writes.')
-  let working = structuredClone(snapshot)
   const records: TimelineRecord[] = []
   let persistedSourceRecords = 0
   const compensation: SemanticBatchCompensation = {
@@ -194,6 +193,7 @@ export function applyGmailSemanticBatch(snapshot: PJSDASSnapshot, input: {
   const priorRun = (snapshot.data.timeline ?? []).find((item) => item.ingestionRun?.runId === input.runId
     && item.ingestionRun.sourceKind === 'gmail' && item.ingestionRun.sourceId === input.sourceId)?.ingestionRun
   if (priorRun) return { snapshot, run: priorRun, compensation, alreadyApplied: true }
+  let working = structuredClone(snapshot)
   for (const sourceRecord of [...input.records].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))) {
     const prior = alreadyIngested(working.data.timeline, { sourceKind: 'gmail', sourceId: input.sourceId,
       sourceRecordId: sourceRecord.observation.source.sourceRecordId })

@@ -15,7 +15,7 @@ import { canonicalOpportunityId } from '../src/opportunityCanonicalization.js'
 import { semanticCandidateFactKey } from '../src/semanticIntake.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
 import { validPlanningTimezone } from '../src/timePlanningPreferences.js'
-import { commonNotificationCompany, notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
+import { createNotificationParsingScope, type NotificationParsingScope, commonNotificationCompany, notificationIdentityCanInherit, notificationIdentityCompatible, notificationIdentityText, parseRecruitingNotification } from '../src/notificationParser.js'
 import { stageForProcessEvent } from '../src/processEvents.js'
 import {
   applyGmailIngestionHardened,
@@ -500,8 +500,9 @@ export async function fetchGmailSemanticRecordsByIds(options: {
     )
   }
   const fetched = await fetchMessages(fetchImpl, options.accessToken, uniqueIds)
+  const parsingScope = createNotificationParsingScope()
   const records = fetched.messages
-    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now, options.timezone))
+    .map((message) => gmailSemanticRecordFromMessage(message, options.opportunities, now, options.timezone, parsingScope))
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   return {
     requestedCount: uniqueIds.length,
@@ -917,6 +918,7 @@ export async function runGmailReconciliationForBinding(options: {
     : createDriveWorkspaceSource({ getAccessToken: () => accessToken, fetchImpl, timezone: 'Asia/Shanghai' })
   options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
+  const parsingScope = createNotificationParsingScope()
   const priorState = options.binding.gmailReconciliationState
   options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailReconciliationBatch({
@@ -935,7 +937,7 @@ export async function runGmailReconciliationForBinding(options: {
     if (processedCount >= RECONCILIATION_PARSE_SLICE_SIZE || options.execution?.canProcessNextMessage?.() === false) break
     const message = messagesById.get(id)
     if (message) {
-      const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace))
+      const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace), parsingScope)
       if (record) records.push(reconciliationRecordVersion(record))
     }
     processedCount += 1
@@ -1274,13 +1276,14 @@ export function gmailObservationFromMessage(
   message: GmailMessage,
   opportunities: Opportunity[],
   now = new Date(),
+  parsingScope: NotificationParsingScope = createNotificationParsingScope(),
 ): HardenedGmailMessageObservation | undefined {
   if (!message.id) return undefined
   const subject = header(message.payload, 'subject')
   const sender = header(message.payload, 'from')
   const body = messageBodyText(message.payload)
   const text = [subject, message.snippet, body].map(cleanText).filter(Boolean).join('\n').slice(0, 16_000)
-  const parsed = parseRecruitingNotification(text, opportunities, now)
+  const parsed = parseRecruitingNotification(text, opportunities, now, parsingScope)
   const eventType = parsed.type && parsed.confidence.type !== 'low' ? parsed.type : undefined
   const recruiting = Boolean(parsed.candidates.length > 0 || (eventType && eventType !== 'other'))
   const receivedAt = message.internalDate && Number.isFinite(Number(message.internalDate))
@@ -1347,6 +1350,7 @@ export function gmailSemanticRecordFromMessage(
   opportunities: Opportunity[],
   now = new Date(),
   timezone = GMAIL_DEFAULT_TIMEZONE,
+  parsingScope: NotificationParsingScope = createNotificationParsingScope(),
 ): GmailSemanticRecord | undefined {
   if (!message.id) return undefined
   const interpretationTimezone = validPlanningTimezone(timezone) ? timezone : undefined
@@ -1373,7 +1377,7 @@ export function gmailSemanticRecordFromMessage(
     ? { ...message, internalDate: undefined, payload: { ...message.payload,
         headers: message.payload?.headers?.filter(item => item.name?.toLowerCase() !== 'date') } }
     : message
-  const prior = gmailObservationFromMessage(classificationMessage, opportunities, now)
+  const prior = gmailObservationFromMessage(classificationMessage, opportunities, now, parsingScope)
   if (!prior) return undefined
   const legacy = { ...prior, receivedAt: originalReceivedAt ?? prior.receivedAt }
   const interpretationGaps: string[] = originalReceivedAt ? [] : ['Original message timestamp is unavailable; automatic facts require clarification.']
@@ -1400,9 +1404,9 @@ export function gmailSemanticRecordFromMessage(
   }
   const parsedAt = new Date(legacy.receivedAt)
   const assertionText = boundedPieces.filter(piece => !recruitingInstructionOnly(piece)).join('；')
-  const whole = parseRecruitingNotification([subject, assertionText].join('\n'), opportunities, parsedAt)
-  const assertionParsed = parseRecruitingNotification(assertionText, opportunities, parsedAt)
-  const subjectParsed = parseRecruitingNotification(subject, opportunities, parsedAt)
+  const whole = parseRecruitingNotification([subject, assertionText].join('\n'), opportunities, parsedAt, parsingScope)
+  const assertionParsed = parseRecruitingNotification(assertionText, opportunities, parsedAt, parsingScope)
+  const subjectParsed = parseRecruitingNotification(subject, opportunities, parsedAt, parsingScope)
   const subjectType = /interview invitation/i.test(subject) ? 'interview_invite'
     : /(?:assessment|test) invitation/i.test(subject) ? 'assessment_invite'
     : !recruitingInstructionOnly(subject) && subjectParsed.type && subjectParsed.type !== 'other' && subjectParsed.confidence.type === 'high' ? subjectParsed.type : undefined
@@ -1417,7 +1421,7 @@ export function gmailSemanticRecordFromMessage(
         && /(?:^|；)(?:面试|笔试|测评)(?:职位|岗位)[:：]/.test(piece)
       const assertionPiece = gmailAssertionWithoutUrls(piece)
       parsed = parseRecruitingNotification(instructionOnly ? '' : labelledBlock ? [subject, assertionPiece].join('\n') : assertionPiece,
-        instructionOnly ? [] : opportunities, parsedAt)
+        instructionOnly ? [] : opportunities, parsedAt, parsingScope)
       fragmentParseCache.set(piece, parsed)
     }
     return { piece, instructionOnly, parsed }
@@ -1430,7 +1434,7 @@ export function gmailSemanticRecordFromMessage(
   const context = subjectParsed.opportunity ? subjectParsed : identityHeader
   const contextTarget = context?.opportunity
   const contextSafe = contextTarget && [subject, ...parsedPieces.map(item => item.piece)]
-    .every(value => notificationIdentityCompatible(value, contextTarget, opportunities))
+    .every(value => notificationIdentityCompatible(value, contextTarget, opportunities, parsingScope))
   const bodyHasEvent = parsedPieces.some(({ parsed, instructionOnly }) =>
     !instructionOnly && parsed.type && parsed.type !== 'other' && parsed.confidence.type !== 'low')
   const pieces = !bodyHasEvent && subjectType
@@ -1461,17 +1465,17 @@ export function gmailSemanticRecordFromMessage(
       && ['written_test_invite', 'assessment_invite'].includes(previous.parsed.type ?? '')
       && previous.parsed.type === deadlineContextType
       && !/(?:取消|撤销|已完成|已经完成|已提交|改期|改为|调整|cancel|completed|reschedul)/i.test(previous.piece)
-      && notificationIdentityCompatible(piece, previous.parsed.opportunity, opportunities)
-      && notificationIdentityCanInherit(piece, previous.parsed.opportunity)
+      && notificationIdentityCompatible(piece, previous.parsed.opportunity, opportunities, parsingScope)
+      && notificationIdentityCanInherit(piece, previous.parsed.opportunity, parsingScope)
       && resolveSourceTemporal(previous.piece, { receivedAt: originalReceivedAt ?? '', timezone: gmailFragmentTimezone(previous.piece, interpretationTimezone) ?? '', mode: previous.parsed.timingMode })?.shape === 'availability_window'
       ? previous.parsed : undefined
     const inherited = contextSafe && contextTarget
-      && notificationIdentityCompatible(piece, contextTarget, opportunities)
-      && notificationIdentityCanInherit(piece, contextTarget) ? contextTarget : undefined
+      && notificationIdentityCompatible(piece, contextTarget, opportunities, parsingScope)
+      && notificationIdentityCanInherit(piece, contextTarget, parsingScope) ? contextTarget : undefined
     const selected = parsed.opportunity ?? inherited ?? precedingWindow?.opportunity
     const plausible = parsed.candidates
-      .filter(item => item.score >= 40 && notificationIdentityCompatible(piece, item.opportunity, opportunities))
-    const commonCompany = commonNotificationCompany(piece, plausible.map(item => item.opportunity))
+      .filter(item => item.score >= 40 && notificationIdentityCompatible(piece, item.opportunity, opportunities, parsingScope))
+    const commonCompany = commonNotificationCompany(piece, plausible.map(item => item.opportunity), parsingScope)
     const commonRole = plausible.length >= 2 && plausible.every(item =>
       item.opportunity.role === plausible[0]?.opportunity.role) ? plausible[0]?.opportunity.role : undefined
     const eventType = submissionDeadline && deadlineContextType ? deadlineContextType
@@ -1650,6 +1654,7 @@ export async function runGmailAutomationForBinding(options: {
       })
   options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
+  const parsingScope = createNotificationParsingScope()
   const backfillComplete = (workspace.snapshot.data.timeline ?? []).some((item) =>
     item.ingestion?.sourceKind === 'gmail' && item.ingestion.sourceId === GMAIL_SOURCE_ID
     && item.ingestion.sourceRecordId === 'coverage-boundary:uu06-90-days')
@@ -1669,7 +1674,7 @@ export async function runGmailAutomationForBinding(options: {
       canFetchNextBatch: options.execution.canFetchNextBatch,
       onMessage: (message: GmailMessage) => {
         options.execution?.observer?.phase('message_parse')
-        parsed.set(message, gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)))
+        parsed.set(message, gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace), parsingScope))
         options.execution?.observer?.processed()
       },
     } } : {}),
@@ -1683,7 +1688,7 @@ export async function runGmailAutomationForBinding(options: {
   }
   options.execution?.observer?.phase('message_parse')
   const records = batch.messages
-    .map((message) => { if (parsed.has(message)) return parsed.get(message); const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)); options.execution?.observer?.processed(); return record })
+    .map((message) => { if (parsed.has(message)) return parsed.get(message); const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace), parsingScope); options.execution?.observer?.processed(); return record })
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
@@ -1835,6 +1840,7 @@ async function runLegacyGmailAutomationForBinding(options: {
       })
   options.execution?.observer?.phase('workspace_read')
   const workspace = await source.read()
+  const parsingScope = createNotificationParsingScope()
   options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
@@ -1849,7 +1855,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   })
   options.execution?.observer?.phase('message_parse')
   const messages = batch.messages
-    .map((message) => { const record = gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now); options.execution?.observer?.processed(); return record })
+    .map((message) => { const record = gmailObservationFromMessage(message, workspace.snapshot.data.opportunities, now, parsingScope); options.execution?.observer?.processed(); return record })
     .filter((message): message is HardenedGmailMessageObservation => Boolean(message))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     messages.push({
