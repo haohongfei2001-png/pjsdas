@@ -7,6 +7,9 @@ import { readFileSync } from 'node:fs'
 import { randomUUID, randomBytes, createHmac, createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import pg from 'pg'
+import { install, checkpointMigration } from './gmail-empty-checkpoint-fixture.mjs'
+import { migration } from './discovery-authority-fixture.mjs'
+import { testPlanningRows } from './workspace-rows-planning-stage-a.mjs'
 import { createSnapshot } from '../../src/snapshot.ts'
 import { gmailSemanticRecordFromMessage } from '../../gateway/gmailAutomation.ts'
 import { applyGmailSemanticBatch } from '../../src/gmailSemanticIntake.ts'
@@ -38,7 +41,9 @@ assert.equal(records.length, 8); assert.notEqual(core.alreadyApplied, true)
 const command = { commandId: 'synthetic-row-command', payloadHash: createHash('sha256').update(JSON.stringify(records)).digest('hex'), operation: 'gmail_semantic_intake', principal: 'automation', sourceId: 'gmail:primary', compensation: core.compensation }
 try {
   await admin.connect(); await admin.query('create database ' + database); created = true; await db.connect()
+  await install(db); await db.query(await migration(checkpointMigration))
   await db.query(readFileSync(new URL('./candidates/workspace-rows-stage-a.sql', import.meta.url), 'utf8'))
+  await db.query(readFileSync(new URL('./candidates/workspace-rows-planning-stage-a.sql', import.meta.url), 'utf8'))
   const encoded = encodeWorkspaceRows(before)
   await db.query('begin')
   await db.query('insert into pjsdas_rows_candidate.head(id,user_id,envelope,manifest,legacy_snapshot) values($1,$2,$3,$4,$5)', [workspaceId, userId, encoded.envelope, JSON.stringify(encoded.manifest), before])
@@ -49,6 +54,7 @@ try {
   let ready = false
   for (let i = 0; i < 100; i++) { if (server.exitCode !== null) throw new Error('PostgREST startup failed: ' + logs); try { if ((await fetch(origin + '/')).status < 500) { ready = true; break } } catch {} await new Promise(resolve => setTimeout(resolve, 50)) }
   assert(ready)
+  const hidden = await fetch(origin + '/rpc/apply_rows', { method: 'POST', signal: AbortSignal.timeout(10_000), headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ req: {} }) }); assert.equal(hidden.status, 404); ok('private low-level primitive is not exposed as an HTTP bypass')
   const source = createWorkspaceRowsCandidate({ supabaseUrl: origin, serviceRoleKey: token, readsEnabled: true, writesEnabled: true, signal: AbortSignal.timeout(60_000) })
   const initial = await source.read(userId); equal(initial.snapshot, before); ok('real candidate HTTP adapter reads exact large domain snapshot')
   const actualCore = applyGmailSemanticBatch(initial.snapshot, { runId: 'synthetic-row-run', sourceId: 'gmail:primary', checkedAt: at, records, authorized: true, workspaceRevision: 'txn:0' }); equal(wire(actualCore.snapshot), core.snapshot)
@@ -85,7 +91,8 @@ try {
   await assert.rejects(concurrent.read(userId), /CONFLICT/); assert(injected); equal((await source.read(userId)).snapshot, next); ok('actual HTTP page/commit interleaving fails closed then fresh read is exact')
   const noNetwork = createWorkspaceRowsCandidate({ supabaseUrl: origin, serviceRoleKey: token, fetchImpl: () => { throw new Error('disabled adapter must not fetch') } })
   await assert.rejects(noNetwork.read(userId), /DISABLED/); ok('default-off adapter performs no request')
-  console.log(JSON.stringify({ status: 'PASS_STAGE_A_VERTICAL_ONLY', assertions: assertions.length, open: ['product writer and 305 integration', 'operation guards beyond trusted Gmail', 'migration and rollback release', 'resource capacity'], production: false }))
+  await testPlanningRows({ db, source, origin, token, connectionString: local.href })
+  console.log(JSON.stringify({ status: 'PASS_STAGE_A_VERTICAL_ONLY', assertions: assertions.length, open: ['product writer and 305 integration', 'remaining guard families beyond Gmail/planning', 'migration and rollback release', 'resource capacity'], production: false }))
 } finally {
   if (server && server.exitCode === null) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)) }
   await db.end(); if (created) await admin.query('drop database ' + database); await admin.end()

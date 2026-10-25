@@ -17,6 +17,7 @@ export interface WorkspaceRowsGmailCommand {
   compensation: Record<string, unknown>
   managementAuthorization?: never; aiCaptureAuthorization?: never; discoveryAuthorization?: never
 }
+export interface WorkspaceRowsPlanningCommand { commandId: string; payloadHash: string; compensation: Record<string, unknown>; grantId: string; grantRevision: number; clientId: string; operation?: 'planning_management' | 'undo_command'; undoOf?: string }
 export class WorkspaceRowsCandidateError extends Error {
   constructor(readonly code: 'DISABLED' | 'INVALID' | 'CONFLICT' | 'UNAVAILABLE' | 'UNSUPPORTED', readonly retryable = false) { super(`WORKSPACE_ROWS_${code}`) }
 }
@@ -75,6 +76,27 @@ export function createWorkspaceRowsCandidate(options: WorkspaceRowsCandidateOpti
       try { snapshot = decodeWorkspaceRows({ contract: 'workspace-rows-v1', envelope: first.envelope, manifest: first.manifest, rows }); validateSnapshot(snapshot) }
       catch { throw new WorkspaceRowsCandidateError('INVALID') }
       return { workspaceId: first.workspaceId as string, userId, epoch: first.epoch as string, revision: first.revision as number, snapshot: snapshot as PJSDASSnapshot }
+    },
+    /** Separate guarded entry; never route delegated planning through the Gmail primitive. */
+    async commitPlanning(before: WorkspaceRowsRecord, snapshot: PJSDASSnapshot, command: WorkspaceRowsPlanningCommand) {
+      if (!writes) throw new WorkspaceRowsCandidateError('DISABLED')
+      invalid(uuid(before.workspaceId) && uuid(before.userId) && uuid(before.epoch) && integer(before.revision) && uuid(command.grantId) && integer(command.grantRevision) && command.clientId.trim().length > 0 && command.commandId.length > 0 && /^[0-9a-f]{64}$/.test(command.payloadHash))
+      invalid(Object.keys(command).every(key => ['commandId', 'payloadHash', 'compensation', 'grantId', 'grantRevision', 'clientId', 'operation', 'undoOf'].includes(key)))
+      validateSnapshot(before.snapshot); validateSnapshot(snapshot)
+      const operation = command.operation ?? 'planning_management'
+      invalid(operation === 'planning_management' ? command.undoOf === undefined : operation === 'undo_command' && typeof command.undoOf === 'string' && command.undoOf.length > 0)
+      const req = { ...diffWorkspaceRows(before.snapshot, snapshot), commandId: command.commandId, payloadHash: command.payloadHash, compensation: command.compensation, operation, provenance: command.undoOf ? { undoOf: command.undoOf } : {}, principal: 'delegated_mcp', workspaceId: before.workspaceId, userId: before.userId, expectedEpoch: before.epoch, expectedRevision: before.revision }
+      invalid(Buffer.byteLength(JSON.stringify(req)) <= 2_097_152 && req.changes.length <= 2000)
+      const result = await request('commit_planning', { req, target_grant_id: command.grantId, target_grant_revision: command.grantRevision, target_client_id: command.clientId })
+      invalid(object(result) && integer(result.revision))
+      if (result.outcome === 'CONFLICT') throw new WorkspaceRowsCandidateError('CONFLICT', true)
+      invalid((result.outcome === 'COMMITTED' || result.outcome === 'ALREADY_APPLIED') && object(result.receipt) && result.receipt.commandId === command.commandId && result.receipt.operation === operation && result.receipt.status === 'COMMITTED' && result.receipt.revision === result.revision)
+      const authorization = result.receipt.managementAuthorization
+      invalid(object(authorization) && uuid(authorization.grantId) && integer(authorization.grantRevision) && authorization.grantRevision > 0 && authorization.consentVersion === 4)
+      // Current authorization is checked in SQL before replay. A replay still returns
+      // the original immutable receipt, not a rewrite with today's grant revision.
+      if (result.outcome === 'COMMITTED') invalid(authorization.grantId === command.grantId && authorization.grantRevision === command.grantRevision)
+      return { outcome: result.outcome, resultingRevision: result.revision, receipt: result.receipt }
     },
     async commit(before: WorkspaceRowsRecord, snapshot: PJSDASSnapshot, command: WorkspaceRowsGmailCommand) {
       if (!writes) throw new WorkspaceRowsCandidateError('DISABLED')

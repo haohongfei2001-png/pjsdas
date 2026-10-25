@@ -2,6 +2,9 @@
 -- No product public functions, active layout or grants are changed by this candidate.
 -- SYNTHETIC EXPERIMENT ONLY. Not a product migration or production authorization implementation.
 create schema pjsdas_rows_candidate;
+create schema pjsdas_rows_internal;
+revoke all on schema pjsdas_rows_internal from public;
+grant usage on schema pjsdas_rows_internal to service_role;
 revoke all on schema pjsdas_rows_candidate from public;
 create table pjsdas_rows_candidate.head (
  id uuid primary key, user_id uuid not null unique, revision bigint not null default 0,
@@ -49,13 +52,11 @@ create function pjsdas_rows_candidate.valid_state(w uuid) returns boolean langua
   left join lateral (select count(*) n,count(distinct ordinal) nd,min(ordinal) lo,max(ordinal) hi from pjsdas_rows_candidate.item i where i.workspace_id=w and i.collection=m->>'collection') c on true
   where h.id=w and (c.n<>(m->>'count')::bigint or c.nd<>c.n or (c.n>0 and (c.lo<>0 or c.hi<>c.n-1))))
 $$;
-create function pjsdas_rows_candidate.commit_rows(req jsonb) returns jsonb
+create function pjsdas_rows_internal.apply_rows(req jsonb,trusted_receipt_context jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
 declare h pjsdas_rows_candidate.head%rowtype;l pjsdas_rows_candidate.ledger%rowtype;c jsonb;oldrow pjsdas_rows_candidate.item%rowtype;foundrow boolean;n integer:=0;r jsonb;
 begin
- if req ?| array['managementAuthorization','aiCaptureAuthorization','discoveryAuthorization'] then raise exception 'unsupported guarded writer' using errcode='42501';end if;
- if req->>'contract' is distinct from 'workspace-rows-v1' or req->>'operation' is distinct from 'gmail_semantic_intake'
- or req->>'principal' is distinct from 'automation' or req->>'sourceId' is distinct from 'gmail:primary'
+ if req->>'contract' is distinct from 'workspace-rows-v1'
  or jsonb_typeof(req->'commandId') is distinct from 'string' or nullif(req->>'commandId','') is null or coalesce(req->>'payloadHash','') !~ '^[0-9a-f]{64}$'
  or octet_length(req::text)>2097152 or jsonb_typeof(req->'changes') is distinct from 'array'
  or jsonb_array_length(req->'changes')>2000 then raise exception 'invalid narrow request' using errcode='22023';end if;
@@ -90,10 +91,22 @@ begin
  end loop;
  update pjsdas_rows_candidate.head set revision=h.revision+1,envelope=req->'afterEnvelope',manifest=req->'afterManifest' where id=h.id;
  if pjsdas_rows_candidate.valid_state(h.id) is not true then raise exception 'incomplete collection manifest' using errcode='22023';end if;
- r:=jsonb_build_object('commandId',req->>'commandId','receiptId','command-receipt:'||(req->>'commandId'),'status','COMMITTED','operation',req->>'operation','revision',h.revision+1,'committedAt',now());
+ r:=jsonb_build_object('commandId',req->>'commandId','receiptId','command-receipt:'||(req->>'commandId'),'status','COMMITTED','operation',req->>'operation','revision',h.revision+1,'committedAt',now()) || trusted_receipt_context;
  insert into pjsdas_rows_candidate.ledger values(h.id,h.user_id,req->>'commandId',req->>'payloadHash',h.revision+1,r,req->'compensation',md5((req->'changes')::text));
  return jsonb_build_object('outcome','COMMITTED','revision',h.revision+1,'receipt',r);
 end$$;
+-- A private-schema primitive is not exposed by PostgREST's candidate schema.
+revoke all on function pjsdas_rows_internal.apply_rows(jsonb,jsonb) from public,anon,authenticated;
+grant execute on function pjsdas_rows_internal.apply_rows(jsonb,jsonb) to service_role;
+create function pjsdas_rows_candidate.commit_rows(req jsonb) returns jsonb
+language plpgsql security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
+begin
+ if req->>'operation' is distinct from 'gmail_semantic_intake' or req->>'principal' is distinct from 'automation'
+ or req->>'sourceId' is distinct from 'gmail:primary' or req ?| array['managementAuthorization','aiCaptureAuthorization','discoveryAuthorization'] then
+ raise exception 'unsupported writer family' using errcode='42501';end if;
+ return pjsdas_rows_internal.apply_rows(req,'{}'::jsonb);
+end$$;
+
 -- STAGE A CANDIDATE ONLY: one statement snapshot binds each page to its head.
 create function pjsdas_rows_candidate.read_head(target_user_id uuid) returns jsonb
 language sql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$

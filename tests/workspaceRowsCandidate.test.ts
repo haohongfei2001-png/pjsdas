@@ -50,4 +50,16 @@ describe('Stage A row adapter fail-closed contract', () => {
     const writer = createWorkspaceRowsCandidate({ supabaseUrl: 'https://synthetic.invalid', serviceRoleKey: 'synthetic', readsEnabled: true, writesEnabled: true, fetchImpl })
     await expect(writer.commit(before, snapshot, command)).rejects.toMatchObject({ code: 'INVALID' })
   })
+  it('preserves an immutable planning receipt after a valid regrant replay', async () => {
+    const grantId = '55555555-5555-5555-5555-555555555555'
+    const receipt = { commandId: 'synthetic-planning', operation: 'planning_management', status: 'COMMITTED', revision: 1, managementAuthorization: { grantId, grantRevision: 1, consentVersion: 4 } }
+    const fetchImpl = vi.fn(async () => respond({ outcome: 'ALREADY_APPLIED', revision: 1, receipt }))
+    const writer = createWorkspaceRowsCandidate({ supabaseUrl: 'https://synthetic.invalid', serviceRoleKey: 'synthetic', readsEnabled: true, writesEnabled: true, fetchImpl })
+    const input = { commandId: 'synthetic-planning', payloadHash: 'b'.repeat(64), compensation: {}, grantId, grantRevision: 3, clientId: userId }
+    expect((await writer.commitPlanning(before, snapshot, input)).receipt).toEqual(receipt)
+    fetchImpl.mockImplementation(async () => respond({ outcome: 'COMMITTED', revision: 1, receipt }))
+    await expect(writer.commitPlanning(before, snapshot, input)).rejects.toMatchObject({ code: 'INVALID' })
+    await expect(writer.commitPlanning(before, snapshot, { ...input, operation: 'undo_command' })).rejects.toMatchObject({ code: 'INVALID' })
+  })
+
 })

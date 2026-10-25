@@ -4,8 +4,8 @@ on:
     paths:
       - 'gateway/workspaceRows*.ts'
       - 'tests/workspaceRows*.test.ts'
-      - 'tests/sql/workspace-rows-stage-a.mjs'
-      - 'tests/sql/candidates/workspace-rows-stage-a.sql'
+      - 'tests/sql/workspace-rows*.mjs'
+      - 'tests/sql/candidates/workspace-rows*.sql'
       - '.github/workflows/workspace-rows-stage-a.yml'
 permissions:
   contents: read
