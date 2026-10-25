@@ -53,7 +53,11 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
         const run = await runGmailAutomationForBinding({ binding, refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store, executionToken), signal: controller.signal }, tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId, googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch, now: config.now,
-          execution: { observer: diagnostics.observer, beforeWorkspaceWrite: async () => {
+          execution: { observer: diagnostics.observer,
+            // Keep a conservative tail for semantic application and the existing
+            // fenced commit. Fast batches retain the same 20-message ceiling.
+            canFetchNextBatch: () => !controller.signal.aborted && remaining() > reserveMs + limitMs * 0.5,
+            beforeWorkspaceWrite: async () => {
             diagnostics.observer.phase('lease_assert')
             ensureBudget(); await store.assertGmailExecution(binding.userId, executionToken); ensureBudget()
           } },

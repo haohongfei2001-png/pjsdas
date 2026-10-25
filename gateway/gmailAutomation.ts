@@ -445,10 +445,17 @@ function boundedPage(
   }
 }
 
-async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: string[]) {
+interface GmailFetchSlice {
+  canFetchNextBatch: () => boolean
+  onMessage: (message: GmailMessage) => void
+}
+
+async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: string[], slice?: GmailFetchSlice) {
   const messages: GmailMessage[] = []
   const unavailableMessageIds: string[] = []
+  let pendingMessageIds: string[] = []
   for (let index = 0; index < ids.length; index += 5) {
+    if (slice && !slice.canFetchNextBatch()) { pendingMessageIds = ids.slice(index); break }
     const batch = ids.slice(index, index + 5)
     const settled = await Promise.all(batch.map(async (id) => {
       const response = await gmailFetch(fetchImpl, accessToken, `/messages/${encodeURIComponent(id)}?format=full`)
@@ -467,10 +474,10 @@ async function fetchMessages(fetchImpl: typeof fetch, accessToken: string, ids: 
     }))
     for (const item of settled) {
       if (item.kind === 'unavailable') unavailableMessageIds.push(item.id)
-      else messages.push(item.message)
+      else { messages.push(item.message); slice?.onMessage(item.message) }
     }
   }
-  return { messages, unavailableMessageIds }
+  return { messages, unavailableMessageIds, pendingMessageIds }
 }
 
 export async function fetchGmailSemanticRecordsByIds(options: {
@@ -511,6 +518,7 @@ export async function fetchGmailAutomationBatch(options: {
   fetchImpl?: typeof fetch
   now?: Date
   coverage?: 'legacy' | 'uu06'
+  slice?: GmailFetchSlice
 }): Promise<GmailAutomationFetchResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const currentHistoryId = await gmailProfile(fetchImpl, options.accessToken)
@@ -522,13 +530,15 @@ export async function fetchGmailAutomationBatch(options: {
       pageToken: previous.pageToken,
       pendingHistoryId: previous.pendingHistoryId,
     }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
-    const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
+    const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected, options.slice)
+    const deferred = fetched.pendingMessageIds.length > 0
     return {
       messages: fetched.messages,
       unavailableMessageIds: fetched.unavailableMessageIds,
-      nextHistoryId: bounded.nextHistoryId,
-      continuation: bounded.continuation,
-      coverageComplete: bounded.coverageComplete,
+      nextHistoryId: deferred ? undefined : bounded.nextHistoryId,
+      continuation: deferred ? { mode: previous.mode, pageToken: previous.pageToken, pendingHistoryId: previous.pendingHistoryId,
+        pendingMessageIds: [...fetched.pendingMessageIds, ...(bounded.continuation?.pendingMessageIds ?? [])] } : bounded.continuation,
+      coverageComplete: !deferred && bounded.coverageComplete,
       usedFallbackScan: previous.mode === 'fallback',
     }
   }
@@ -582,13 +592,15 @@ export async function fetchGmailAutomationBatch(options: {
     pageToken: nextPageToken,
     pendingHistoryId: pendingHistoryId!,
   }, options.coverage === 'uu06' ? UU06_MAX_MESSAGES_PER_RUN : LEGACY_MAX_MESSAGES_PER_RUN)
-  const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected)
+  const fetched = await fetchMessages(fetchImpl, options.accessToken, bounded.selected, options.slice)
+  const deferred = fetched.pendingMessageIds.length > 0
   return {
     messages: fetched.messages,
     unavailableMessageIds: fetched.unavailableMessageIds,
-    nextHistoryId: bounded.nextHistoryId,
-    continuation: bounded.continuation,
-    coverageComplete: bounded.coverageComplete,
+    nextHistoryId: deferred ? undefined : bounded.nextHistoryId,
+    continuation: deferred ? { mode: mode!, pageToken: nextPageToken, pendingHistoryId: pendingHistoryId!,
+      pendingMessageIds: [...fetched.pendingMessageIds, ...(bounded.continuation?.pendingMessageIds ?? [])] } : bounded.continuation,
+    coverageComplete: !deferred && bounded.coverageComplete,
     usedFallbackScan,
     recoveryGapReason,
   }
@@ -1600,7 +1612,7 @@ export async function runGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canFetchNextBatch?: () => boolean }
 }): Promise<GmailAutomationRunResult> {
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') return runLegacyGmailAutomationForBinding(options)
   const fetchImpl = options.fetchImpl ?? fetch
@@ -1640,6 +1652,7 @@ export async function runGmailAutomationForBinding(options: {
   const backfillComplete = (workspace.snapshot.data.timeline ?? []).some((item) =>
     item.ingestion?.sourceKind === 'gmail' && item.ingestion.sourceId === GMAIL_SOURCE_ID
     && item.ingestion.sourceRecordId === 'coverage-boundary:uu06-90-days')
+  const parsed = new Map<GmailMessage, GmailSemanticRecord | undefined>()
   options.execution?.observer?.phase('gmail_list')
   const batch = await fetchGmailAutomationBatch({
     accessToken,
@@ -1651,10 +1664,25 @@ export async function runGmailAutomationForBinding(options: {
       pendingMessageIds: options.binding.gmailPendingMessageIds,
     } : undefined,
     fetchImpl, now, coverage: 'uu06',
+    ...(options.execution?.canFetchNextBatch ? { slice: {
+      canFetchNextBatch: options.execution.canFetchNextBatch,
+      onMessage: (message: GmailMessage) => {
+        options.execution?.observer?.phase('message_parse')
+        parsed.set(message, gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)))
+        options.execution?.observer?.processed()
+      },
+    } } : {}),
   })
+  // No records were consumed: preserve the original cursor/continuation via
+  // the controlled failure path rather than spending the tail on an empty
+  // full-snapshot commit. A later execution can safely fetch this page again.
+  if (options.execution?.canFetchNextBatch && batch.messages.length === 0
+    && batch.unavailableMessageIds.length === 0 && batch.continuation?.pendingMessageIds.length) {
+    throw new WorkspaceSourceError('BUDGET_EXHAUSTED', 'Gmail execution yielded before consuming records; continuation was preserved.', true)
+  }
   options.execution?.observer?.phase('message_parse')
   const records = batch.messages
-    .map((message) => { const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)); options.execution?.observer?.processed(); return record })
+    .map((message) => { if (parsed.has(message)) return parsed.get(message); const record = gmailSemanticRecordFromMessage(message, workspace.snapshot.data.opportunities, now, gmailWorkspaceTimezone(workspace)); options.execution?.observer?.processed(); return record })
     .filter((record): record is GmailSemanticRecord => Boolean(record))
   for (const sourceRecordId of batch.unavailableMessageIds) {
     records.push({
