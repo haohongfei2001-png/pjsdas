@@ -1,6 +1,7 @@
 # Metadata-only workspace commit: staged IO mitigation
 
-Date: 2026-10-25 UTC. No production changes authorized or performed by this batch.
+Date: 2026-10-25 UTC. Production execution was explicitly approved by the owner on 2026-10-25;
+execution still requires the recovery, ACL and rollout checks below.
 
 ## Finding and limits
 
@@ -50,7 +51,40 @@ existing PostgreSQL CI service, not a new resource or production database.
 
 Local PostgreSQL 17 initialized, but Unix socket creation was denied. The normal
 escalation path also failed at sandbox setup; no restriction was bypassed.
-Therefore native local spill measurements are unavailable. Remote PostgreSQL
-results must be recorded before any performance-benefit claim or rollout.
+Therefore native local spill measurements are unavailable. Remote PostgreSQL results supply the native evidence below.
 
-Production remains unchanged, migration unapplied and the client switch OFF.
+## Native PostgreSQL evidence
+
+Exact head `ff6b10e3`, [SQL CI run 40171288302](https://github.com/haohongfei2001-png/pjsdas/actions/runs/40171288302), passed on PostgreSQL 17.
+For the same approximately 25 MB synthetic JSONB with `work_mem=2184kB`:
+
+| Outcome | v2 temporary read/write blocks | v3 temporary read/write blocks |
+| --- | ---: | ---: |
+| COMMITTED | 3296 / 3296 | 0 / 0 |
+| ALREADY_APPLIED | 0 / 0 | 0 / 0 |
+| CONFLICT | 0 / 0 | 0 / 0 |
+
+First-commit execution was 151.66 ms vs 114.099 ms in this one synthetic
+measurement, not a production speed guarantee. The first fixture incorrectly
+required all v2 paths to spill; actual replay evidence corrected that assumption.
+Native lock/CAS, receipt replay and ACL checks also passed.
+
+## Recovery scope and execution gate
+
+This candidate only adds one function and its execution ACL; it does not invoke
+that function, alter existing tables/functions/policies, or migrate business rows.
+Capture the existing v2 definition/ACL and relevant catalog preimage privately,
+prove v3 absent and the expected base definition unchanged before installation,
+and verify the same originals after installation. The isolated SQL fixture also
+rolls back installation in an explicit transaction and verifies v3 is absent and
+the original catalogs unchanged. This is scoped DDL recovery, **not** evidence of
+a fresh full-production snapshot backup or disaster-recovery restore.
+
+Use bounded, atomic installation and retain v2. Operational rollback turns the
+client switch OFF; leave the new unused function installed rather than restore a
+whole workspace or delete data. A schema removal, if separately needed, must
+first prove no callers/dependencies and use the saved exact preimage; do not
+issue a broad restore or CASCADE. Never upload production backup data to CI.
+
+At this evidence checkpoint, production remains unchanged, migration unapplied
+and the client switch OFF. Record later execution separately from these tests.

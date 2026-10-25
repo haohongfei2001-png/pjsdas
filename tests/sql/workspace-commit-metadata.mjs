@@ -34,14 +34,25 @@ try {
   }
   await exec(db, 'create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;')
   for (const name of ['2026091901_ai_operated_mutation_foundation.sql', '20260923030000_cgr01_authoritative_commands.sql']) await exec(db, await migration(name))
+  await db.query('insert into auth.users values($1)', [owner])
+  await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)', [owner, '{}'])
+  const dataBefore = (await db.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1', [owner])).rows
   const beforeAcl = await acl()
-  await exec(db, await migration('20261025065403_commit_workspace_metadata_only.sql'))
+  const candidate = await migration('20261025065403_commit_workspace_metadata_only.sql')
+  // A failed/cancelled explicit installation transaction must restore the exact
+  // preimage. This is DDL recovery evidence, not a full production data backup.
+  await exec(db, 'begin')
+  await exec(db, candidate)
+  await exec(db, 'rollback')
+  assert.equal((await db.query('select to_regprocedure($1)::text as name', [signature(3)])).rows[0].name, null)
+  assert.deepEqual(await acl(), beforeAcl, 'DDL rollback restores original catalogs')
+  assert.deepEqual((await db.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1', [owner])).rows, dataBefore, 'DDL rollback preserves existing workspace data')
+  await exec(db, candidate)
   assert.deepEqual(await acl(), beforeAcl, 'Existing function/table ACL and RLS flags must remain unchanged')
+  assert.deepEqual((await db.query('select snapshot,revision from public.pjsdas_workspaces where user_id=$1', [owner])).rows, dataBefore, 'Successful installation preserves existing workspace data')
   const rights = (await db.query(`select r.rolname,has_function_privilege(r.oid,$1,'execute') as allowed from pg_roles r where r.rolname in ('anon','authenticated','service_role') order by r.rolname`, [signature(3)])).rows
   assert.deepEqual(rights, [{ rolname: 'anon', allowed: false }, { rolname: 'authenticated', allowed: false }, { rolname: 'service_role', allowed: true }])
   assert.equal((await db.query("select count(*)::int as count from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a where p.oid=$1::regprocedure and a.grantee=0 and a.privilege_type='EXECUTE'", [signature(3)])).rows[0].count, 0)
-  await db.query('insert into auth.users values($1)', [owner])
-  await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)', [owner, '{}'])
   await exec(db, 'set role service_role')
   const first = (await db.query(sql(3), args('first', 0))).rows[0]
   assert.equal(first.outcome, 'COMMITTED'); assert.equal(Number(first.revision), 1)
