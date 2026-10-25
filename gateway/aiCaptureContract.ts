@@ -10,6 +10,7 @@ import { buildWebSemanticInterpretation } from '../src/webSemanticInterpretation
 import { boundInterviewRescheduleMatches } from '../src/boundInterviewReschedule.js'
 import type { PJSDASSnapshot } from '../src/snapshot.js'
 import { resolveSourceTemporal } from '../src/sourceTemporal.js'
+import { hasGroundedAiCaptureTimes } from './aiCaptureTemporalGrounding.js'
 
 const boundedText = (max: number) => z.string().trim().min(1).max(max)
 const date = z.string().refine(validSourceDate, 'Expected a real calendar date.')
@@ -213,6 +214,9 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
           issue('evidence', 'Evidence must match an exact UTF-16 span of the original input.')
         }
         if (confidence !== 'high') issue('confidence', 'Uncertain interpretation requires clarification.')
+        if (!hasGroundedAiCaptureTimes(proposal, context)) {
+          issue('time', 'Every date, time and range bound must match an unambiguous expression in this candidate’s source evidence.')
+        }
         // Exact spans prove provenance, not that the model's chosen identity was
         // actually stated. Never borrow a plausible name from private inventory
         // or another candidate's evidence, and do not infer aliases here.
