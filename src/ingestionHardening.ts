@@ -1,3 +1,5 @@
+import { discoveryProfileForSnapshot } from './discoveryProfile.js'
+import { evaluateDiscoveryCandidate } from './discoveryQuality.js'
 import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import {
   applyGmailIngestion,
@@ -189,15 +191,26 @@ export function applyMonitorIngestionHardened(snapshot: PJSDASSnapshot, input: H
   )
 
   // A stable sourceRecordId identifies a posting, not an immutable observation.
-  // If its source fingerprint changes in a later run, re-evaluate it instead of
-  // permanently treating the posting as duplicate. Historical ledger rows are
-  // restored after the current run is evaluated.
+  // Re-evaluate changed facts, or a previously filtered posting that the
+  // current scope now admits. A duplicate of a filtered result is not proof
+  // that a job was ever saved. Keep created/removed identities suppressed and
+  // retain all original receipts after this temporary re-evaluation view.
   const changedPriorIds = new Set<string>()
+  const currentProfile = discoveryProfileForSnapshot(snapshot.data.discoveryProfile)
   for (const observation of baseObservations) {
     const previous = alreadyIngested(snapshot.data.timeline, {
       sourceKind: 'gpt_monitor', sourceId: normalizedInput.sourceId, sourceRecordId: observation.sourceRecordId,
     })
-    if (previous?.ingestion?.outcome && previous.ingestion.outcome !== 'unresolved' && previous.ingestion.fingerprint !== monitorFingerprint(observation)) {
+    const prior = previous?.ingestion
+    const previouslyFiltered = prior && !prior.opportunityId && (prior.outcome === 'filtered'
+      || prior.outcome === 'duplicate' && (snapshot.data.timeline ?? []).some(item =>
+        item.ingestion?.sourceKind === 'gpt_monitor' && item.ingestion.sourceId === normalizedInput.sourceId
+        && item.ingestion.sourceRecordId === observation.sourceRecordId && item.ingestion.outcome === 'filtered'))
+    const nowAdmitted = previouslyFiltered && evaluateDiscoveryCandidate(currentProfile, {
+      ...observation, discoveredAt: observation.discoveredAt ?? normalizedInput.completedAt,
+    }, undefined, new Date(normalizedInput.completedAt)).accepted
+    if (prior?.outcome && prior.outcome !== 'unresolved'
+      && (prior.fingerprint !== monitorFingerprint(observation) || nowAdmitted)) {
       changedPriorIds.add(observation.sourceRecordId)
     }
   }
