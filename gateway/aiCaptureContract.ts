@@ -146,6 +146,24 @@ function freeze<T>(value: T): T {
 }
 const identityText = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
 
+function statesIdentity(quote: string, name: string) {
+  const text = identityText(quote), value = identityText(name)
+  for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1)) {
+    // ASCII names must not match inside another identifier. Chinese surrounding
+    // particles remain valid; this is literal grounding, not alias resolution.
+    if (/^[a-z0-9]/.test(value) && /[a-z0-9]/.test(text[at - 1] ?? '')) continue
+    if (/[a-z0-9]$/.test(value) && /[a-z0-9]/.test(text[at + value.length] ?? '')) continue
+    return true
+  }
+  return false
+}
+function statesSourceUrl(quote: string, url: string) {
+  // Preserve the entire URL token, including punctuation, queries and fragments.
+  // Ambiguous sentence punctuation requires clarification, never URL truncation.
+  return (quote.match(/https?:\/\/[^\s<>"'“”‘’]+/g) ?? [])
+    .some(value => value === url)
+}
+
 /** In-memory, candidate-only review boundary. There is no transport, UI debounce,
  * persistence, command execution or authorization grant here. The caller supplies
  * authenticated context, reference inventory and all receipt/source identifiers.
@@ -195,6 +213,18 @@ export function createAiCaptureContractSession(trustedContext: AiCaptureTrustedC
           issue('evidence', 'Evidence must match an exact UTF-16 span of the original input.')
         }
         if (confidence !== 'high') issue('confidence', 'Uncertain interpretation requires clarification.')
+        // Exact spans prove provenance, not that the model's chosen identity was
+        // actually stated. Never borrow a plausible name from private inventory
+        // or another candidate's evidence, and do not infer aliases here.
+        const identityFacts = facts.kind === 'user_opportunity' ? facts : 'target' in facts ? facts.target : undefined
+        if (identityFacts?.company && identityFacts.role) {
+          if (!statesIdentity(span.quote, identityFacts.company) || !statesIdentity(span.quote, identityFacts.role)) {
+            issue('evidence', 'Company and role must both be stated in this candidate’s source evidence.')
+          }
+        }
+        if (facts.kind === 'user_opportunity' && facts.sourceUrl && !statesSourceUrl(span.quote, facts.sourceUrl)) {
+          issue('evidence', 'A source URL must be stated in this candidate’s source evidence, not invented by the model.')
+        }
         let resolvedTarget: SemanticCandidate['target']
         if ('target' in facts) {
           const matches = facts.target.company && facts.target.role ? context.opportunities.filter(item =>
