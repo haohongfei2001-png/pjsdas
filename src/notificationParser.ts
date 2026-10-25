@@ -1,3 +1,4 @@
+import { createNotificationIdentityMemo } from './notificationIdentityMemo.js'
 import { createNotificationIdentityMatcher } from './notificationIdentityRegions.js'
 import { boundedCompanyNames } from './companyIdentity.js'
 import {
@@ -32,6 +33,22 @@ export interface NotificationParseResult {
   warnings: string[]
 }
 
+/** Caller-owned batch lifetime. Only original string keys and immutable derived
+ * strings/aliases are memoized; opportunity identity/order and parser output
+ * remain evaluated on every call. No global or cross-user cache. */
+export interface NotificationParsingScope {
+  readonly normalize: (value: string) => string
+  readonly identityAlias: (value: string) => string
+  readonly companyAliases: (value: string) => readonly string[]
+  readonly roleAliases: (value: string) => readonly string[]
+}
+
+export function createNotificationParsingScope(): NotificationParsingScope {
+  const memo = createNotificationIdentityMemo()
+  return Object.freeze({ normalize: memo(normalize), identityAlias: memo(identityAlias),
+    companyAliases: memo(companyAliases), roleAliases: memo(roleAliases) })
+}
+
 const companySuffixes = [
   '股份有限公司',
   '有限责任公司',
@@ -41,7 +58,8 @@ const companySuffixes = [
   '科技',
 ]
 
-function normalize(value: string) {
+function normalize(value: string, scope?: NotificationParsingScope): string {
+  if (scope) return scope.normalize(value)
   return value
     .toLowerCase()
     .replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
@@ -49,7 +67,8 @@ function normalize(value: string) {
 
 // Punctuation is an evidence boundary, not permission to join unrelated names.
 // In particular, a location followed by a university must not become a company.
-function identityAlias(value: string) {
+function identityAlias(value: string, scope?: NotificationParsingScope): string {
+  if (scope) return scope.identityAlias(value)
   return value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.join(' ') ?? ''
 }
 
@@ -58,9 +77,10 @@ function genericRole(alias: string) {
   return /^(?:岗位|职位|校招岗位|招聘岗位|校园招聘|校园招聘岗位|相关岗位|其他岗位|职位类别|岗位类别|校招|招聘|应届生招聘)$/.test(value)
 }
 
-function companyAliases(company: string) {
+function companyAliases(company: string, scope?: NotificationParsingScope): readonly string[] {
+  if (scope) return scope.companyAliases(company)
   const raw = identityAlias(company)
-  const aliases = new Set<string>(boundedCompanyNames(company).map(identityAlias))
+  const aliases = new Set<string>(boundedCompanyNames(company).map(name => identityAlias(name)))
   let short = raw
   for (const suffix of companySuffixes) {
     const normalizedSuffix = normalize(suffix)
@@ -72,15 +92,16 @@ function companyAliases(company: string) {
   return [...aliases].filter((item) => item.length >= 2)
 }
 
-export function commonNotificationCompany(text: string, opportunities: Opportunity[]): string | undefined {
+export function commonNotificationCompany(text: string, opportunities: Opportunity[], scope?: NotificationParsingScope): string | undefined {
   const identityContains = createNotificationIdentityMatcher()
   if (opportunities.length < 2) return undefined
-  return companyAliases(opportunities[0]!.company).filter(alias => identityContains(notificationIdentityText(text), alias)
-    && opportunities.every(item => companyAliases(item.company).includes(alias)))
+  return companyAliases(opportunities[0]!.company, scope).filter(alias => identityContains(notificationIdentityText(text), alias)
+    && opportunities.every(item => companyAliases(item.company, scope).includes(alias)))
     .sort((a, b) => b.length - a.length)[0]
 }
 
-function roleAliases(role: string) {
+function roleAliases(role: string, scope?: NotificationParsingScope): readonly string[] {
+  if (scope) return scope.roleAliases(role)
   const raw = identityAlias(role)
   const aliases = new Set<string>([raw])
   for (const part of role.split(/[\/｜|、，,；;]/)) {
@@ -102,9 +123,9 @@ export function notificationIdentityText(text: string): string {
     .join('；')
 }
 
-function withoutTargetIdentity(text: string, target: Opportunity) {
+function withoutTargetIdentity(text: string, target: Opportunity, scope?: NotificationParsingScope) {
   let value = text.toLowerCase()
-  for (const alias of [...companyAliases(target.company), ...roleAliases(target.role)].sort((a, b) => b.length - a.length)) {
+  for (const alias of [...companyAliases(target.company, scope), ...roleAliases(target.role, scope)].sort((a, b) => b.length - a.length)) {
     value = value.replaceAll(alias, ' ')
   }
   return value
@@ -119,26 +140,26 @@ function neutralIdentityLanguage(text: string) {
   return !/[\p{L}]/u.test(words)
 }
 
-export function notificationIdentityCanInherit(text: string, target: Opportunity): boolean {
-  return neutralIdentityLanguage(withoutTargetIdentity(notificationIdentityText(text), target))
+export function notificationIdentityCanInherit(text: string, target: Opportunity, scope?: NotificationParsingScope): boolean {
+  return neutralIdentityLanguage(withoutTargetIdentity(notificationIdentityText(text), target, scope))
 }
 
 /** A company hit cannot override an explicitly different role/company. */
-export function notificationIdentityCompatible(text: string, target: Opportunity, opportunities: Opportunity[]): boolean {
+export function notificationIdentityCompatible(text: string, target: Opportunity, opportunities: Opportunity[], scope?: NotificationParsingScope): boolean {
   const identityContains = createNotificationIdentityMatcher()
   const evidence = notificationIdentityText(text)
-  const targetCompanies = companyAliases(target.company)
-  const targetRoles = roleAliases(target.role)
+  const targetCompanies = companyAliases(target.company, scope)
+  const targetRoles = roleAliases(target.role, scope)
   for (const clause of evidence.split(/[；;\n]+/)) {
     const lead = clause.split(/(?:很遗憾|感谢|恭喜|祝贺|请|邀请|诚邀|欢迎|面试|测评|笔试|招聘|\b(?:we|your|please|recruiting|recruitment|interview|assessment|regret|congratulations)\b)/i)[0]!
     if ([...targetCompanies, ...targetRoles].some(alias => identityContains(lead, alias))
-      && !neutralIdentityLanguage(withoutTargetIdentity(lead, target))) return false
+      && !neutralIdentityLanguage(withoutTargetIdentity(lead, target, scope))) return false
   }
   for (const other of opportunities) {
-    if (normalize(other.company) !== normalize(target.company)
-      && companyAliases(other.company).some(alias => !targetCompanies.includes(alias) && identityContains(evidence, alias))) return false
-    if (normalize(other.role) !== normalize(target.role)
-      && roleAliases(other.role).some(alias => identityContains(evidence, alias)
+    if (normalize(other.company, scope) !== normalize(target.company, scope)
+      && companyAliases(other.company, scope).some(alias => !targetCompanies.includes(alias) && identityContains(evidence, alias))) return false
+    if (normalize(other.role, scope) !== normalize(target.role, scope)
+      && roleAliases(other.role, scope).some(alias => identityContains(evidence, alias)
         && !targetRoles.some(targetAlias => identityContains(targetAlias, alias) || identityContains(alias, targetAlias)))) return false
   }
   const explicit = [...evidence.matchAll(/(?:^|[\s，,；;])(?:公司|企业|company|employer)\s*[:：]\s*([^，,；;。\n]+)/gi)]
@@ -155,14 +176,15 @@ export function notificationIdentityCompatible(text: string, target: Opportunity
   const titles = roleEvidence.match(/[\p{L}\p{N}]+(?:工程师|经理|培训生|分析师|设计师|专员|研究员)/gu) ?? []
   const englishTitles = roleEvidence.match(/(?:[a-z]+[ -]){0,5}(?:engineer|manager|analyst|scientist|designer|developer|intern|trainee)\b/gi) ?? []
   if ([...titles, ...englishTitles].some(title => !targetRoles.some(alias =>
-    identityContains(alias, identityAlias(title))
-      || identityContains(title, alias) && neutralIdentityLanguage(withoutTargetIdentity(title, target))))) return false
+    identityContains(alias, identityAlias(title, scope))
+      || identityContains(title, alias) && neutralIdentityLanguage(withoutTargetIdentity(title, target, scope))))) return false
   return true
 }
 
 export function matchNotificationOpportunity(
   text: string,
   opportunities: Opportunity[],
+  scope?: NotificationParsingScope,
 ): { selected?: Opportunity; candidates: OpportunityCandidate[]; confidence: 'high' | 'medium' | 'low' } {
   const identityContains = createNotificationIdentityMatcher()
   text = notificationIdentityText(text)
@@ -170,11 +192,11 @@ export function matchNotificationOpportunity(
     .map((opportunity): OpportunityCandidate => {
       let score = 0
       const reasons: string[] = []
-      const companies = companyAliases(opportunity.company)
-      const roles = roleAliases(opportunity.role)
+      const companies = companyAliases(opportunity.company, scope)
+      const roles = roleAliases(opportunity.role, scope)
       const fullCompany = companies[0]
 
-      const bilingualBrand = /[a-z]/i.test(opportunity.company) && boundedCompanyNames(opportunity.company).slice(1).some(name => identityContains(text, identityAlias(name)))
+      const bilingualBrand = /[a-z]/i.test(opportunity.company) && boundedCompanyNames(opportunity.company).slice(1).some(name => identityContains(text, identityAlias(name, scope)))
       if (fullCompany && (identityContains(text, fullCompany) || bilingualBrand)) {
         score += 70
         reasons.push('完整公司名命中')
@@ -191,7 +213,7 @@ export function matchNotificationOpportunity(
 
       const fullRole = roles[0]
       const labelledRole = [...text.matchAll(/(?:^|[；;\n])\s*(?:(?:面试|笔试|测评|应聘|申请))?(?:职位|岗位|role|position)\s*[:：]\s*([^；;\n]+)/gi)]
-        .some(match => identityAlias(match[1]!.trim()) === fullRole)
+        .some(match => identityAlias(match[1]!.trim(), scope) === fullRole)
       if (fullRole && fullRole.length >= 3 && (identityContains(text, fullRole) || labelledRole)) {
         score += 34
         reasons.push('完整岗位名命中')
@@ -214,13 +236,13 @@ export function matchNotificationOpportunity(
 
   const first = scored[0]
   const second = scored[1]
-  if (!first || first.score < 40 || !notificationIdentityCompatible(text, first.opportunity, opportunities)) {
+  if (!first || first.score < 40 || !notificationIdentityCompatible(text, first.opportunity, opportunities, scope)) {
     return { candidates: scored, confidence: 'low' }
   }
 
   const margin = first.score - (second?.score ?? 0)
   const sameCompanyAmbiguity = second &&
-    normalize(second.opportunity.company) === normalize(first.opportunity.company) &&
+    normalize(second.opportunity.company, scope) === normalize(first.opportunity.company, scope) &&
     margin < 20
 
   if (first.score >= 85 && margin >= 18 && !sameCompanyAmbiguity) {
@@ -385,9 +407,10 @@ export function parseRecruitingNotification(
   rawText: string,
   opportunities: Opportunity[],
   now = new Date(),
+  scope?: NotificationParsingScope,
 ): NotificationParseResult {
   const text = rawText.trim()
-  const opportunityMatch = matchNotificationOpportunity(text, opportunities)
+  const opportunityMatch = matchNotificationOpportunity(text, opportunities, scope)
   const typeMatch = detectNotificationType(text)
   const timingMode = detectTimingMode(text, typeMatch.type)
   const timeResult = extractDueAt(text, timingMode, now)
