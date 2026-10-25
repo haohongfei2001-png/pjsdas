@@ -15,7 +15,9 @@ Supabase Disk IO budget.
 The caller already projects outcome/workspace_id/revision/receipt. Nevertheless,
 the v2 PL/pgSQL set-returning function includes the full JSONB snapshot in each
 `RETURN NEXT`. PostgreSQL materializes that result before the external projection,
-and spills above `work_mem` (observed setting: 2,184 kB).
+and a large fresh input spills above `work_mem` (observed setting: 2,184 kB).
+Replay/conflict can retain a compressed stored TOAST representation and do not
+necessarily spill; do not infer identical IO costs for all three outcomes.
 See [PostgreSQL 17 control structures](https://www.postgresql.org/docs/17/plpgsql-control-structures.html#PLPGSQL-STATEMENTS-RETURNING).
 This is a concrete avoidable spill mechanism, not proof that all platform IO is
 caused by this one operation.

@@ -107,8 +107,11 @@ try {
         const tempWritten = plan.Plan['Temp Written Blocks'] ?? 0
         const result = { version, outcome: expected, tempRead: plan.Plan['Temp Read Blocks'] ?? 0, tempWritten, executionMs: plan['Execution Time'] }
         results.push(result)
-        if (version === 2) assert.ok(tempWritten > 0, `v2 ${expected} must demonstrate the original spill`)
-        else assert.equal(tempWritten, 0, `v3 ${expected} must not spill its return value`)
+        console.log('Synthetic snapshot result:', JSON.stringify(result))
+        // Fresh supplied JSONB spills in v2. Replay/conflict can keep a stored
+        // TOAST representation: do not falsely require those paths to spill.
+        if (version === 2 && expected === 'COMMITTED') assert.ok(tempWritten > 0, 'v2 first commit must demonstrate the original spill')
+        if (version === 3) assert.equal(tempWritten, 0, `v3 ${expected} must not spill its return value`)
       }
     }
     console.log('PASS PostgreSQL 17 synthetic large-snapshot materialization comparison:', JSON.stringify(results))
