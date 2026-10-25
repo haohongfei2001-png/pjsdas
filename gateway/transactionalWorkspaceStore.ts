@@ -56,6 +56,8 @@ export interface TransactionalWorkspaceStoreOptions {
   supabaseUrl: string
   serviceRoleKey: string
   fetchImpl?: typeof fetch
+  /** Enable only after the metadata-only RPC migration and ACL review. */
+  metadataOnlyCommits?: boolean
 }
 
 function authHeaders(serviceRoleKey: string) {
@@ -96,6 +98,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
   const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
   const serviceRoleKey = requireServiceRoleKey(options.serviceRoleKey)
   const fetchImpl = options.fetchImpl ?? fetch
+  const metadataOnlyCommits = options.metadataOnlyCommits ?? process.env.PJSDAS_WORKSPACE_COMMIT_METADATA_ONLY === '1'
 
   async function request(path: string, init: RequestInit = {}) {
     let response: Response
@@ -334,7 +337,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
       if ((input.operation === 'private_reminder_management' && authorization?.consentVersion !== 6) || (input.operation === 'discovery_profile_management' && authorization?.consentVersion !== 5) || (input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && ![2, 7].includes(authorization.consentVersion))) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
       if (authorization?.consentVersion !== undefined && ![2, 3, 4, 5, 6, 7].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
-      const rpc = capture ? 'pjsdas_commit_ai_capture' : discovery ? 'pjsdas_commit_discovery_workspace_v1' : authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : 'pjsdas_commit_workspace_v2'
+      const rpc = capture ? 'pjsdas_commit_ai_capture' : discovery ? 'pjsdas_commit_discovery_workspace_v1' : authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : metadataOnlyCommits ? 'pjsdas_commit_workspace_v3' : 'pjsdas_commit_workspace_v2'
       const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
         method: 'POST',
         body: JSON.stringify({
