@@ -1,0 +1,25 @@
+// Entirely synthetic. Consumers must use fixtureUrl before any connection.
+import { installBase, migration, exec } from './discovery-authority-fixture.mjs'
+export const checkpointMigration = '20261025122330_gmail_empty_poll_checkpoint_candidate.sql'
+export const checkpointQuery = 'select * from public.pjsdas_checkpoint_empty_gmail_poll_v1($1,$2,$3,$4,$5,$6,$7,$8)'
+export const observation = {version:1,mode:'history',coverageComplete:true,fetchedCount:0,unavailableCount:0,sourceRecordCount:0,hasContinuation:false,hasRecoveryGap:false,backfillComplete:true}
+export const uid=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
+export const snapshot=()=>({schema:'pjsdas-local-snapshot',version:4,exportedAt:'2026-10-01T00:00:00.000Z',data:{opportunities:[],processes:[],processEvents:[],actions:[],prep:[],applicationGroups:[],scheduleNodes:[],decisionRequests:[],semanticReceipts:[],reminderIntents:[],reminderOutbox:[],timeline:[{id:'synthetic-history',kind:'baseline_backfill',category:'data',source:'system',occurredAt:'2026-10-01T00:00:00.000Z',recordedAt:'2026-10-01T00:00:00.000Z',title:'Synthetic preserved evidence',ingestion:{version:1,sourceKind:'gmail',sourceId:'gmail:primary',sourceRecordId:'coverage-boundary:uu06-90-days',runId:'fixture-boundary',recordType:'recruiting_message',outcome:'ignored',fingerprint:'fixture',receivedAt:'2026-10-01T00:00:00.000Z',accountedAt:'2026-10-01T00:00:00.000Z'}}]}})
+export async function install(db){
+ await installBase(db)
+ for(const name of ['2026091903_controlled_audience.sql','2026092001_schedule_node_snapshot_v2.sql','20261002123812_consumer_management_atomic_grants.sql','20261002143625_owner_management_consent_audit.sql','20261002175431_opportunity_management_v3.sql','20261002195807_planning_management_v4.sql','20261002211312_discovery_profile_management_v5.sql','20261002220516_private_reminder_management_v6.sql','20261002234255_opportunity_management_raw_boundary.sql','20261003083410_scoped_management_consent_batch.sql','20261003091106_consumer_bootstrap_audience.sql','20261003104723_consumer_business_scoped_access.sql','20261007184232_discovery_atomic_authority.sql','20261008164000_discovery_batch_budget_claim.sql','20261019071353_ai_capture_durable_receipts.sql','20261025065403_commit_workspace_metadata_only.sql','20261025084300_commit_workspace_raw_json.sql'])await exec(db,await migration(name))
+}
+export async function seed(db,n=9901,state=snapshot()){
+ const user=uid(n),token=uid(n+10000)
+ await db.query('insert into auth.users values($1)',[user])
+ await db.query('insert into pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)',[user,JSON.stringify(state)])
+ await db.query("insert into google_drive_connections(user_id,google_subject,refresh_token_ciphertext,granted_scopes,gmail_automation_enabled,gmail_intake_consent_version,gmail_history_id) values($1,'fixture-google','fixture-secret',array['https://www.googleapis.com/auth/gmail.readonly'],true,'uu06-v1','1234')",[user])
+ await db.query('insert into gmail_automation_execution_state(user_id,lease_token,lease_expires_at,binding_updated_at,started_at) select user_id,$2,clock_timestamp()+interval \'120 seconds\',updated_at,clock_timestamp()-interval \'1 second\' from google_drive_connections where user_id=$1',[user,token])
+ return{user,token}
+}
+export function checkpointArgs(w,revision,at=new Date().toISOString(),extra={}){return[w.user,w.token,`gmail:auto:${at}`,'a'.repeat(64),revision,at,'1234',JSON.stringify(observation)].map((v,i)=>Object.hasOwn(extra,i)?extra[i]:v)}
+export const checkpoint=async(db,...args)=>(await db.query(checkpointQuery,checkpointArgs(...args))).rows[0]
+export const raw=async(db,user)=>(await db.query('select * from pjsdas_workspaces where user_id=$1',[user])).rows[0]
+export const logical=async(db,user)=>(await db.query('select revision,materialized_revision,public.pjsdas_logical_workspace_snapshot_v1(w) as snapshot from pjsdas_workspaces w where user_id=$1',[user])).rows[0]
+export function fullArgs(w,id,revision,state){return[w.user,id,'synthetic_full_write',`hash:${id}`,revision,JSON.stringify(state),4,'first_party_web',null,'{}',null,null,'{}']}
+export async function full(db,version,w,id,revision,state){const args=fullArgs(w,id,revision,state);let query;if(version===1){args.pop();query='select * from pjsdas_commit_workspace('+args.map((_,i)=>'$'+(i+1)).join(',')+')'}else if(version===4){const keys=['target_user_id','target_command_id','target_operation','target_payload_hash','target_expected_revision','target_snapshot','target_schema_version','target_principal_kind','target_client_id','target_provenance','target_compensation','target_effective_time','target_receipt_context'];const payload=Object.fromEntries(keys.map((key,i)=>[key,[5,9,12].includes(i)?JSON.parse(args[i]):args[i]]));return(await db.query('select * from pjsdas_commit_workspace_v4($1)',[JSON.stringify(payload)])).rows[0]}else query=`select * from pjsdas_commit_workspace_v${version}(${args.map((_,i)=>'$'+(i+1)).join(',')})`;return(await db.query(query,args)).rows[0]}

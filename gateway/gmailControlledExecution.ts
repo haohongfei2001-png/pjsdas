@@ -1,3 +1,6 @@
+import { createTransactionalWorkspaceStore } from './transactionalWorkspaceStore.js'
+import { EMPTY_GMAIL_OBSERVATION } from './emptyGmailCheckpoint.js'
+import { hashMutationPayload } from './mutationKernel.js'
 import { createGmailExecutionDiagnostics } from './gmailExecutionDiagnostics.js'
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { randomUUID } from 'node:crypto'
@@ -54,6 +57,16 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
           googleClientId: config.googleClientId, googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch, now: config.now,
           execution: { observer: diagnostics.observer,
+            ...(process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINTS === '1' ? { checkpointEmptyPoll: async (input: {
+              commandId: string; expectedRevision: number; checkedAt: string; historyId: string
+            }) => {
+              ensureBudget()
+              return createTransactionalWorkspaceStore({ supabaseUrl: config.supabaseUrl,
+                serviceRoleKey: config.supabaseServiceRoleKey ?? '', fetchImpl: budgetFetch,
+              }).checkpointEmptyGmailPollForUser({ ...input, userId: binding.userId, executionToken,
+                payloadHash: await hashMutationPayload('gmail_semantic_intake', { sourceId: 'gmail:primary', recordIds: [] }),
+                observation: EMPTY_GMAIL_OBSERVATION })
+            } } : {}),
             // Keep a conservative tail for semantic application and the existing
             // fenced commit. Fast batches retain the same 20-message ceiling.
             canFetchNextBatch: () => !controller.signal.aborted && remaining() > reserveMs + limitMs * 0.5,
