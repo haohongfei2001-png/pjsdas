@@ -94,3 +94,7 @@ jobs:
           TA_PG_RESTORE_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5433/ta_backup_fixture
           TA_PG_RESTORE_CONTAINER: ${{ job.services.restore.id }}
         run: npm run test:concurrency --prefix tests/sql
+      - name: Verify real PostgREST HTTP metadata commits
+        env:
+          TA_MANAGEMENT_SQL_TEST_URL: postgresql://postgres:fixture-only@127.0.0.1:5432/ta_management_fixture
+        run: npm run test:http --prefix tests/sql
