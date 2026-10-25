@@ -18,9 +18,12 @@ function context(overrides: Partial<AiCaptureTrustedContext> = {}): AiCaptureTru
     ...overrides,
   }
 }
-function span(input = context()) { return { start: 0, end: input.text.length, quote: input.text } }
+function span(input = context(), quote = input.text) {
+  const start = input.text.indexOf(quote)
+  return { start, end: start + quote.length, quote }
+}
 function application(input = context()) {
-  return { kind: 'application_action', target: { company: 'Acme', role: '工程师' }, plannedDate: '2026-10-27', confidence: 'high', evidence: span(input) }
+  return { kind: 'application_action', target: { company: 'Acme', role: '工程师' }, plannedDate: '2026-10-27', confidence: 'high', evidence: span(input, input.text.split('；')[0]) }
 }
 function output(candidates: unknown[] = [application()], clarifications: unknown[] = []) { return { contractVersion: 1, candidates, clarifications } }
 function evaluate(raw: unknown, input = context()) {
@@ -37,7 +40,7 @@ describe('offline AI capture candidate contract', () => {
     try {
       const input = context()
       const original = structuredClone(input)
-      const raw = output([application(), { kind: 'manual_action', title: '买咖啡', plannedDate: '2026-10-20', confidence: 'high', evidence: span() }])
+      const raw = output([application(), { kind: 'manual_action', title: '买咖啡', plannedDate: '2026-10-20', confidence: 'high', evidence: span(input, '另记一条明天买咖啡。') }])
       const before = structuredClone(raw)
       const { confirmed, review } = evaluate(raw, input)
       expect(review.status).toBe('ready_for_review')
@@ -45,7 +48,7 @@ describe('offline AI capture candidate contract', () => {
       if (confirmed.status !== 'confirmed_candidates') throw new Error('Expected candidate-only handoff.')
       expect(confirmed).toMatchObject({ ownerKey: input.ownerKey, receiptId: input.receiptId, expectedWorkspaceRevision: 'txn:42',
         observation: { inputId: input.inputId, source: input.source, statementMode: 'current_intent', originalText: input.text } })
-      expect(confirmed.observation.candidates[0]).toMatchObject({ id: 'ai-capture:1', target: { opportunityId: 'trusted-job-1' }, evidenceRefs: [`trusted-record-001#text=0:${input.text.length}`], sourceVersionRefs: ['1'] })
+      expect(confirmed.observation.candidates[0]).toMatchObject({ id: 'ai-capture:1', target: { opportunityId: 'trusted-job-1' }, evidenceRefs: [`trusted-record-001#text=0:${application(input).evidence.end}`], sourceVersionRefs: ['1'] })
       expect(semanticIntakeSchema.safeParse(confirmed.observation).success).toBe(true)
       expect(outbound).not.toHaveBeenCalled()
       expect(input).toEqual(original)
@@ -157,9 +160,10 @@ describe('offline AI capture candidate contract', () => {
   })
 
   it('preserves date precision and uses trusted temporal provenance', () => {
-    const candidate = { kind: 'process_event', eventType: 'interview_invite', target: application().target, confidence: 'high', evidence: span(),
+    const input = context({ text: 'Acme 工程师岗位的面试安排在下周二。' })
+    const candidate = { kind: 'process_event', eventType: 'interview_invite', target: application().target, confidence: 'high', evidence: span(input),
       timingMode: 'fixed', temporal: { shape: 'date_only', precision: 'date', timezone: 'Asia/Shanghai', date: '2026-10-27' } }
-    const { confirmed } = evaluate(output([candidate]))
+    const { confirmed } = evaluate(output([candidate]), input)
     expect(confirmed.status).toBe('confirmed_candidates')
     if (confirmed.status === 'confirmed_candidates') {
       expect(confirmed.observation.candidates[0]).toMatchObject({ temporal: { ...candidate.temporal, resolutionBasis: 'user_explicit' } })
@@ -187,11 +191,12 @@ describe('offline AI capture candidate contract', () => {
   })
 
   it.each(['manual_action', 'application_action'] as const)('requires user-chosen fixed times for %s arrangements', kind => {
-    const base = kind === 'manual_action' ? { kind, title: '买咖啡', confidence: 'high', evidence: span() }
-      : { kind, target: application().target, confidence: 'high', evidence: span() }
+    const input = context({ text: kind === 'manual_action' ? '下周二09:00买咖啡。' : '下周二09:00投递 Acme 的工程师岗位。' })
+    const base = kind === 'manual_action' ? { kind, title: '买咖啡', confidence: 'high', evidence: span(input) }
+      : { kind, target: application().target, confidence: 'high', evidence: span(input) }
     const fixed = { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-27T09:00:00+08:00' }
-    expect(evaluate(output([{ ...base, scheduledTemporal: fixed }])).review.status).toBe('ready_for_review')
-    expect(evaluate(output([{ ...base, scheduledTemporal: fixed }]), context({ temporalResolutionBasis: 'source_explicit' })).review.status).toBe('clarification_required')
+    expect(evaluate(output([{ ...base, scheduledTemporal: fixed }]), input).review.status).toBe('ready_for_review')
+    expect(evaluate(output([{ ...base, scheduledTemporal: fixed }]), { ...input, temporalResolutionBasis: 'source_explicit' }).review.status).toBe('clarification_required')
     for (const time of [
       { shape: 'date_only', precision: 'date', timezone: 'Asia/Shanghai', date: '2026-10-27' },
       { shape: 'deadline', precision: 'datetime', timezone: 'Asia/Shanghai', deadlineAt: fixed.startAt },
@@ -216,11 +221,13 @@ describe('offline AI capture candidate contract', () => {
   })
 
   it('requires date-only invitation intent and rejects contradictory or non-appointment temporal facts', () => {
-    const candidate = { kind: 'process_event', eventType: 'assessment_invite', target: application().target, confidence: 'high', evidence: span(),
+    const input = context({ text: 'Acme 工程师岗位的测评日期是下周二。' })
+    const candidate = { kind: 'process_event', eventType: 'assessment_invite', target: application().target, confidence: 'high', evidence: span(input),
       temporal: { shape: 'date_only', precision: 'date', timezone: 'Asia/Shanghai', date: '2026-10-27' } }
-    expect(evaluate(output([candidate])).review.status).toBe('clarification_required')
+    expect(evaluate(output([candidate]), input).review.status).toBe('clarification_required')
     for (const timingMode of ['fixed', 'deadline']) {
-      const { confirmed } = evaluate(output([{ ...candidate, timingMode }]))
+      const specific = timingMode === 'fixed' ? input : context({ text: 'Acme 工程师岗位的测评截止日期是下周二。' })
+      const { confirmed } = evaluate(output([{ ...candidate, timingMode, evidence: span(specific) }]), specific)
       expect(confirmed.status).toBe('confirmed_candidates')
       if (confirmed.status === 'confirmed_candidates') expect(confirmed.observation.candidates[0]).toMatchObject({ timingMode })
     }
@@ -231,12 +238,14 @@ describe('offline AI capture candidate contract', () => {
   })
 
   it('derives explicit fixed/window timing consistently for recruiting events', () => {
-    const base = { kind: 'process_event', eventType: 'written_test_invite', target: application().target, confidence: 'high', evidence: span() }
     for (const temporal of [
       { shape: 'fixed_range', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-27T09:00:00+08:00' },
       { shape: 'availability_window', precision: 'datetime', timezone: 'Asia/Shanghai', startAt: '2026-10-27T09:00:00+08:00', endAt: '2026-10-27T11:00:00+08:00', latestStartAt: '2026-10-27T10:00:00+08:00' },
     ]) {
-      const { confirmed } = evaluate(output([{ ...base, temporal }]))
+      const input = context({ text: temporal.shape === 'fixed_range' ? 'Acme 工程师岗位笔试是2026-10-27 09:00。'
+        : 'Acme 工程师岗位笔试开放时间是2026-10-27 09:00-11:00，最晚10:00进入。' })
+      const base = { kind: 'process_event', eventType: 'written_test_invite', target: application().target, confidence: 'high', evidence: span(input) }
+      const { confirmed } = evaluate(output([{ ...base, temporal }]), input)
       expect(confirmed.status).toBe('confirmed_candidates')
       if (confirmed.status === 'confirmed_candidates') expect(confirmed.observation.candidates[0]).toMatchObject({ temporal, timingMode: temporal.shape === 'fixed_range' ? 'fixed' : 'deadline' })
     }
