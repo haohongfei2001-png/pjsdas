@@ -101,16 +101,15 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       if (expectedRevision === undefined) {
         throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Transactional writes require an exact expected revision.', false)
       }
-      const fingerprint = await fingerprintWorkspace(input.snapshot)
       const writer = input.updatedByDevice?.trim() || options.sourceId || options.principalKind
       const semanticCommand = input.command
       const payloadHash = semanticCommand?.payloadHash
-        ?? (semanticCommand ? await hashMutationPayload(semanticCommand.operation, semanticCommand.payload) : fingerprint)
+        ?? (semanticCommand ? await hashMutationPayload(semanticCommand.operation, semanticCommand.payload) : await fingerprintWorkspace(input.snapshot))
       const affectedObjects = diffCommandObjects(workspace.snapshot, input.snapshot)
       const timestamp = now().toISOString()
       const result = await store.commitAuthoritativeForUser({
         userId: options.userId,
-        commandId: semanticCommand?.commandId ?? `snapshot-write:${writer}:${expectedRevision}:${fingerprint}`,
+        commandId: semanticCommand?.commandId ?? `snapshot-write:${writer}:${expectedRevision}:${payloadHash}`,
         operation: semanticCommand?.operation ?? 'SnapshotWrite',
         payloadHash,
         expectedRevision,
