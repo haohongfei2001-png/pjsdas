@@ -35,6 +35,48 @@ async function post(value, role = 'service_role') {
   const text = await response.text()
   return { status: response.status, value: JSON.parse(text), requestBytes: Buffer.byteLength(request), responseBytes: Buffer.byteLength(text), elapsedMs: Math.round(performance.now() - started) }
 }
+// Seeded synthetic bytes are repeatable but deliberately resist TOAST's usual
+// compression of the flat repeated-string control. No user content is sampled.
+function seededText(bytes, seed) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+  const output = Buffer.allocUnsafe(bytes)
+  let state = seed >>> 0
+  for (let index = 0; index < bytes; index++) {
+    state ^= state << 13; state ^= state >>> 17; state ^= state << 5
+    output[index] = alphabet.charCodeAt((state >>> 0) & 63)
+  }
+  return output.toString('ascii')
+}
+function diagnosticShapes() {
+  const structured = { synthetic: true, rows: Array.from({ length: 7000 }, (_, index) => ({
+    id: `synthetic-${index}`, company: `Fixture Company ${index % 53}`, role: 'Synthetic engineer',
+    notes: 'Synthetic narrative for an isolated benchmark. '.repeat(8),
+    source: { url: `https://example.invalid/jobs/${index}`, verified: true, aliases: [`fixture:${index}`, `source:${index}`] },
+    history: [{ version: 1, value: index }, { version: 2, value: index + 1 }],
+  })) }
+  const shapes = [
+    { name: 'structured-arrays', snapshot: structured, receiptContext: {} },
+    { name: 'seeded-high-entropy', snapshot: { synthetic: true, payload: seededText(4_000_000, 0x514A2026) }, receiptContext: {} },
+    { name: 'large-receipt-only', snapshot: { synthetic: true }, receiptContext: { syntheticReceiptPayload: seededText(3_000_000, 0x72656365) } },
+  ]
+  for (const shape of shapes) {
+    const payloadBytes = Buffer.byteLength(JSON.stringify(shape.snapshot)) + Buffer.byteLength(JSON.stringify(shape.receiptContext))
+    assert.ok(payloadBytes >= 3_000_000 && payloadBytes <= 5_000_000, `${shape.name} must stay within the bounded diagnostic input`)
+  }
+  return shapes
+}
+function planTempNodes(plan) {
+  const result = []
+  function visit(node) {
+    if (!node) return
+    result.push({ nodeType: node['Node Type'], functionName: node['Function Name'], alias: node.Alias,
+      tempRead: node['Temp Read Blocks'] ?? 0, tempWritten: node['Temp Written Blocks'] ?? 0,
+      rows: node['Actual Rows'], loops: node['Actual Loops'] })
+    for (const child of node.Plans ?? []) visit(child)
+  }
+  visit(plan)
+  return result // Parent counts include children: never sum these as total IO.
+}
 let admin, db, created = false, started = false, dockerAttempted = false
 try {
   admin = new pg.Client({ connectionString: url.toString(), connectionTimeoutMillis: 5000, statement_timeout: 15000 }); await admin.connect()
@@ -45,9 +87,11 @@ try {
   await db.query('create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select null::uuid$$;')
   for (const name of ['2026091901_ai_operated_mutation_foundation.sql', '20260923030000_cgr01_authoritative_commands.sql', '20261025065403_commit_workspace_metadata_only.sql']) await db.query(await migration(name))
   await db.query(await migration('20261025084300_commit_workspace_raw_json.sql'))
+  await db.query(`create function public.fixture_http_settings() returns table(statement_timeout text,lock_timeout text,work_mem text)
+    language sql stable as $$select current_setting('statement_timeout'),current_setting('lock_timeout'),current_setting('work_mem')$$`)
   await db.query('insert into auth.users values($1)', [owner])
   await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)', [owner, '{}'])
-  local.search = '?options=' + encodeURIComponent('-c work_mem=2184kB') // Only this synthetic PostgREST connection.
+  local.search = '?options=' + encodeURIComponent('-c work_mem=2184kB -c statement_timeout=8s -c lock_timeout=8s') // Only this synthetic PostgREST connection.
   // Existing CI roles only. PostgREST authenticates with the synthetic fixture
   // postgres connection, then SET ROLE follows signed JWT or anonymous role.
   dockerAttempted = true
@@ -67,6 +111,10 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200))
   }
   assert.ok(ready, 'Pinned PostgREST did not become ready')
+  const effective = await fetch(origin + '/rpc/fixture_http_settings', { headers: headers('service_role'), signal: AbortSignal.timeout(5000) })
+  assert.equal(effective.status, 200)
+  assert.deepEqual(await effective.json(), [{ statement_timeout: '8s', lock_timeout: '8s', work_mem: '2184kB' }])
+  console.log('Synthetic HTTP session settings verified: statement_timeout=8s lock_timeout=8s work_mem=2184kB; not proof of a past production request setting.')
   const measurements = []
   for (const version of [3, 4]) {
   path = `/rpc/pjsdas_commit_workspace_v${version}?select=outcome,workspace_id,revision,receipt`
@@ -166,6 +214,74 @@ try {
   }
   }
   console.log('PostgREST HTTP plan summary:', JSON.stringify(measurements))
+
+  // Diagnostic matrix, NOT a reproduction of the user's workload or a latency
+  // guarantee. No zero-spill assertion is generalized beyond the original
+  // small-receipt control above. In particular, a large returned receipt can
+  // still spill even when v4 avoids input and snapshot-return materialization.
+  const diagnosticDeadline = performance.now() + 95000
+  const diagnosticSignal = () => {
+    const remaining = Math.floor(diagnosticDeadline - performance.now())
+    assert.ok(remaining > 0, 'Synthetic diagnostic matrix exceeded its 95-second request budget')
+    return AbortSignal.timeout(Math.min(15000, remaining))
+  }
+  const diagnostics = []
+  for (const shape of diagnosticShapes()) for (const version of [3, 4]) {
+    path = `/rpc/pjsdas_commit_workspace_v${version}?select=outcome,workspace_id,revision,receipt`
+    // Fresh comparable preimages, not a growing snapshot/ledger across cases.
+    await db.query('truncate public.pjsdas_command_ledger,public.pjsdas_workspaces')
+    await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)', [owner, '{}'])
+    const value = body(`shape-${shape.name}-v${version}`, 0, shape.snapshot)
+    value.target_receipt_context = shape.receiptContext
+    const serializationStarted = performance.now(), request = JSON.stringify(value)
+    const result = { shape: shape.name, version, fixtureOnly: true, requestJsonBytes: Buffer.byteLength(request),
+      serializationMs: Math.round(performance.now() - serializationStarted) }
+    try {
+      const planStarted = performance.now()
+      const response = await fetch(origin + path, { method: 'POST', headers: { ...headers('service_role'),
+        accept: 'application/vnd.pgrst.plan+json; options=analyze|buffers', prefer: 'tx=rollback' },
+        body: request, signal: diagnosticSignal() })
+      result.planHttpStatus = response.status
+      const planBody = await response.json()
+      result.planHttpMs = Math.round(performance.now() - planStarted)
+      if (!response.ok) { result.planErrorCode = planBody.code; throw new Error(`Synthetic ${shape.name}/v${version} plan HTTP ${response.status}`) }
+      const plan = planBody[0]
+      assert.ok(plan?.Plan && typeof plan['Execution Time'] === 'number')
+      Object.assign(result, { planExecutionMs: plan['Execution Time'], planPlanningMs: plan['Planning Time'],
+        tempRead: plan.Plan['Temp Read Blocks'] ?? 0, tempWritten: plan.Plan['Temp Written Blocks'] ?? 0,
+        planTempNodes: planTempNodes(plan.Plan) })
+      assert.equal(Number((await db.query('select count(*) from pjsdas_command_ledger')).rows[0].count), 0)
+      assert.equal(Number((await db.query('select revision from pjsdas_workspaces')).rows[0].revision), 0)
+
+      // Commit once after the rolled-back ANALYZE; never retry after a timeout.
+      const commitStarted = performance.now()
+      const committed = await fetch(origin + path, { method: 'POST', headers: headers('service_role'), body: request, signal: diagnosticSignal() })
+      const responseText = await committed.text()
+      Object.assign(result, { commitHttpStatus: committed.status, commitHttpMs: Math.round(performance.now() - commitStarted),
+        responseJsonBytes: Buffer.byteLength(responseText) })
+      const receiptRows = JSON.parse(responseText)
+      if (!committed.ok) { result.commitErrorCode = receiptRows.code; throw new Error(`Synthetic ${shape.name}/v${version} commit HTTP ${committed.status}`) }
+      assert.equal(receiptRows[0].outcome, 'COMMITTED'); assert.equal(receiptRows[0].revision, 1)
+      const stored = (await db.query(`select pg_column_size(w.snapshot) as snapshot_stored_bytes,
+        octet_length(w.snapshot::text) as snapshot_jsonb_text_bytes, pg_column_size(l.receipt) as receipt_stored_bytes,
+        octet_length(l.receipt::text) as receipt_jsonb_text_bytes, w.revision
+        from pjsdas_workspaces w join pjsdas_command_ledger l on l.workspace_id=w.id
+        where w.user_id=$1 and l.command_id=$2`, [owner, value.target_command_id])).rows[0]
+      assert.equal(Number(stored.revision), 1)
+      Object.assign(result, { snapshotStoredBytes: stored.snapshot_stored_bytes, snapshotJsonbTextBytes: stored.snapshot_jsonb_text_bytes,
+        receiptStoredBytes: stored.receipt_stored_bytes, receiptJsonbTextBytes: stored.receipt_jsonb_text_bytes })
+      // Payload shape, unlike measured performance, is an invariant of this fixture.
+      if (shape.name === 'large-receipt-only') assert.ok(result.responseJsonBytes > 3_000_000)
+      else assert.ok(result.responseJsonBytes < 2048)
+      diagnostics.push(result)
+      console.log('Synthetic shape diagnostic (not production reproduction):', JSON.stringify(result))
+    } catch (error) {
+      console.error('Synthetic shape diagnostic incomplete; no automatic request retry:', JSON.stringify({ ...result, error: error.name }))
+      throw error
+    }
+  }
+  assert.ok(performance.now() <= diagnosticDeadline, 'Synthetic diagnostic matrix exceeded its 95-second request budget')
+  console.log('Synthetic shape matrix completed; no production latency claim:', JSON.stringify(diagnostics))
 } catch (error) {
   if (started) {
     const logs = await docker('docker', ['logs', '--tail', '200', container], { timeout: 10000 }).catch(() => ({ stdout: '', stderr: '' }))
