@@ -134,6 +134,18 @@ try {
   assert.equal(Number(readback.revision), 4); assert.ok(Number(readback.bytes) > 25_000_000)
   console.log('PASS real PostgREST v14.5/PG17 HTTP: JWT denials, three outcomes, immutable replay/hash rejection, exact concurrent lock witness, discarded-response recovery, large request/small receipt.', JSON.stringify({ largeRequestBytes: large.requestBytes, largeResponseBytes: large.responseBytes, largeElapsedMs: large.elapsedMs, version }))
 
+  // Verify override support on the ordinary HTTP response first. PostgREST
+  // v14.5 Response.hs DbPlanResult intentionally emits only content headers,
+  // not Preference-Applied, so plan rollback is proved by database readback.
+  const rollbackProbe = await fetch(origin + path, { method: 'POST',
+    headers: { ...headers('service_role'), prefer: 'tx=rollback' },
+    body: JSON.stringify(body('rollback-probe', 4)), signal: AbortSignal.timeout(60000) })
+  assert.equal(rollbackProbe.status, 200)
+  assert.ok(rollbackProbe.headers.get('preference-applied')?.includes('tx=rollback'))
+  assert.equal((await rollbackProbe.json())[0].outcome, 'COMMITTED')
+  assert.equal(Number((await db.query("select count(*) from pjsdas_command_ledger where command_id='rollback-probe'")).rows[0].count), 0)
+  assert.equal(Number((await db.query('select revision from pjsdas_workspaces')).rows[0].revision), 4)
+
   // Plan mode measures the entire real PostgREST statement, including input
   // record materialization hidden from a direct SQL RPC benchmark. Roll back
   // every ANALYZE request, and verify that it did not append a real fixture row.
@@ -143,7 +155,6 @@ try {
       accept: 'application/vnd.pgrst.plan+json; options=analyze|buffers', prefer: 'tx=rollback' },
       body: JSON.stringify(body(id, revision, { fixture: 'synthetic-only-'.repeat(1800000) })), signal: AbortSignal.timeout(60000) })
     assert.equal(response.status, 200)
-    assert.ok(response.headers.get('preference-applied')?.includes('tx=rollback'), 'Plan mutations require explicit rollback acknowledgement')
     const plan = (await response.json())[0]
     assert.ok(plan?.Plan && typeof plan['Execution Time'] === 'number')
     const result = { version, outcome, tempRead: plan.Plan['Temp Read Blocks'] ?? 0, tempWritten: plan.Plan['Temp Written Blocks'] ?? 0, executionMs: plan['Execution Time'] }

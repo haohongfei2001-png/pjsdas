@@ -35,7 +35,8 @@ existing isolated PostgreSQL 17 service, using synthetic JWTs and a temporary DB
 It covers actual HTTP, anonymous/authenticated denial, one concurrent CAS winner,
 receipt recovery after discarding a response, 25 MB request and small response.
 PostgREST plan mode measures the full generated statement with ANALYZE/BUFFERS;
-transaction rollback acknowledgement and unchanged revision/ledger are required.
+an ordinary-response rollback acknowledgement preflight and unchanged database
+revision/ledger after every plan are required (plan responses omit that header).
 This facility is enabled only inside that temporary fixture, never production.
 Exact-head hosted results are required before claiming this candidate works.
 
