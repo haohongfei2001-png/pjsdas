@@ -10,6 +10,26 @@ const signature = version => `public.pjsdas_commit_workspace_v${version}(uuid,te
 const sql = version => `select outcome,workspace_id,revision,receipt from public.pjsdas_commit_workspace_v${version}(${Array.from({ length: 13 }, (_, i) => `$${i + 1}`).join(',')})`
 const args = (id, revision, snapshot = { synthetic: true }, hash = `hash:${id}`) =>
   [owner, id, 'synthetic_metadata_fixture', hash, revision, JSON.stringify(snapshot), 4, 'first_party_web', null, '{}', null, null, '{}']
+// Mirror the observed PostgREST named-argument record expansion and output
+// aggregation, not only a direct SQL call. All values remain synthetic.
+const argumentTypes = [
+  ['target_user_id', 'uuid'], ['target_command_id', 'text'], ['target_operation', 'text'],
+  ['target_payload_hash', 'text'], ['target_expected_revision', 'bigint'], ['target_snapshot', 'jsonb'],
+  ['target_schema_version', 'integer'], ['target_principal_kind', 'text'], ['target_client_id', 'text'],
+  ['target_provenance', 'jsonb'], ['target_compensation', 'jsonb'], ['target_effective_time', 'timestamptz'],
+  ['target_receipt_context', 'jsonb'],
+]
+const postgrestSql = version => `with pgrst_source as (
+  select pgrst_call.outcome,pgrst_call.receipt,pgrst_call.revision,pgrst_call.workspace_id
+  from (select $1::json as json_data) pgrst_payload,
+  lateral (select * from json_to_record(pgrst_payload.json_data) as _(${argumentTypes.map(([name,type]) => `${name} ${type}`).join(',')}) limit 1) pgrst_body,
+  lateral public.pjsdas_commit_workspace_v${version}(${argumentTypes.map(([name]) => `${name} := pgrst_body.${name}`).join(',')}) pgrst_call
+) select null::bigint as total_result_set,count(_postgrest_t) as page_total,
+  coalesce(json_agg(_postgrest_t),'[]'::json) as body
+  from (select outcome,workspace_id,revision,receipt from pgrst_source limit 1 offset 0) _postgrest_t`
+const postgrestArgs = values => [JSON.stringify(Object.fromEntries(argumentTypes.map(([name,type],index) =>
+  [name, type === 'jsonb' && typeof values[index] === 'string' ? JSON.parse(values[index]) : values[index]])))]
+
 let db, admin, pg, config, database, created = false, racer
 const acl = async () => ({
   relations: (await db.query("select c.relname,c.relacl::text,c.relrowsecurity,c.relforcerowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','S') order by c.relname")).rows,
@@ -125,7 +145,32 @@ try {
         if (version === 3) assert.equal(tempWritten, 0, `v3 ${expected} must not spill its return value`)
       }
     }
-    console.log('PASS PostgreSQL 17 synthetic large-snapshot materialization comparison:', JSON.stringify(results))
+    console.log('PASS PostgreSQL 17 direct-call synthetic materialization comparison:', JSON.stringify(results))
+    // Real production v3 still showed temporary IO after activation. The
+    // PostgREST json_to_record input SRF is a separate materialization layer.
+    // Prove that layer with the same payload, receipt semantics and all outcomes.
+    const wrappedResults = []
+    for (const version of [2, 3]) {
+      const revision = Number((await db.query('select revision from pjsdas_workspaces')).rows[0].revision)
+      const command = `postgrest-v${version}`
+      for (const [expected, id, base] of [['COMMITTED', command, revision], ['ALREADY_APPLIED', command, revision], ['CONFLICT', `${command}-conflict`, -1]]) {
+        const values = postgrestArgs(args(id, base, large))
+        await db.query('begin')
+        const plan = (await db.query('explain (analyze,buffers,format json) ' + postgrestSql(version), values)).rows[0]['QUERY PLAN'][0]
+        await db.query('rollback')
+        const response = (await db.query(postgrestSql(version), values)).rows[0]
+        assert.equal(Number(response.page_total), 1)
+        assert.equal(response.body[0].outcome, expected)
+        assert.deepEqual(Object.keys(response.body[0]).sort(), ['outcome', 'receipt', 'revision', 'workspace_id'])
+        assert.equal(response.body[0].receipt.commandId, id)
+        const result = { version, outcome: expected, tempRead: plan.Plan['Temp Read Blocks'] ?? 0,
+          tempWritten: plan.Plan['Temp Written Blocks'] ?? 0, executionMs: plan['Execution Time'] }
+        wrappedResults.push(result)
+        console.log('Synthetic PostgREST-shaped result:', JSON.stringify(result))
+        assert.ok(result.tempWritten > 0, 'Existing named-argument JSON input expansion must reproduce residual materialization')
+      }
+    }
+    console.log('PASS PostgreSQL 17 PostgREST-shaped residual input-spill reproduction:', JSON.stringify(wrappedResults))
   } else console.log('PGlite serial contracts only; temp-block and lock evidence require --postgres in existing PostgreSQL 17 CI.')
 } finally {
   if (db) await exec(db, 'rollback').catch(() => {})
