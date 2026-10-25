@@ -191,7 +191,7 @@ export async function invokeTrustedIngestion(
         return toolError('DISCOVERY_SCOPE_CONFIRMATION_REQUIRED', 'Confirm the complete current search scope before automatic Discovery ingestion. Historical preferences remain unchanged.', false)
       }
       const scopeFingerprint = await discoveryProfileManagementFingerprint(workspace.snapshot.data.discoveryProfile ?? null)
-      const verifyObservation = options.sourceVerifier ?? createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
+      const verifyObservation = options.sourceVerifier ?? createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now, profile: workspace.snapshot.data.discoveryProfile })
       const verifiedObservations = await Promise.all(parsed.observations.map(observation => verifyObservation(observation)))
       const baseline = parsed.replayOfRunId ? findRun(workspace.snapshot, 'gpt_monitor', parsed.sourceId, parsed.replayOfRunId) : undefined
       if (parsed.replayOfRunId && !baseline) return toolError('REPLAY_BASELINE_NOT_FOUND', `Run ${parsed.replayOfRunId} was not found for ${parsed.sourceId}.`, false)

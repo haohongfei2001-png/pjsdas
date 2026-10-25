@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyVerifiedDiscoveryCommand, type VerifiedDiscoveryCommand } from '../src/verifiedDiscoveryCommand.js'
 import { createDefaultDiscoveryProfile } from '../src/discoveryProfile.js'
+import { buildDiscoveryScopeEvidence } from '../src/discoveryScopeEvidence.js'
 import { createSnapshot } from '../src/snapshot.js'
 
 const at = '2026-10-25T00:00:00.000Z'
@@ -23,7 +24,13 @@ function snapshot(excluded = true) {
     applicationGroups: [], timeline: [], changeSets: [], discoveryProfile: { ...createDefaultDiscoveryProfile(at), mustNotHave: excluded ? ['Product'] : [] } }, at)
 }
 function apply(state: ReturnType<typeof snapshot>, id: string, hour = 1) {
-  return applyVerifiedDiscoveryCommand(state, command(id), new Date(`2026-10-25T0${hour}:00:00.000Z`))
+  const input = command(id)
+  input.scopeFingerprint = 'b'.repeat(64)
+  input.run.observations = [{ ...observation, scopeEvidence: buildDiscoveryScopeEvidence({
+    profile: state.data.discoveryProfile!, scopeFingerprint: input.scopeFingerprint,
+    documentSha256: observation.sourceProof!.documentSha256, text: 'Example Product Manager', complete: true,
+  }) }]
+  return applyVerifiedDiscoveryCommand(state, input, new Date(`2026-10-25T0${hour}:00:00.000Z`))
 }
 
 describe('verified Discovery reconsideration under current scope (offline)', () => {

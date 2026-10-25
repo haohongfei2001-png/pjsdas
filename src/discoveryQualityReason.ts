@@ -1,6 +1,7 @@
 export const DISCOVERY_QUALITY_REASON_CODES = [
   'title_condition_mismatch',
   'source_unverified',
+  'scope_evidence_incomplete',
   'required_fact_missing',
   'posting_closed',
   'deadline_expired',
@@ -41,6 +42,8 @@ export function presentDiscoveryQualityReason(detail: DiscoveryQualityReasonDeta
       return zh ? '原岗位标题不符合已确认的标题条件。' : 'The original job title does not satisfy the confirmed title conditions.'
     case 'source_unverified':
       return zh ? '岗位及招聘来源尚未通过独立核验。' : 'The job and recruiting source have not passed independent verification.'
+    case 'scope_evidence_incomplete':
+      return zh ? '当前搜索条件缺少完整、同源的岗位正文核验；本次未保存。' : 'The current search conditions lack complete, same-source posting evidence; this job was not saved.'
     case 'required_fact_missing':
       return zh ? `来源未证实必须条件“${p('rule')}”。` : `The source does not establish the required condition “${p('rule')}”.`
     case 'posting_closed':

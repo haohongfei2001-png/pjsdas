@@ -257,7 +257,7 @@ export async function invokeProposeChanges(
     const input = proposeChangesSchema.parse(rawInput)
     const { snapshot, context } = await source.read()
     const now = context.now ? new Date(context.now) : new Date()
-    const verifySource = createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now })
+    const verifySource = createDiscoverySourceVerifier({ fetchImpl: options.fetchImpl, now, profile: snapshot.data.discoveryProfile })
     const operations: ChangeSetOperation[] = []
     let discoveryScreening: ReturnType<typeof screenDiscoveryCandidates<NormalizedDiscoveryCandidate>> | undefined
     let discoveryProfileUpdatedAt: string | undefined
