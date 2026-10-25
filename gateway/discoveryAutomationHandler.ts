@@ -61,8 +61,8 @@ export function discoveryAutomationTelemetryPatch(run: DiscoveryAutomationRunRes
   return {
     checkedAt: run.checkedAt,
     ...((run.successfulSourceCount ?? run.completedSourceCount) > 0 ? { successAt: run.completedAt ?? run.checkedAt } : {}),
-    lastError: run.failedSourceCount || run.partialSourceCount || run.readbackPendingCount
-      ? `DISCOVERY_PARTIAL: ${run.failedSourceCount ?? 0} source failures; ${run.partialSourceCount ?? 0} partial searches; ${run.readbackPendingCount ?? 0} pending readbacks; ${run.remainingQueryCount ?? 0} uncovered queries; ${run.uncertainSourceCount ?? 0} uncertain batches; budget_exhausted=${Boolean(run.budgetExhausted)}.`
+    lastError: run.failedSourceCount || run.partialSourceCount || run.readbackPendingCount || run.skippedSourceCount || run.sourceErrors?.length
+      ? `DISCOVERY_PARTIAL: ${run.failedSourceCount ?? 0} source failures; ${run.partialSourceCount ?? 0} partial searches; ${run.readbackPendingCount ?? 0} pending readbacks; ${run.remainingQueryCount ?? 0} uncovered queries; ${run.uncertainSourceCount ?? 0} uncertain batches; budget_exhausted=${Boolean(run.budgetExhausted)}; ${run.skippedSourceCount} skipped sources${run.sourceErrors?.length ? `; reasons=${[...new Set(run.sourceErrors.map(error => error.code))].join(', ')}` : ''}.`
       : null,
   }
 }

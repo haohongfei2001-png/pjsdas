@@ -97,12 +97,13 @@ export function classifyDiscoveryAutomationRunState(input: {
   unresolvedCount: number
   failedSourceCount?: number
   partialSourceCount?: number
+  skippedSourceCount?: number
 }): DiscoveryAutomationRunState {
   if (!input.configured) return 'not_configured'
   if (input.dueSourceCount === 0) return 'checked_not_due'
   if (input.completedSourceCount === 0 && input.failedSourceCount) return 'retrieval_failed'
   if (input.completedSourceCount === 0) return 'verified_not_committed'
-  return input.unresolvedCount > 0 || input.failedSourceCount || input.partialSourceCount ? 'committed_with_exceptions' : 'committed'
+  return input.unresolvedCount > 0 || input.failedSourceCount || input.partialSourceCount || input.skippedSourceCount ? 'committed_with_exceptions' : 'committed'
 }
 
 export interface DiscoveryAutomationRunResult {
@@ -609,7 +610,11 @@ export async function runDiscoveryAutomationForBinding(options: {
         ...(exhausted ? { errorCode: 'DISCOVERY_BUDGET_EXHAUSTED' } : {}) }, claimBatch.claimAttemptId)
       commitStarted = true
       const applied = await applySourceRun(source, sourceRun, retrieval, now, Boolean(options.force), profileFingerprint, authorizeCurrentScope, discoveryAuthorization, identity, scopeBatch)
-      if (applied.status === 'skipped') { skippedSourceCount += dueSources.length - completedSourceCount - failedSourceCount; break }
+      if (applied.status === 'skipped') {
+        sourceErrors.push({ sourceId: sourceRun.sourceId, code: applied.reason })
+        skippedSourceCount += dueSources.length - completedSourceCount - failedSourceCount - skippedSourceCount
+        break
+      }
       remainingQueryCount -= retrieval.completedQueryCount
       completedSourceCount += 1
       const incompleteCommitted = incomplete || applied.result.run.scopeBatch?.outcome !== 'complete'
@@ -661,7 +666,7 @@ export async function runDiscoveryAutomationForBinding(options: {
     configured: true,
     dueSourceCount: dueSources.length,
     completedSourceCount,
-    unresolvedCount, failedSourceCount, partialSourceCount: partialSourceCount + readbackPendingCount,
+    unresolvedCount, failedSourceCount, skippedSourceCount, partialSourceCount: partialSourceCount + readbackPendingCount,
   })
 
   return {

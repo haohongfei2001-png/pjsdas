@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createDiscoveryAutomationHandler } from '../gateway/discoveryAutomationHandler.js'
+import { createDiscoveryAutomationHandler, discoveryAutomationTelemetryPatch } from '../gateway/discoveryAutomationHandler.js'
 import { GENERATION, LedgerHarness, scheduler, USER } from './fixtures/b2Ledger.rebuilt.js'
 
 beforeEach(() => {
@@ -72,5 +72,43 @@ describe('discovery result survives uncertain telemetry', () => {
     expect(await response.json()).toMatchObject({ failedUsers: 0, successfulUsers: 0, durableCompletedUsers: 0, telemetryUnconfirmedUsers: 1,
       results: [{ status: 'checked_not_due', durableCommit: false, telemetryState: 'unconfirmed' }] })
     expect(f.work.search).toHaveBeenCalledTimes(4)
+  })
+})
+
+describe('interrupted discovery telemetry', () => {
+  it('reports interruption before any commit without inventing a successful source or retry', async () => {
+    const db = new LedgerHarness(), work = scheduler(db)
+    work.search.mockImplementation(async () => {
+      db.snapshot.data.discoveryProfile!.targetRoleQueries = ['Revised scope']; db.revision += 1
+      return { providerRequestId: 'offline-empty', results: [] }
+    })
+    const run = await work.run(), patch = discoveryAutomationTelemetryPatch(run)
+    expect(run).toMatchObject({ state: 'verified_not_committed', completedSourceCount: 0, failedSourceCount: 0,
+      skippedSourceCount: 4, sourceErrors: [{ code: 'DISCOVERY_SCOPE_CHANGED' }] })
+    expect(patch).not.toHaveProperty('successAt')
+    expect(patch.lastError).toContain('DISCOVERY_SCOPE_CHANGED')
+    expect(work.search).toHaveBeenCalledTimes(1)
+    expect(db.writes.filter(item => item.target_operation === 'ingest_verified_discovery')).toHaveLength(0)
+  })
+  it('keeps normal completed and not-due checks free of interruption warnings', async () => {
+    const db = new LedgerHarness(), work = scheduler(db)
+    work.search.mockImplementation(async () => ({ providerRequestId: 'offline-empty', results: [] }))
+    const completed = await work.run(), notDue = await work.run()
+    expect(completed.state).toBe('committed')
+    expect(discoveryAutomationTelemetryPatch(completed).lastError).toBeNull()
+    expect(notDue.state).toBe('checked_not_due')
+    expect(discoveryAutomationTelemetryPatch(notDue)).toEqual({ checkedAt: notDue.checkedAt, lastError: null })
+  })
+  it('preserves successful source history but does not clear an interrupted scope warning', async () => {
+    const db = new LedgerHarness(), work = scheduler(db)
+    work.search.mockImplementation(async () => {
+      if (work.search.mock.calls.length === 2) { db.snapshot.data.discoveryProfile!.targetRoleQueries = ['Revised scope']; db.revision += 1 }
+      return { providerRequestId: 'offline-empty', results: [] }
+    })
+    const run = await work.run(), patch = discoveryAutomationTelemetryPatch(run)
+    expect(patch.successAt).toBe(run.completedAt)
+    expect(patch.lastError).toContain('DISCOVERY_SCOPE_CHANGED')
+    expect(patch.lastError).toContain('3 skipped')
+    expect(patch.lastError).not.toMatch(/retry|retrying/i)
   })
 })

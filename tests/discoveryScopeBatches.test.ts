@@ -141,6 +141,26 @@ describe('complete confirmed scope in bounded immutable batches (offline)', () =
     expect(result.sourceErrors?.[0]?.code).toBe(kind === 'scope' ? 'DISCOVERY_SCOPE_CHANGED' : 'AUTH_FORBIDDEN')
     expect(work.search).not.toHaveBeenCalled(); expect(work.reserveSearch).not.toHaveBeenCalled(); expect(work.generateTextImpl).not.toHaveBeenCalled()
   })
+  it.each(['after first commit', 'before second commit'] as const)('reports interrupted scope truthfully %s while retaining earlier commits', async boundary => {
+    const db = new LedgerHarness(), work = scheduler(db)
+    const changeScope = () => { db.snapshot.data.discoveryProfile!.targetRoleQueries = ['Revised scope']; db.revision += 1 }
+    work.search.mockImplementation(async () => {
+      if (boundary === 'before second commit' && work.search.mock.calls.length === 2) changeScope()
+      return { providerRequestId: 'offline-empty', results: [] }
+    })
+    if (boundary === 'after first commit') db.beforeCommit = body => {
+      if (body.target_operation !== 'ingest_verified_discovery') return
+      db.beforeCommit = undefined
+      db.responseTransform = response => { db.responseTransform = undefined; changeScope(); return response }
+    }
+    const result = await work.run()
+    expect(result).toMatchObject({ state: 'committed_with_exceptions', completedSourceCount: 1,
+      failedSourceCount: 0, skippedSourceCount: 3, successfulSourceCount: 1, scopeComplete: false,
+      sourceErrors: [{ code: 'DISCOVERY_SCOPE_CHANGED' }] })
+    expect(result.completedSourceCount + (result.failedSourceCount ?? 0) + result.skippedSourceCount).toBe(result.dueSourceCount)
+    expect(work.search).toHaveBeenCalledTimes(boundary === 'after first commit' ? 1 : 2)
+    expect(db.writes.filter(item => item.target_operation === 'ingest_verified_discovery')).toHaveLength(1)
+  })
   it('admits each query only once when two scheduler invocations compete for the same immutable claims', async () => {
     const db = new LedgerHarness(), first = scheduler(db), second = scheduler(db)
     for (const work of [first, second]) work.search.mockImplementation(async () => ({ providerRequestId: 'offline-concurrent', results: [] }))
