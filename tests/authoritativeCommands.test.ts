@@ -1015,3 +1015,44 @@ describe('bounded reschedule through real preview handler and authoritative conf
     expect(attempts).toBe(1); expect(h.ledger).toEqual([]); expect(h.state().current.data).toEqual(initial.data)
   })
 })
+
+describe('model fact grounding through HTTP preview and authoritative confirmation', () => {
+  it.each([
+    { text: '明天买咖啡', company: 'Invented Co', role: 'Designer' },
+    { text: '新增 New Co Designer', company: 'New Co', role: 'Designer', sourceUrl: 'https://example.com/invented' },
+  ])('persists an uncommittable blocked result for $text', async ({ text, ...facts }) => {
+    const initial = upgradeSnapshotToLatest(snapshot()), rows: any[] = []
+    const transport = vi.fn(async (_request, before) => {
+      await before()
+      return JSON.stringify({ statementMode: 'current_intent', interpretation: { contractVersion: 1, clarifications: [], candidates: [{
+        kind: 'user_opportunity', ...facts, confidence: 'high', evidence: { start: 0, end: text.length, quote: text },
+      }] } })
+    })
+    const handler = createAiCapturePreviewHandler({ supabaseUrl: 'https://example.test', supabasePublishableKey: 'synthetic-key', allowedOrigins: ['https://app.example.test'],
+      fetchImpl: async () => json({ id: 'user-a' }), authorizeIdentity: async () => ({ allowed: true }),
+      readWorkspace: async () => ({ userId: 'user-a', workspaceId: 'ws-1', revision: 1, schemaVersion: initial.version, snapshot: initial }),
+      runtime: { transport, reservationUnits: 1, ledger: {
+        read: async () => rows[0] ?? null,
+        admit: async (value: any) => { rows.push({ user_id: value.userId, request_id: value.requestId, payload_hash: value.payloadHash,
+          text: value.text, timezone: value.timezone, reference_time: value.referenceTime, expected_revision: value.expectedRevision,
+          expires_at: new Date(Date.now() + 900_000).toISOString(), status: 'DISPATCHED', review: null, observation: null }) },
+        finish: async (value: any) => { Object.assign(rows[0], { status: value.status, review: value.review, observation: value.observation }) },
+      } } })
+    const request = () => handler(new Request('https://backend.example.test/api/workspace?surface=ai-capture-preview', {
+      method: 'POST', headers: { origin: 'https://app.example.test', authorization: 'Bearer synthetic-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ text, timezone: 'Asia/Shanghai', requestId: 'grounding-review', expectedRevision: 1 }) }))
+    const response = await request()
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({ canCommit: false, review: { status: 'clarification_required' } })
+    expect(rows[0]).toMatchObject({ status: 'BLOCKED', observation: null })
+    expect(await (await request()).json()).toEqual(body)
+    expect(transport).toHaveBeenCalledOnce()
+    const beforeCommit = vi.fn(), h = harness(initial, {}, { beforeCommit }, rows)
+    await expect(h.executor.execute(h.principal, { commandId: 'grounding-confirm', baseRevision: 1,
+      command: { type: 'ai_capture_confirm', value: { requestId: 'grounding-review' } } })).rejects.toMatchObject({ code: 'AI_CAPTURE_NOT_READY' })
+    expect(beforeCommit).not.toHaveBeenCalled()
+    expect(h.ledger).toEqual([])
+    expect(h.state().current.data).toEqual(initial.data)
+  })
+})

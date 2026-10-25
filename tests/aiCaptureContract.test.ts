@@ -243,8 +243,9 @@ describe('offline AI capture candidate contract', () => {
   })
 
   it('allows source-free new job facts without fabricating an application action', () => {
-    const raw = output([{ kind: 'user_opportunity', company: 'Other Co', role: '设计师', confidence: 'high', evidence: span() }])
-    const { confirmed } = evaluate(raw)
+    const input = context({ text: '新增 Other Co 的设计师岗位。' })
+    const raw = output([{ kind: 'user_opportunity', company: 'Other Co', role: '设计师', confidence: 'high', evidence: span(input) }])
+    const { confirmed } = evaluate(raw, input)
     expect(confirmed.status).toBe('confirmed_candidates')
     if (confirmed.status === 'confirmed_candidates') expect(confirmed.observation.candidates.map(item => item.kind)).toEqual(['user_opportunity'])
   })
