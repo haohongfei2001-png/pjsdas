@@ -88,3 +88,27 @@ issue a broad restore or CASCADE. Never upload production backup data to CI.
 
 At this evidence checkpoint, production remains unchanged, migration unapplied
 and the client switch OFF. Record later execution separately from these tests.
+
+## Post-activation residual IO investigation — 2026-10-25
+
+Production configuration was enabled in a later authorized deployment. Read-only
+observations found a successful v3 PostgREST statement with temporary IO; the
+previous direct-call synthetic result must not be presented as zero production IO
+or a complete end-to-end performance acceptance. A separate request was canceled
+with SQLSTATE 57014; that code alone does not establish why it was canceled.
+
+The observed PostgREST query expands the named JSON request arguments through
+`json_to_record` before calling v3. This input Function Scan is absent from the
+original direct-parameter benchmark. An isolated PGlite reproduction with the same
+approximately 25 MB synthetic payload showed zero temporary blocks for a direct
+parameter and 3296 read/write blocks each for `json_to_record` alone. This identifies
+a reproducible additional materialization layer, not the cause of every production
+failure. Do not infer all system IO from tracked statement counters.
+
+The existing PostgreSQL 17 fixture now also runs the PostgREST-shaped named-argument
+expansion and response aggregation for v2/v3 COMMITTED, ALREADY_APPLIED and CONFLICT.
+It checks outcome, metadata shape and receipt identity while reporting temp blocks.
+Native results for this addition must come from its exact-head CI; the fixture's
+presence is not that evidence. It reproduces generated SQL, not an actual HTTP
+server or production workload. No production write, new function, permission,
+work_mem change, or billing/configuration change is part of this investigation.
