@@ -367,7 +367,7 @@ export async function retrieveDiscoverySourceRun(snapshot: PJSDASSnapshot, sourc
   if (parsed.data.observations.some(item => !candidateUrls.has(canonicalizeVerifiedJobSourceUrl(item.sourceUrl)))) {
     throw new WorkspaceSourceError('DISCOVERY_MODEL_INVALID', 'A model candidate URL was not returned by the executed search.', false)
   }
-  const verifySource = createDiscoverySourceVerifier({ fetchImpl: input.fetchImpl, now: input.now })
+  const verifySource = createDiscoverySourceVerifier({ fetchImpl: input.fetchImpl, now: input.now, profile: snapshot.data.discoveryProfile })
   const observations = await Promise.all(parsed.data.observations.map(verifySource))
   // Every returned URL that has no interpreted observation remains unaccounted
   // for. An empty/subset model response is not evidence those hits were not

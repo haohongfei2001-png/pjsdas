@@ -1,4 +1,7 @@
 import { factualDatePrecision, type DiscoveryFieldProof, type DiscoverySourceProof } from '../src/discoveryFactSchema.js'
+import type { DiscoveryProfile } from '../src/discoveryProfile.js'
+import { discoveryProfileManagementFingerprint } from '../src/discoveryProfileManagement.js'
+import { buildDiscoveryScopeEvidence } from '../src/discoveryScopeEvidence.js'
 import { verifiedDiscoveryObservationSchema } from '../src/verifiedDiscoveryCommand.js'
 import { canonicalizeVerifiedJobSourceUrl } from '../src/jobPosting.js'
 import { DISCOVERY_SOURCE_AUTHORITIES, type DiscoverySourceAuthority } from './discoverySourceAuthorities.js'
@@ -85,13 +88,50 @@ function exactDate(value: unknown) {
   const raw = text(value, 80)
   return raw && factualDatePrecision(raw) ? raw : undefined
 }
+function excludedPostingScopeNode(node: import('./discoveryHtml.js').HtmlElement) {
+  return ['aside', 'nav', 'footer'].includes(node.tagName)
+    || /(?:^|\s)(?:related|recommendations|similar-jobs)(?:\s|$)/i.test(attribute(node, 'class') ?? '')
+}
+/** Body qualification and scope matching are deliberately separate. Metadata
+ * and controls cannot establish a loaded description, but their visible terms
+ * must not disappear from exclusion matching when a real body is present. */
+function postingBodyText(root: HtmlNode, company: string, role: string) {
+  const heading = (node: import('./discoveryHtml.js').HtmlElement) => /^h[1-6]$/.test(node.tagName)
+  const control = (node: import('./discoveryHtml.js').HtmlElement) => ['button', 'form', 'input', 'select', 'option', 'textarea', 'a'].includes(node.tagName)
+    || attribute(node, 'role') === 'button'
+  const elements = descendants(root, () => true)
+  const identity = new Set(elements.filter(node => heading(node) || sameText(sourceText(node), company) || sameText(sourceText(node), role)))
+  const metadataLabel = /^(?:公司名称|招聘单位|雇主|公司|employer|company|岗位名称|职位名称|job title|role|工作地点|地点|城市|location|申请截止(?:日期|时间)?|投递截止(?:日期|时间)?|application deadline|apply by|招聘批次|招聘届别|recruitment batch|发布日期|发布时间|date posted)\s*[:：]?$/i
+  for (const list of elements.filter(node => node.tagName === 'dl')) {
+    const children = childElements(list)
+    for (let index = 0; index < children.length - 1; index += 1) {
+      if (children[index]!.tagName === 'dt' && children[index + 1]!.tagName === 'dd' && metadataLabel.test(sourceText(children[index]!))) {
+        identity.add(children[index]!); identity.add(children[index + 1]!)
+      }
+    }
+  }
+  return sourceText(root, false, node => control(node) || identity.has(node)
+    || Boolean(attribute(node, 'itemprop') && !(attribute(node, 'itemprop') ?? '').split(/\s+/).includes('description')))
+}
+
+/** Never infer that an auxiliary/nested subtree belongs to a different job and
+ * delete it to manufacture a complete negative proof. Visible ambiguity stays
+ * incomplete; hidden/inert text is excluded by the shared bounded HTML parser.
+ * This intentionally supports a bounded DOM contract, not arbitrary web pages. */
+function postingScopeContent(root: HtmlNode, company: string, role: string) {
+  const elements = descendants(root, () => true)
+  const ambiguous = elements.some(node => attribute(node, 'aria-busy') === 'true'
+    || ['status', 'progressbar'].includes(attribute(node, 'role') ?? '')
+    || node !== root && (excludedPostingScopeNode(node) || node.tagName === 'article' || /\bJobPosting\b/.test(attribute(node, 'itemtype') ?? '')))
+  const text = sourceText(root)
+  return { text, body: postingBodyText(root, company, role), complete: !ambiguous && text.length <= 100000 }
+}
 
 /** Static DOM attribution only: this is not a rendered-browser visibility test. */
-function visibleJobLabels(raw: string, company: string, role: string, url: URL) {
+function visibleJobLabels(raw: string, company: string, role: string, url: URL, checkScope: boolean) {
   if (raw.trimStart().startsWith('{') || raw.trimStart().startsWith('[')) return {}
   const document = parseSourceHtml(raw)
-  const excluded = (node: import('./discoveryHtml.js').HtmlElement) => ['aside', 'nav', 'footer'].includes(node.tagName)
-    || /(?:^|\s)(?:related|recommendations|similar-jobs)(?:\s|$)/i.test(attribute(node, 'class') ?? '')
+  const excluded = excludedPostingScopeNode
   const isHeading = (node: import('./discoveryHtml.js').HtmlElement) => /^h[1-6]$/.test(node.tagName) || attribute(node, 'itemprop') === 'title'
   const allHeadings = descendants(document, isHeading, excluded)
   if (allHeadings.some(node => /^(?:sign in to continue|log in to continue|登录后查看|请先登录|安全验证|人机验证|verify you are human)$/i.test(sourceText(node)))
@@ -154,7 +194,13 @@ function visibleJobLabels(raw: string, company: string, role: string, url: URL) 
     selector: matches[0]?.selector, conflict: new Set(matches.map(pair => pair.value)).size > 1 })
   const deadline = single(pairs.filter(pair => /^(?:申请截止(?:日期|时间)?|投递截止(?:日期|时间)?|application deadline|apply by)\s*[:：]?$/i.test(pair.label)))
   const batch = single(pairs.filter(pair => /^(?:招聘批次|招聘届别|recruitment batch)\s*[:：]?$/i.test(pair.label)))
-  return { deadline: exactDate(deadline.value), deadlineText: deadline.value, deadlineSelector: deadline.selector, batchSelector: batch.selector,
+  // This is the independently addressed posting envelope, not a search snippet,
+  // page title, recommendation/sidebar, or another job's description. Keep the
+  // complete bounded text in memory only; downstream evidence stores rule hits.
+  const scopeContent = checkScope ? postingScopeContent(scope, company, role) : undefined
+  const descriptionBody = checkScope && descendants(scope, node => (attribute(node, 'itemprop') ?? '').split(/\s+/).includes('description'))
+    .some(node => Boolean(postingBodyText(node, company, role)))
+  return { scopeContent, descriptionBody, deadline: exactDate(deadline.value), deadlineText: deadline.value, deadlineSelector: deadline.selector, batchSelector: batch.selector,
     deadlineConflict: deadline.conflict || (deadline.value !== undefined && !exactDate(deadline.value)),
     batchConflict: batch.conflict || (batch.value !== undefined && !text(batch.value, 160)), recruitmentBatch: text(batch.value, 160) }
 }
@@ -182,10 +228,12 @@ interface ExtractedPosting {
   deadline?: string
   publishedAt?: string
   description?: string
+  scopeText?: string
+  scopeTextComplete?: boolean
   selectors: Record<string, string>
 }
 
-function extractStructuredPosting(raw: string, url: URL, observation: MonitorJobObservation, authority: DiscoverySourceAuthority): ExtractedPosting {
+function extractStructuredPosting(raw: string, url: URL, observation: MonitorJobObservation, authority: DiscoverySourceAuthority, checkScope: boolean): ExtractedPosting {
   const jobs = jobPostingObjects(raw)
   const addressed = jobs.length === 1 ? jobs : jobs.filter(job => {
     try { return typeof job.url === 'string' && canonicalizeVerifiedJobSourceUrl(job.url) === canonicalizeVerifiedJobSourceUrl(url.toString()) } catch { return false }
@@ -209,22 +257,30 @@ function extractStructuredPosting(raw: string, url: URL, observation: MonitorJob
   // Only after the document independently proves its URL/record identity may
   // the known platform supply the composite tenant/site identity used to dedup.
   const nativeId = authority.nativePostId
-  const visible=visibleJobLabels(raw, company, role, url)
+  const visible=visibleJobLabels(raw, company, role, url, checkScope)
   // These extension names have no universal JobPosting meaning. A deadline
   // needs reviewed source semantics or an explicit label inside this job's
   // visible detail; a candidate value or unrelated page date never supplies it.
   const deadlineField = authority.applicationDeadlineField
   const structuredDeadline=deadlineField?exactDate(job[deadlineField]):undefined
   const deadlineConflict=visible.deadlineConflict||Boolean(structuredDeadline&&visible.deadlineText!==undefined&&structuredDeadline!==visible.deadline)
+  const description = text(job.description, 100000)
+  const descriptionContent = checkScope && description ? postingScopeContent(parseSourceHtml(description), company, role) : undefined
+  const complete = (job.description === undefined || typeof job.description === 'string' && job.description.length <= 100000)
+    && (descriptionContent === undefined || descriptionContent.complete)
+    && (visible.scopeContent === undefined || visible.scopeContent.complete)
+    && Boolean(descriptionContent?.body || visible.descriptionBody)
   return { company, role, nativeId, location: jobLocation(job.jobLocation),
     unresolvedFields:[...(deadlineConflict?['deadline' as const]:[]),...(visible.batchConflict?['recruitmentBatch' as const]:[])],
     recruitmentBatch: visible.recruitmentBatch, deadline: deadlineConflict?undefined:structuredDeadline??visible.deadline, publishedAt: exactDate(job.datePosted),
-    description: text(job.description, 100000),
+    description,
+    scopeText: complete ? [descriptionContent?.text, visible.scopeContent?.text].filter(Boolean).join('\n') : undefined,
+    scopeTextComplete: complete,
     selectors: { company: 'JobPosting.hiringOrganization.name', role: 'JobPosting.title', location: 'JobPosting.jobLocation',
       recruitmentBatch: visible.batchSelector ?? 'unresolved', deadline: structuredDeadline ? `JobPosting.${deadlineField}` : visible.deadlineSelector ?? 'unresolved', publishedAt: 'JobPosting.datePosted' } }
 }
 
-async function extractGreenhousePosting(url: URL, observation: MonitorJobObservation, authority: DiscoverySourceAuthority, fetchImpl: typeof fetch) {
+async function extractGreenhousePosting(url: URL, observation: MonitorJobObservation, authority: DiscoverySourceAuthority, fetchImpl: typeof fetch, checkScope: boolean) {
   if (!authority.tenant || !/^[a-z0-9_-]{1,100}$/i.test(authority.tenant)) throw new Error('Reviewed Greenhouse tenant is missing.')
   const id = url.pathname.match(/\/jobs\/(\d+)\/?$/)?.[1]
   if (!id) throw new Error('A public Greenhouse job-post ID is required.')
@@ -237,8 +293,11 @@ async function extractGreenhousePosting(url: URL, observation: MonitorJobObserva
     || new URL(job.absolute_url).pathname.match(/\/jobs\/(\d+)\/?$/)?.[1] !== id) throw new Error('The ATS response does not link to this employer tenant and public post.')
   const company = authority.companyNames?.find(name => sameText(name, observation.company))
   if (!company) throw new Error('The employer identity has no reviewed tenant binding.')
+  const description = text(job?.content, 100000)
+  const scopeContent = checkScope && description ? postingScopeContent(parseSourceHtml(description), company, role) : undefined
   const posting: ExtractedPosting = { company, role, nativeId: id, location: text(object(job?.location)?.name, 240),
-    deadline: exactDate(job?.application_deadline), publishedAt: exactDate(job?.first_published), description: text(job?.content, 100000),
+    deadline: exactDate(job?.application_deadline), publishedAt: exactDate(job?.first_published), description,
+    scopeText: scopeContent?.text, scopeTextComplete: Boolean(scopeContent?.complete && scopeContent.body),
     selectors: { company: `reviewed-binding:${authority.id}`, role: '$.title', location: '$.location.name', deadline: '$.application_deadline', publishedAt: '$.first_published' } }
   return { fetched, posting, identity: `greenhouse:${authority.tenant}:post:${id}` }
 }
@@ -248,13 +307,16 @@ export interface DiscoverySourceVerifierOptions {
   now?: Date
   authorities?: readonly DiscoverySourceAuthority[]
   resolveAuthority?: (url: URL) => Promise<DiscoverySourceAuthority | undefined>
+  /** Trusted current snapshot only, never model/candidate-supplied criteria. */
+  profile?: DiscoveryProfile
 }
 
 /** Share only public publisher evidence within one caller's bounded batch. */
 export function createDiscoverySourceVerifier(options: DiscoverySourceVerifierOptions = {}) {
   const now = options.now ?? new Date()
+  const profile = options.profile ? structuredClone(options.profile) : undefined
   const resolveAuthority = options.resolveAuthority ?? createDomesticDiscoveryAuthorityResolver({ fetchImpl: options.fetchImpl, now: () => now })
-  return (observation: MonitorJobObservation) => verifyDiscoverySourceObservation(observation, { ...options, now, resolveAuthority })
+  return (observation: MonitorJobObservation) => verifyDiscoverySourceObservation(observation, { ...options, profile, now, resolveAuthority })
 }
 
 /** Input claims never survive as trusted fields merely because the URL responds. */
@@ -264,6 +326,8 @@ export async function verifyDiscoverySourceObservation(
 ): Promise<MonitorJobObservation> {
   const fetchImpl = options.fetchImpl ?? fetch
   const verifiedAt = (options.now ?? new Date()).toISOString()
+  const profile = options.profile ? structuredClone(options.profile) : undefined
+  const checkScope = Boolean(profile && (profile.mustHave.length || profile.mustNotHave.length))
   const unresolved = (reason: string): MonitorJobObservation => ({
     sourceRecordId: observation.sourceRecordId, company: observation.company, role: observation.role,
     sourceUrl: observation.sourceUrl, sourceTitle: observation.sourceTitle,
@@ -286,13 +350,13 @@ export async function verifyDiscoverySourceObservation(
     }
     let fetched: { url: URL; raw: string }, posting: ExtractedPosting, postingIdentity: string
     if (authority.adapter === 'greenhouse') {
-      const extracted = await extractGreenhousePosting(requested, observation, authority, fetchImpl)
+      const extracted = await extractGreenhousePosting(requested, observation, authority, fetchImpl, checkScope)
       fetched = extracted.fetched; posting = extracted.posting; postingIdentity = extracted.identity
     } else {
       fetched = await fetchPublicDiscoverySource(requested.toString(), fetchImpl, url => inBoundary(url, authority.sourceOrigin, authority.pathPrefix)
         && sameRecruitingPublisherPosting(authority, url)
         && (authority.kind === 'recruiting_platform' || canonicalizeVerifiedJobSourceUrl(url.toString()) === canonicalizeVerifiedJobSourceUrl(requested.toString())))
-      posting = extractStructuredPosting(fetched.raw, fetched.url, observation, authority)
+      posting = extractStructuredPosting(fetched.raw, fetched.url, observation, authority, checkScope)
       postingIdentity = JSON.stringify([authority.id, posting.nativeId ?? canonicalizeVerifiedJobSourceUrl(fetched.url.toString())])
     }
     const documentSha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fetched.raw)))].map(value => value.toString(16).padStart(2, '0')).join('')
@@ -304,6 +368,10 @@ export async function verifyDiscoverySourceObservation(
     const sourceProof: DiscoverySourceProof = { version: 1, authority: authority.kind, authorityUrl: relationship.url.toString(),
       requestedUrl: requested.toString(), finalUrl: fetched.url.toString(), verifiedAt, documentSha256, postingIdentity,
       sourceNativeId: posting.nativeId, fields, unresolvedFields:posting.unresolvedFields?.length?posting.unresolvedFields:undefined, authorityEvidence: authority.evidence }
+    const scopeEvidence = profile && (profile.mustHave.length || profile.mustNotHave.length)
+      ? buildDiscoveryScopeEvidence({ profile, scopeFingerprint: await discoveryProfileManagementFingerprint(profile), documentSha256,
+        text: [posting.company, posting.role, posting.location, posting.recruitmentBatch, posting.scopeText].filter(Boolean).join('\n'),
+        complete: Boolean(posting.scopeTextComplete) }) : undefined
     // Status is conservative: a reachable page or application button is not an
     // independent guarantee that applications remain open.
     const verified = { sourceRecordId: postingIdentity, company: posting.company, role: posting.role,
@@ -312,6 +380,7 @@ export async function verifyDiscoverySourceObservation(
       deadline: posting.deadline, deadlinePrecision: posting.deadline ? factualDatePrecision(posting.deadline) : undefined,
       publishedAt: posting.publishedAt, publishedPrecision: posting.publishedAt ? factualDatePrecision(posting.publishedAt) : undefined,
       sourceEvidenceText: visibleSourceText(posting.description ?? '').slice(0, 2000) || undefined,
+      scopeEvidence,
       postingStatus: 'unknown', discoveredAt: verifiedAt, sourceVerification: 'verified', sourceVerifiedAt: verifiedAt, sourceProof }
     const validated = verifiedDiscoveryObservationSchema.safeParse(verified)
     if (!validated.success) return unresolved('DISCOVERY_SOURCE_INVALID: independently fetched evidence exceeds the supported factual contract')

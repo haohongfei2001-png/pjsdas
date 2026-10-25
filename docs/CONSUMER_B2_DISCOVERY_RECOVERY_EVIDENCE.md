@@ -112,3 +112,73 @@ is promised, and only an actually successful source advances `successAt`.
 Normal no-work checks still clear their error. Isolated ledger regressions cover
 both interruption boundaries and verify that old-scope retrieval/commit stops.
 These are offline contract checks, not live A17 or provider-quality evidence.
+
+## Complete current-scope evidence — 2026-10-25
+
+This is an offline contract correction, not A17 live-search acceptance or model
+activation. Against baseline `366bee23`, the actual source verifier followed by
+`applyVerifiedDiscoveryCommand` incorrectly saved a synthetic posting excluded
+by `mustNotHave` when its employment condition appeared after character 2,000,
+or only in the exact visible posting body rather than JSON-LD `description`.
+The first-paragraph control was correctly filtered. The two regression tests
+failed before the change; no provider, network, database or real workspace was used.
+
+### Corrected boundary
+
+- The server-owned verifier receives the current profile at scheduler retrieval,
+  trusted ingestion (including dry-run), and signed-proposal screening. Model/MCP
+  candidate schemas do not accept `scopeEvidence`.
+- The verifier checks complete, bounded structured-description and exact visible
+  posting text together. Verified company, original role, location and batch also
+  participate; a page title, model claim or another posting cannot supply them.
+  The old 2,000-character contextual excerpt remains bounded and is not used as
+  proof that an exclusion is absent.
+- Evidence contains the profile SHA-256, document SHA-256, exact bounded content-rule
+  lists and matched indices. Each list has at most 30 rules of 160 characters.
+  Rules are compared exactly with the reducer's current profile, indices are
+  unique/in-range, document hashes must match source proof, and the command's
+  admitted profile fingerprint must match the evidence. The existing authoritative
+  commit boundary rechecks the full current profile fingerprint before writing.
+- Body coverage and matching text are different. Titles, company labels, metadata
+  and application controls do not prove a job description loaded. A visible form
+  disclosure remains in matching text when a real body exists. Hidden content is
+  not evidence. Without structured `description`, visible fallback requires an
+  attributed `itemprop="description"` body; arbitrary residual text is not proof.
+  Loading/status signals are incomplete. Visible auxiliary/related containers and
+  nested postings are conservatively incomplete, never deleted based on guessed
+  foreign identity. This bounded implementation does not claim scope coverage
+  for every DOM, policy link, metadata variant or client-rendered job shell.
+- Missing, oversized, ambiguous or old-rule evidence produces an unresolved new
+  candidate, not a false pass. Normal long, completely attributed descriptions
+  still pass. Existing saved jobs remain retained and may refresh source facts
+  independently of later search-scope restrictions.
+- Neither full job bodies nor `scopeEvidence` are copied into saved Opportunities.
+  Source fact references remain bounded. No SQL migration, provider activation,
+  permission change, paid service or production-data repair is part of this change.
+  Explicit first-party review/promotion and existing-posting refresh remain user
+  choices, not a second automatic-scope gate.
+
+### Evidence and limits
+
+`tests/discoveryScopeEvidence.test.ts` covers both initial failures, long positive
+requirements, independent ATS role/location facts, missing/oversized bodies,
+identity-only and control-only shells, nested foreign postings, form disclosures,
+ambiguous policy links, current-posting identity, native-ID tracking variants,
+forged/stale/mismatched proof, unchanged saved jobs, the authoritative scope-change
+veto, and the three automatic entry adapters. Existing scope-widening/replay tests
+remain intact with explicit current-scope fixture proof.
+
+The trusted-ingestion dry-run executes the actual source-verifier and domain
+reducer against a synthetic read-only source, asserting zero workspace writes and
+`durableCommit: false`, `readbackVerified: false`. This is useful free preflight
+coverage, not a substitute for A17's real search, real source visits, durable
+commit/readback and later scheduler-triggered run. Those live gates remain open.
+
+Local frozen-candidate verification: 43 focused tests passed across the new scope
+suite and preserved scope-reconsideration suite; independent read-only review also
+replayed 16 separate synthetic probes. The complete unit gate passed 371 files /
+4,829 tests with `--maxWorkers=2`; `tsc -b`, production build and `git diff --check`
+passed. Earlier concurrent full-suite attempts had unrelated timing failures and
+were not counted as passes; no timeout, assertion or skip was weakened to obtain
+the frozen-candidate result. Remote exact-head/main CI and live release evidence
+remain the integrator's separate gates.

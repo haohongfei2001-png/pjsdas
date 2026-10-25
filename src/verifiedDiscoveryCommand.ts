@@ -6,6 +6,7 @@ import type { PJSDASSnapshot } from './snapshot.js'
 import type { IngestionRunSummary } from './model.js'
 import { discoverySearchExecutionSchema } from './discoverySearchEvidence.js'
 import { discoveryScopeBatchSchema } from './discoveryScopeBatch.js'
+import { discoveryScopeEvidenceSchema } from './discoveryScopeEvidence.js'
 
 const timestamp = z.string().datetime({ offset: true })
 const hash = z.string().regex(/^[a-f0-9]{64}$/)
@@ -24,10 +25,12 @@ export const verifiedDiscoveryObservationSchema = z.object({ ...discoveryFactCla
   sourceRecordId: z.string().min(1).max(2500), sourceVerification: z.enum(['verified', 'unverified']),
   sourceVerifiedAt: timestamp.optional(), discoveredAt: timestamp,
   sourceVerificationReason: z.string().max(500).optional(), sourceProof: sourceProof.optional(),
+  scopeEvidence: discoveryScopeEvidenceSchema.optional(),
 }).strict().superRefine((value, context) => {
   validateFactPrecision(value, context)
   if (value.sourceVerification !== 'verified') {
     if (value.sourceProof) context.addIssue({ code: 'custom', message: 'An unresolved observation cannot carry trusted source proof.' })
+    if (value.scopeEvidence) context.addIssue({ code: 'custom', message: 'An unresolved observation cannot carry trusted scope evidence.' })
     return
   }
   const proof = value.sourceProof
@@ -35,6 +38,9 @@ export const verifiedDiscoveryObservationSchema = z.object({ ...discoveryFactCla
     context.addIssue({ code: 'custom', message: 'A verified fact requires the independently generated source proof and timestamp.' }); return
   }
   const sourceUrl = canonicalizeVerifiedJobSourceUrl(value.sourceUrl)
+  if (value.scopeEvidence && value.scopeEvidence.documentSha256 !== proof.documentSha256) {
+    context.addIssue({ code: 'custom', path: ['scopeEvidence'], message: 'Scope evidence must belong to this exact fetched posting document.' })
+  }
   if (![proof.requestedUrl, proof.finalUrl].some(url => canonicalizeVerifiedJobSourceUrl(url) === sourceUrl)) {
     context.addIssue({ code: 'custom', path: ['sourceProof'], message: 'The verified source proof belongs to another requested/final posting URL.' })
   }
@@ -62,6 +68,9 @@ export const verifiedDiscoveryCommandSchema = z.object({
     observations: z.array(verifiedDiscoveryObservationSchema).max(100),
   }).strict(),
 }).strict().superRefine((value,context)=>{
+  if (value.run.observations.some(item => item.scopeEvidence && item.scopeEvidence.scopeFingerprint !== value.scopeFingerprint)) {
+    context.addIssue({ code: 'custom', path: ['scopeFingerprint'], message: 'Scope evidence must belong to the exact profile admitted for this command.' })
+  }
   if(value.run.producer==='server_scheduler'&&!value.run.searchExecutions?.some(item=>item.outcome!=='failed')) {
     context.addIssue({code:'custom',path:['run','searchExecutions'],message:'A scheduled Discovery completion requires successful public-web execution evidence, including empty results.'})
   }

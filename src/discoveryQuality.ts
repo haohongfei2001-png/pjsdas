@@ -1,4 +1,7 @@
 import { compareDeadlines } from './deadlineOrder.js'
+import type { DiscoverySourceProof } from './discoveryFactSchema.js'
+import { compactDiscoveryScopeText as compact, discoveryScopeLiteralPresent as literalRulePresent,
+  currentDiscoveryScopeEvidence, type DiscoveryScopeEvidence } from './discoveryScopeEvidence.js'
 import type { DecisionWeights } from './decisionRules.js'
 import { discoveryProfileForSnapshot, type DiscoveryProfile } from './discoveryProfile.js'
 import {
@@ -45,6 +48,8 @@ export interface DiscoveryCandidateForQuality {
   opportunityValueConfidence?: DiscoveryConfidence
   discoveredAt?: string
   sourceVerification?: 'verified' | 'unverified'
+  sourceProof?: DiscoverySourceProof
+  scopeEvidence?: DiscoveryScopeEvidence
 }
 
 export interface ScreenedDiscoveryCandidate<T extends DiscoveryCandidateForQuality = DiscoveryCandidateForQuality> {
@@ -58,10 +63,6 @@ export interface DiscoveryScreeningResult<T extends DiscoveryCandidateForQuality
   skippedDuplicates: Array<{ company: string; role: string; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
   rejectedCandidates: Array<{ company: string; role: string; reasons: string[]; reasonDetails?: DiscoveryQualityReasonDetail[] }>
   deferredCandidates: Array<{ company: string; role: string; reason: string; reasonDetail?: DiscoveryQualityReasonDetail }>
-}
-
-function compact(value: string) {
-  return value.toLocaleLowerCase().replace(/[\s\u3000·•｜|（）()【】\[\]，,。.!！?？:：;；/\\_-]+/g, '')
 }
 
 export const discoveryRoleSimilarity = jobRoleSimilarity
@@ -112,11 +113,6 @@ function candidateEvidence(candidate: DiscoveryCandidateForQuality) {
   ].filter(Boolean).join(' '))
 }
 
-function literalRulePresent(rule: string, evidence: string) {
-  const token = compact(rule)
-  return token.length >= 2 && evidence.includes(token)
-}
-
 function locationMatches(profile: DiscoveryProfile, location: string) {
   const actual = compact(location)
   return profile.preferredLocations.some((item) => {
@@ -136,12 +132,19 @@ export function evaluateDiscoveryCandidate(
   const hardRejectDetails: DiscoveryQualityReasonDetail[] = []
   const warnings: string[] = []
   const evidence = candidateEvidence(candidate)
+  // A small excerpt is presentation/context, never evidence that an exclusion
+  // is absent from a complete posting. Legacy callers retain their old contract;
+  // independently verified automatic candidates require current bounded proof.
+  const needsScopeProof = Boolean(candidate.sourceProof && (profile.mustHave.length || profile.mustNotHave.length))
+  const scopeProof = currentDiscoveryScopeEvidence(profile, candidate.scopeEvidence, candidate.sourceProof?.documentSha256)
+  const scopeUnresolved = needsScopeProof && !scopeProof
   const reject = (detail: DiscoveryQualityReasonDetail) => {
     hardRejectDetails.push(detail)
     hardRejectReasons.push(presentDiscoveryQualityReason(detail, true))
   }
 
   if (candidate.sourceVerification === 'unverified') reject({ code: 'source_unverified' })
+  if (scopeUnresolved) reject({ code: 'scope_evidence_incomplete' })
 
   if (candidate.postingStatus === 'closed') {
     reject({ code: 'posting_closed' })
@@ -158,14 +161,14 @@ export function evaluateDiscoveryCandidate(
   if (profile.titleIncludes?.length && !profile.titleIncludes.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
   if (profile.titleExcludes?.some(rule => literalRulePresent(rule, title))) reject({ code: 'title_condition_mismatch' })
 
-  for (const exclusion of profile.mustNotHave) {
-    if (literalRulePresent(exclusion, evidence)) {
+  for (const [index, exclusion] of profile.mustNotHave.entries()) {
+    if (needsScopeProof ? scopeProof?.matchedExcluded.includes(index) : literalRulePresent(exclusion, evidence)) {
       reject({ code: 'exclusion_match', params: { rule: exclusion } })
     }
   }
 
-  for (const requirement of profile.mustHave) {
-    if (!literalRulePresent(requirement, evidence)) {
+  for (const [index, requirement] of profile.mustHave.entries()) {
+    if (!scopeUnresolved && (needsScopeProof ? !scopeProof?.matchedRequired.includes(index) : !literalRulePresent(requirement, evidence))) {
       reject({ code: 'required_fact_missing', params: { rule: requirement } })
     }
   }
@@ -184,6 +187,7 @@ export function evaluateDiscoveryCandidate(
 
   return {
     accepted: hardRejectReasons.length === 0,
+    scopeUnresolved,
     hardRejectReasons,
     hardRejectDetails,
     warnings: warnings.slice(0, 10),

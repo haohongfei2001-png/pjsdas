@@ -1,4 +1,5 @@
 import type { DiscoverySourceProof } from './discoveryFactSchema.js'
+import type { DiscoveryScopeEvidence } from './discoveryScopeEvidence.js'
 import { appendOpportunityOnly } from './opportunityCreation.js'
 import { canonicalOpportunityId, resolveCanonicalPostingIdentity } from './opportunityCanonicalization.js'
 import { discoveryProfileForSnapshot } from './discoveryProfile.js'
@@ -61,6 +62,7 @@ export interface MonitorJobObservation {
   sourceVerificationReason?: string
   sourceProof?: DiscoverySourceProof
   sourceEvidenceText?: string
+  scopeEvidence?: DiscoveryScopeEvidence
   deadlinePrecision?: 'date' | 'datetime'
   publishedAt?: string
   publishedPrecision?: 'date' | 'datetime'
@@ -323,7 +325,7 @@ export function applyMonitorIngestion(
           discoveredAt: receivedAt,
         }, undefined, now)
         if (!evaluated.accepted) {
-          outcome = 'filtered'
+          outcome = evaluated.scopeUnresolved ? 'unresolved' : 'filtered'
           reason = evaluated.hardRejectReasons.join('；')
         } else {
           const identity = resolveCanonicalPostingIdentity(next, observation)
