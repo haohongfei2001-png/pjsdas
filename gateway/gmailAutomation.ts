@@ -1,3 +1,4 @@
+import { isStrictEmptyGmailPoll, type TrustedEmptyGmailCheckpoint } from './emptyGmailCheckpoint.js'
 import { parseFragment, serialize, type DefaultTreeAdapterTypes } from 'parse5'
 import type { GmailExecutionObserver } from './gmailExecutionDiagnostics.js'
 import type { GoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
@@ -1612,7 +1613,7 @@ export async function runGmailAutomationForBinding(options: {
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
   now?: () => Date
-  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canFetchNextBatch?: () => boolean }
+  execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canFetchNextBatch?: () => boolean; checkpointEmptyPoll?: TrustedEmptyGmailCheckpoint }
 }): Promise<GmailAutomationRunResult> {
   if (options.binding.gmailIntakeConsentVersion !== 'uu06-v1') return runLegacyGmailAutomationForBinding(options)
   const fetchImpl = options.fetchImpl ?? fetch
@@ -1738,19 +1739,37 @@ export async function runGmailAutomationForBinding(options: {
   if (!result.alreadyApplied) {
     await options.execution?.beforeWorkspaceWrite()
     options.execution?.observer?.phase('workspace_commit')
-    const writable = requireWritableWorkspaceSource(source)
-    const written = await writable.write({
-      snapshot: result.snapshot,
-      expectedWorkspaceVersion: workspace.context.workspaceVersion,
-      updatedByDevice: 'gmail-automation-worker',
-      command: {
-        commandId: `gmail:auto:${checkedAt}`, operation: 'gmail_semantic_intake',
-        payload: { sourceId: GMAIL_SOURCE_ID, recordIds: records.map((record) => record.observation.source.sourceRecordId) },
-        provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'uu06-v1' },
-        compensation: { ...result.compensation }, effectiveTime: checkedAt,
-      },
-    })
-    workspaceVersion = written.context.workspaceVersion
+    const revision = /^txn:(\d+)$/.exec(workspace.context.workspaceVersion ?? '')
+    const candidate = options.execution?.checkpointEmptyPoll
+    const checkpoint = candidate && revision && Number.isSafeInteger(Number(revision[1]))
+      && isStrictEmptyGmailPoll({ transactional: transactionalAuthority, backfillComplete,
+        sourceRecordCount: records.length, binding: options.binding, batch })
+      ? await candidate({ commandId: `gmail:auto:${checkedAt}`, expectedRevision: Number(revision[1]),
+        checkedAt, historyId: batch.nextHistoryId! }) : undefined
+    // Only a definitive NOT_ELIGIBLE may fall back. An uncertain RPC is never
+    // converted into a second mutation under another path.
+    if (checkpoint?.outcome === 'CONFLICT') throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The empty-poll workspace revision changed.', true)
+    if (checkpoint && checkpoint.outcome !== 'NOT_ELIGIBLE') {
+      if (!Number.isSafeInteger(checkpoint.revision) || checkpoint.revision! < Number(revision![1])
+        || checkpoint.outcome === 'COMMITTED' && checkpoint.revision !== Number(revision![1]) + 1) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid empty-poll checkpoint revision.', false)
+      }
+      workspaceVersion = `txn:${checkpoint.revision}`
+    } else {
+      const writable = requireWritableWorkspaceSource(source)
+      const written = await writable.write({
+        snapshot: result.snapshot,
+        expectedWorkspaceVersion: workspace.context.workspaceVersion,
+        updatedByDevice: 'gmail-automation-worker',
+        command: {
+          commandId: `gmail:auto:${checkedAt}`, operation: 'gmail_semantic_intake',
+          payload: { sourceId: GMAIL_SOURCE_ID, recordIds: records.map((record) => record.observation.source.sourceRecordId) },
+          provenance: { sourceId: GMAIL_SOURCE_ID, adapterVersion: 'uu06-v1' },
+          compensation: { ...result.compensation }, effectiveTime: checkedAt,
+        },
+      })
+      workspaceVersion = written.context.workspaceVersion
+    }
   }
 
   options.execution?.observer?.phase('checkpoint')

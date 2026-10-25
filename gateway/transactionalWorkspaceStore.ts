@@ -3,6 +3,7 @@ import { commitFailureClass, emitCommitFailure, type WorkspaceCommitFailureDiagn
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { WorkspaceSourceError, type DiscoveryCommitAuthorization } from './workspaceSource.js'
 import { discoveryScopeBatchSchema, type DiscoveryScopeLedgerRecord } from '../src/discoveryScopeBatch.js'
+import { eligibleEmptyGmailObservation, emptyGmailRun, overlayEmptyGmailRuns, type EmptyGmailCheckpointInput } from './emptyGmailCheckpoint.js'
 
 export type MutationPrincipalKind = 'first_party_web' | 'delegated_mcp' | 'automation'
 
@@ -64,6 +65,10 @@ export interface TransactionalWorkspaceStoreOptions {
   rawJsonCommits?: boolean
   /** Existing log sink; receives only failure metadata, never request/response content. */
   commitFailureSink?: WorkspaceCommitFailureSink
+  /** Default-off candidate. Requires the complete overlay/old-writer migration. */
+  emptyGmailCheckpoints?: boolean
+  /** Must stay enabled until every pending run is drained, even after writers stop. */
+  emptyGmailCheckpointReads?: boolean
 }
 
 function authHeaders(serviceRoleKey: string) {
@@ -81,7 +86,7 @@ function requireServiceRoleKey(value: string) {
 }
 
 function validRevision(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
 function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserveRawData = false, includeStoredSchema = false): ConnectedWorkspaceRecord {
@@ -106,6 +111,9 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
   const fetchImpl = options.fetchImpl ?? fetch
   const metadataOnlyCommits = options.metadataOnlyCommits ?? process.env.PJSDAS_WORKSPACE_COMMIT_METADATA_ONLY === '1'
   const rawJsonCommits = metadataOnlyCommits && (options.rawJsonCommits ?? process.env.PJSDAS_WORKSPACE_COMMIT_RAW_JSON === '1')
+  const emptyGmailCheckpoints = options.emptyGmailCheckpoints ?? process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINTS === '1'
+  const emptyGmailCheckpointReads = options.emptyGmailCheckpointReads ?? process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINT_READS === '1'
+  if (emptyGmailCheckpoints && !emptyGmailCheckpointReads) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Empty-poll writers require deployed overlay readers.', false)
 
   async function request(path: string, init: RequestInit = {}) {
     let response: Response
@@ -137,7 +145,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
 
     async readForUser(userId: string, readOptions?: { preserveRawData?: boolean; includeStoredSchema?: boolean }): Promise<ConnectedWorkspaceRecord | null> {
       const params = new URLSearchParams({
-        select: 'id,user_id,snapshot,revision,schema_version',
+        select: `id,user_id,snapshot,revision,schema_version${emptyGmailCheckpointReads ? ',materialized_revision' : ''}`,
         user_id: `eq.${userId}`,
         limit: '1',
       })
@@ -147,7 +155,78 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
       if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid JSON.', false)
+      if (emptyGmailCheckpointReads && rows[0]) {
+        const row = rows[0], marker = row.materialized_revision
+        if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision)
+          || !validRevision(marker) || marker > row.revision) {
+          throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid materialized workspace revision.', false)
+        }
+        let pending: unknown = []
+        if (marker < row.revision) {
+          const query = new URLSearchParams({
+            select: 'user_id,workspace_id,command_id,operation,principal_kind,status,resulting_revision,gmail_empty_poll_run',
+            user_id: `eq.${userId}`, workspace_id: `eq.${row.id}`, status: 'eq.COMMITTED',
+            gmail_empty_poll_run: 'not.is.null',
+            and: `(resulting_revision.gt.${marker},resulting_revision.lte.${row.revision})`,
+            order: 'resulting_revision.asc', limit: '257',
+          })
+          const audit = await request(`/rest/v1/pjsdas_command_ledger?${query}`, { method: 'GET' })
+          if (!audit.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'Pending empty-poll evidence could not be read.', audit.status >= 500 || audit.status === 429)
+          pending = await audit.json().catch(() => undefined)
+        }
+        row.snapshot = overlayEmptyGmailRuns(row.snapshot as PJSDASSnapshot, pending,
+          { userId, workspaceId: row.id, materializedRevision: marker, revision: row.revision })
+      }
       return rows[0] ? parseWorkspaceRow(rows[0], userId, readOptions?.preserveRawData, readOptions?.includeStoredSchema) : null
+    },
+
+    /** Dedicated bounded candidate, never an alternate arbitrary snapshot writer. */
+    async checkpointEmptyGmailPollForUser(input: EmptyGmailCheckpointInput): Promise<{
+      outcome: 'NOT_ELIGIBLE' | 'COMMITTED' | 'ALREADY_APPLIED' | 'CONFLICT'
+      workspaceId?: string; revision?: number; receipt?: Record<string, unknown>
+    }> {
+      if (!emptyGmailCheckpoints || !eligibleEmptyGmailObservation(input.observation)) return { outcome: 'NOT_ELIGIBLE' }
+      const canonicalRun = emptyGmailRun(input.commandId, input.checkedAt, input.historyId)
+      if (!input.userId || !input.executionToken || !validRevision(input.expectedRevision) || !/^[a-f0-9]{64}$/.test(input.payloadHash)) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Incomplete empty-poll checkpoint.', false)
+      }
+      const response = await request('/rest/v1/rpc/pjsdas_checkpoint_empty_gmail_poll_v1', { method: 'POST',
+        body: JSON.stringify({ target_user_id: input.userId, target_execution_token: input.executionToken,
+          target_command_id: input.commandId, target_payload_hash: input.payloadHash,
+          target_expected_revision: input.expectedRevision, target_checked_at: input.checkedAt,
+          target_history_id: input.historyId, target_observation: input.observation }),
+      })
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({})) as { code?: string }
+        if (failure?.code === '42501') throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The original Gmail execution authority changed.', false)
+        if (failure?.code === '23505') throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Empty-poll command identity was reused.', false)
+        throw new WorkspaceSourceError('WORKSPACE_COMMIT_FAILED', `Empty-poll checkpoint failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
+      }
+      const result: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(result) || result.length !== 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid empty-poll checkpoint response.', false)
+      const row = result[0]
+      if (row?.outcome === 'NOT_ELIGIBLE') return { outcome: 'NOT_ELIGIBLE' }
+      if (!row || !['COMMITTED', 'ALREADY_APPLIED', 'CONFLICT'].includes(row.outcome)
+        || typeof row.workspace_id !== 'string' || !validRevision(row.revision)
+        || row.outcome !== 'CONFLICT' && (!row.receipt || row.receipt.commandId !== input.commandId
+          || row.receipt.status !== 'COMMITTED' || row.receipt.operation !== 'gmail_semantic_intake')) {
+        throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Empty-poll receipt does not match its command.', false)
+      }
+      if (row.outcome !== 'CONFLICT') {
+        const receipt = row.receipt
+        const oneRun = (value: unknown) => Array.isArray(value) && value.length === 1
+          && value[0]?.type === 'timeline' && value[0]?.id === canonicalRun.id
+        if (receipt.receiptId !== `command-receipt:${input.commandId}` || receipt.contractVersion !== 2
+          || receipt.storageContract !== 'gmail-empty-poll-v1' || !validRevision(receipt.revision)
+          || receipt.revision < 1 || receipt.revision > row.revision
+          || row.revision < input.expectedRevision
+          || !oneRun(receipt.affectedObjects) || !oneRun(receipt.undoDependencyObjects)
+          || row.outcome === 'COMMITTED' && (row.revision !== input.expectedRevision + 1 || receipt.revision !== row.revision)) {
+          throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Empty-poll receipt revision or audit identity is invalid.', false)
+        }
+      }
+      return { outcome: row.outcome, workspaceId: row.workspace_id, revision: row.revision,
+        ...(row.receipt ? { receipt: row.receipt } : {}) }
     },
 
     async readCommandForUser(userId: string, commandId: string): Promise<ConnectedCommandRecord | null> {
@@ -377,9 +456,12 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
             httpStatus, errorClass }, options.commitFailureSink)
         } catch { /* Metadata collection must not change commit behavior. */ }
       }
+      // Legacy/guarded SQL may absorb pending audit rows. Only v3/v4 promise
+      // exact submitted-snapshot success; never echo a different pre-merge body.
+      const requireReturnedSnapshot = emptyGmailCheckpointReads && rpcVersion !== 'v3' && rpcVersion !== 'v4'
       let response: Response
       try {
-        response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, { method: 'POST', body: requestBody })
+        response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt${requireReturnedSnapshot ? ',snapshot' : ''}`, { method: 'POST', body: requestBody })
       } catch (error) {
         logFailure(null, 'network_error')
         throw error
@@ -388,6 +470,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         const body = await response.json().catch(() => ({})) as { message?: string; details?: string; code?: string }
         logFailure(response.status, commitFailureClass(body?.code))
         if ((authorization || discovery) && (response.status === 403 || body.code === '42501')) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The admitted authorization changed before commit; this work cannot be retried with a replacement grant.', false)
+        if (body?.code === '40001') throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Read the current logical workspace before retrying this write.', true)
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
@@ -409,7 +492,10 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       let committedSnapshot = row.snapshot
       let committedRevision = row.revision
       if (committedSnapshot == null) {
-        if (row.outcome === 'COMMITTED') committedSnapshot = snapshot
+        if (row.outcome === 'COMMITTED') {
+          if (requireReturnedSnapshot) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'The merged authoritative snapshot is missing.', false)
+          committedSnapshot = snapshot
+        }
         else {
           const latest = await this.readForUser(input.userId, { preserveRawData: Boolean(authorization) || checkpoint })
           if (!latest || latest.workspaceId !== row.workspace_id || latest.revision < row.revision)
@@ -450,7 +536,8 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         }),
       })
       if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { message?: string; details?: string }
+        const body = await response.json().catch(() => ({})) as { message?: string; details?: string; code?: string }
+        if (body?.code === '40001') throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Read the current logical workspace before retrying this write.', true)
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
           duplicateCommand ? 'COMMAND_ID_REUSED' : 'WORKSPACE_COMMIT_FAILED',
