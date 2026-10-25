@@ -96,3 +96,19 @@ remote browser CI must pass before integration; no environment restriction was
 bypassed and no production data was used.
 
 Local non-browser checks: 4,733 tests / 366 suites and production build passed.
+
+## Interrupted confirmed-scope run follow-up (2026-10-25)
+
+If one source had committed before the confirmed scope changed, the remaining
+sources were safely skipped but the worker incorrectly classified the whole run
+as `committed`; telemetry also cleared its error. A scope change detected inside
+the commit boundary additionally discarded the interruption reason.
+
+The worker now retains the skip reason and classifies a partly committed,
+interrupted run as `committed_with_exceptions`. Telemetry preserves the skipped
+count and bounded reason codes. Existing committed results and source accounting
+are preserved; interruption is not mislabelled as a retrieval failure, no retry
+is promised, and only an actually successful source advances `successAt`.
+Normal no-work checks still clear their error. Isolated ledger regressions cover
+both interruption boundaries and verify that old-scope retrieval/commit stops.
+These are offline contract checks, not live A17 or provider-quality evidence.
