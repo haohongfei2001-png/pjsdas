@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer'
+import { commitFailureClass, emitCommitFailure, type WorkspaceCommitFailureDiagnostic, type WorkspaceCommitFailureSink } from './workspaceCommitFailureDiagnostic.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
 import { WorkspaceSourceError, type DiscoveryCommitAuthorization } from './workspaceSource.js'
 import { discoveryScopeBatchSchema, type DiscoveryScopeLedgerRecord } from '../src/discoveryScopeBatch.js'
@@ -60,6 +62,8 @@ export interface TransactionalWorkspaceStoreOptions {
   metadataOnlyCommits?: boolean
   /** Separate default-off raw-body rollout; also requires metadata-only commits. */
   rawJsonCommits?: boolean
+  /** Existing log sink; receives only failure metadata, never request/response content. */
+  commitFailureSink?: WorkspaceCommitFailureSink
 }
 
 function authHeaders(serviceRoleKey: string) {
@@ -341,29 +345,48 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       if ((input.operation === 'private_reminder_management' && authorization?.consentVersion !== 6) || (input.operation === 'discovery_profile_management' && authorization?.consentVersion !== 5) || (input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && ![2, 7].includes(authorization.consentVersion))) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
       if (authorization?.consentVersion !== undefined && ![2, 3, 4, 5, 6, 7].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
       const rpc = capture ? 'pjsdas_commit_ai_capture' : discovery ? 'pjsdas_commit_discovery_workspace_v1' : authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : rawJsonCommits ? 'pjsdas_commit_workspace_v4' : metadataOnlyCommits ? 'pjsdas_commit_workspace_v3' : 'pjsdas_commit_workspace_v2'
-      const response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, {
-        method: 'POST',
-        body: JSON.stringify({
-          target_user_id: input.userId,
-          target_command_id: input.commandId,
-          target_operation: input.operation,
-          target_payload_hash: input.payloadHash,
-          target_expected_revision: input.expectedRevision,
-          target_snapshot: snapshot,
-          target_schema_version: checkpoint ? input.schemaVersion : snapshot.version,
-          target_principal_kind: input.principalKind,
-          target_client_id: input.clientId ?? null,
-          target_provenance: input.provenance ?? {},
-          target_compensation: input.compensation ?? null,
-          target_effective_time: input.effectiveTime ?? null,
-          target_receipt_context: input.receiptContext,
-          ...(capture ? { target_capture_request_id: capture.requestId, target_capture_observation: capture.observation } : {}),
-          ...(authorization ? { target_grant_id: authorization.grantId, target_grant_revision: authorization.grantRevision } : {}),
-          ...(discovery ? { target_discovery_authorization: discovery } : {}),
-        }),
+      const requestBody = JSON.stringify({
+        target_user_id: input.userId,
+        target_command_id: input.commandId,
+        target_operation: input.operation,
+        target_payload_hash: input.payloadHash,
+        target_expected_revision: input.expectedRevision,
+        target_snapshot: snapshot,
+        target_schema_version: checkpoint ? input.schemaVersion : snapshot.version,
+        target_principal_kind: input.principalKind,
+        target_client_id: input.clientId ?? null,
+        target_provenance: input.provenance ?? {},
+        target_compensation: input.compensation ?? null,
+        target_effective_time: input.effectiveTime ?? null,
+        target_receipt_context: input.receiptContext,
+        ...(capture ? { target_capture_request_id: capture.requestId, target_capture_observation: capture.observation } : {}),
+        ...(authorization ? { target_grant_id: authorization.grantId, target_grant_revision: authorization.grantRevision } : {}),
+        ...(discovery ? { target_discovery_authorization: discovery } : {}),
       })
+      const rpcVersion = rpc === 'pjsdas_commit_workspace_v2' ? 'v2' : rpc === 'pjsdas_commit_workspace_v3' ? 'v3' : rpc === 'pjsdas_commit_workspace_v4' ? 'v4' : undefined
+      // End-to-end HTTP attempt time, not a database execution measurement.
+      let started: number | undefined
+      try { started = performance.now() } catch { /* Clock failure must not block a write. */ }
+      const logFailure = (httpStatus: number | null, errorClass: WorkspaceCommitFailureDiagnostic['errorClass']) => {
+        if (!rpcVersion || started === undefined) return
+        try {
+          const elapsed = performance.now() - started
+          emitCommitFailure({ event: 'workspace_commit_failed', rpcVersion,
+            requestBytes: Buffer.byteLength(requestBody, 'utf8'),
+            durationMs: Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : 0,
+            httpStatus, errorClass }, options.commitFailureSink)
+        } catch { /* Metadata collection must not change commit behavior. */ }
+      }
+      let response: Response
+      try {
+        response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt`, { method: 'POST', body: requestBody })
+      } catch (error) {
+        logFailure(null, 'network_error')
+        throw error
+      }
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { message?: string; details?: string; code?: string }
+        logFailure(response.status, commitFailureClass(body?.code))
         if ((authorization || discovery) && (response.status === 403 || body.code === '42501')) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'The admitted authorization changed before commit; this work cannot be retried with a replacement grant.', false)
         const duplicateCommand = response.status === 409 || body.message?.includes('different payload') || body.details?.includes('different payload')
         throw new WorkspaceSourceError(
