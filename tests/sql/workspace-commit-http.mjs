@@ -47,7 +47,7 @@ try {
   await db.query(await migration('20261025084300_commit_workspace_raw_json.sql'))
   await db.query('insert into auth.users values($1)', [owner])
   await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4)', [owner, '{}'])
-  local.searchParams.set('options', '-c work_mem=2184kB') // Only this synthetic PostgREST connection.
+  local.search = '?options=' + encodeURIComponent('-c work_mem=2184kB') // Only this synthetic PostgREST connection.
   // Existing CI roles only. PostgREST authenticates with the synthetic fixture
   // postgres connection, then SET ROLE follows signed JWT or anonymous role.
   dockerAttempted = true
@@ -156,7 +156,10 @@ try {
   }
   console.log('PostgREST HTTP plan summary:', JSON.stringify(measurements))
 } catch (error) {
-  if (started) console.error((await docker('docker', ['logs', '--tail', '50', container], { timeout: 10000 }).catch(() => ({ stdout: '', stderr: '' }))).stderr)
+  if (started) {
+    const logs = await docker('docker', ['logs', '--tail', '200', container], { timeout: 10000 }).catch(() => ({ stdout: '', stderr: '' }))
+    console.error(logs.stdout, logs.stderr)
+  }
   throw error
 } finally {
   if (db) await db.query('rollback').catch(() => {})
