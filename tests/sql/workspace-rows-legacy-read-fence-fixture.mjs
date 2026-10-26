@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 /** Additive RPC contract only, for pre-fence historical Stage-A tests. Those
  * tests intentionally retain old ACL behavior; this does NOT count as a read
- * retirement proof. The separate real-entry test installs the full ACL fence. */
+ * retirement proof. The separate real-entry test installs the full ACL fence.
+ * Pre-row historical schemas lack row_candidate_epoch; any present non-null
+ * epoch still fails closed, with the same service-role and owner checks. */
 export async function installLegacyReadBridgeOnlyFixture(db) {
   await db.query(`create function public.pjsdas_read_legacy_workspace_v1(target_user_id uuid)
   returns setof public.pjsdas_workspaces language plpgsql stable security invoker set search_path=pg_catalog as $$
@@ -15,7 +17,7 @@ export async function installLegacyReadBridgeOnlyFixture(db) {
    if target_user_id is null then raise exception 'owner required' using errcode='22023';end if;
    select * into w from public.pjsdas_workspaces where user_id=target_user_id;
    if not found then return;end if;
-   if w.row_candidate_epoch is not null then raise exception 'active generation requires row reader' using errcode='PT409';end if;
+   if to_jsonb(w)->>'row_candidate_epoch' is not null then raise exception 'active generation requires row reader' using errcode='PT409';end if;
    return next w;
   end$$;
   revoke all on function public.pjsdas_read_legacy_workspace_v1(uuid) from public,anon,authenticated;

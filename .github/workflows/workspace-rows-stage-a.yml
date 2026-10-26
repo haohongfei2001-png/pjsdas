@@ -57,8 +57,30 @@ jobs:
           JS
       - name: Codec and fail-closed adapter tests
         run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts tests/workspaceRowsStoreRouting.test.ts tests/workspaceRowsStoreBridge.test.ts tests/workspaceRowsRuntime.test.ts --maxWorkers=2
-      - name: Real HTTP candidate (no production credentials or deployment)
+      - name: Real HTTP candidate inside isolated PostgreSQL service
         env:
-          TA_ROW_DATABASE_URL: postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres
-          TA_POSTGREST_BIN: /tmp/postgrest
-        run: node --import tsx tests/sql/workspace-rows-stage-a.mjs
+          FIXTURE_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          # Keep the service's isolated network. Its published host port is not
+          # server-side loopback; run the unchanged HTTP/migration suite inside it.
+          work=$(docker exec --user postgres "$FIXTURE_CONTAINER" mktemp -d /tmp/ta-row-ci.XXXXXX)
+          [[ "$work" =~ ^/tmp/ta-row-ci\.[A-Za-z0-9]+$ ]]
+          trap 'docker exec --user postgres "$FIXTURE_CONTAINER" rm -rf -- "$work"' EXIT
+          docker exec --user postgres "$FIXTURE_CONTAINER" mkdir "$work/bin"
+          docker cp "$(readlink -f "$(command -v node)")" "$FIXTURE_CONTAINER:$work/bin/node"
+          docker cp /tmp/postgrest "$FIXTURE_CONTAINER:$work/bin/postgrest"
+          # Tracked test/source allowlist only: no .git, checkout credentials,
+          # ambient environment files, private artifacts, or host volume mounts.
+          git ls-files -z -- gateway src supabase/migrations tests/sql tests/fixtures \
+            package.json package-lock.json tsconfig.json tsconfig.app.json tsconfig.node.json > "$RUNNER_TEMP/ta-row-ci-source-files"
+          tar --null -T "$RUNNER_TEMP/ta-row-ci-source-files" -cf - node_modules tests/sql/node_modules | \
+            docker exec --user postgres -i "$FIXTURE_CONTAINER" tar --no-same-owner -xf - -C "$work"
+          # Fail closed if the existing image cannot execute either binary.
+          docker exec --user postgres "$FIXTURE_CONTAINER" "$work/bin/node" --version
+          docker exec --user postgres "$FIXTURE_CONTAINER" "$work/bin/postgrest" --version
+          docker exec --user postgres --workdir "$work" "$FIXTURE_CONTAINER" \
+            env -i HOME="$work" LANG=C.UTF-8 PATH="$work/bin:/usr/local/bin:/usr/bin:/bin" \
+            TA_ROW_DATABASE_URL=postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres \
+            TA_POSTGREST_BIN="$work/bin/postgrest" \
+            node --import tsx tests/sql/workspace-rows-stage-a.mjs

@@ -8,6 +8,7 @@ import {request as httpRequest} from 'node:http'
 import pg from 'pg'
 import {fixtureUrl,migration} from './discovery-authority-fixture.mjs'
 import {install,seed,checkpointMigration,raw,logical,observation} from './gmail-empty-checkpoint-fixture.mjs'
+import {installLegacyReadBridgeOnlyFixture} from './workspace-rows-legacy-read-fence-fixture.mjs'
 import {createTransactionalWorkspaceStore} from '../../gateway/transactionalWorkspaceStore.ts'
 import {hashMutationPayload} from '../../gateway/mutationKernel.ts'
 const url=fixtureUrl(),docker=promisify(execFile),suffix=randomUUID().replaceAll('-','')
@@ -20,7 +21,7 @@ const post=async(body,role='service_role',extra={})=>{const r=await fetch(origin
 let admin,db,created=false,dockerAttempted=false
 try{
  admin=new pg.Client({connectionString:url.toString(),statement_timeout:30000});await admin.connect();assert.equal(Math.floor(Number((await admin.query('show server_version_num')).rows[0].server_version_num)/10000),17)
- await admin.query(`create database ${database}`);created=true;const local=new URL(url);local.pathname='/'+database;db=new pg.Client({connectionString:local.toString(),statement_timeout:30000});await db.connect();await install(db);await db.query(await migration(checkpointMigration))
+ await admin.query(`create database ${database}`);created=true;const local=new URL(url);local.pathname='/'+database;db=new pg.Client({connectionString:local.toString(),statement_timeout:30000});await db.connect();await install(db);await db.query(await migration(checkpointMigration));await installLegacyReadBridgeOnlyFixture(db)
  local.search='?options='+encodeURIComponent('-c work_mem=2184kB');dockerAttempted=true
  await docker('docker',['run','--detach','--rm','--name',container,'--network','host','-e',`PGRST_DB_URI=${local}`,'-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e',`PGRST_JWT_SECRET=${secret}`,'-e','PGRST_SERVER_HOST=127.0.0.1','-e','PGRST_SERVER_PORT=33018','-e','PGRST_DB_POOL=4','-e','PGRST_DB_TX_END=commit-allow-override','postgrest/postgrest:v14.5'],{timeout:120000,maxBuffer:1024*1024})
  let ready=false;const deadline=Date.now()+30000

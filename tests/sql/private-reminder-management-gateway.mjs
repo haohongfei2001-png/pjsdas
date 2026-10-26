@@ -56,8 +56,12 @@ try {
           return Response.json(result.rows.map(({ snapshot, ...row }) => row))
         } catch (error) { return Response.json({ code: error.code, message: error.message }, { status: error.code === '42501' ? 403 : 500 }) }
       }
+      if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
+        assert.equal(init?.method, 'GET')
+        assert.equal(url.searchParams.get('target_user_id'), owner)
+        return Response.json((await db.query('select * from public.pjsdas_workspaces where user_id=$1', [owner])).rows)
+      }
       assert.equal(url.searchParams.get('user_id'), `eq.${owner}`)
-      if (url.pathname === '/rest/v1/pjsdas_workspaces') return Response.json((await db.query('select * from public.pjsdas_workspaces where user_id=$1', [owner])).rows)
       assert.equal(url.pathname, '/rest/v1/pjsdas_command_ledger')
       const rows = (await db.query("select * from public.pjsdas_command_ledger where user_id=$1 and status='COMMITTED' order by resulting_revision", [owner])).rows
       const command = url.searchParams.get('command_id'), after = url.searchParams.get('resulting_revision')

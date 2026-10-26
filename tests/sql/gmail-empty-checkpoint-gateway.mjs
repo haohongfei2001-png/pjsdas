@@ -15,7 +15,7 @@ export async function proveGateway(db){
  let onBaseRead,queries=[]
  const fetchImpl=async(input,init)=>{const u=new URL(String(input));queries.push(u.pathname+u.search)
   if(u.pathname.endsWith('/pjsdas_checkpoint_empty_gmail_poll_v1')){const p=JSON.parse(init.body);const args=['target_user_id','target_execution_token','target_command_id','target_payload_hash','target_expected_revision','target_checked_at','target_history_id','target_observation'].map(k=>p[k]);args[7]=JSON.stringify(args[7]);const result=await db.query(checkpointQuery,args);return Response.json(result.rows.map(r=>({...r,revision:r.revision===null?null:Number(r.revision)})))}
-  if(u.pathname.endsWith('/pjsdas_workspaces')){const row=await raw(db,w.user);if(onBaseRead)await onBaseRead();return Response.json([{...row,revision:Number(row.revision),materialized_revision:Number(row.materialized_revision)}])}
+  if(u.pathname==='/rest/v1/rpc/pjsdas_read_legacy_workspace_v1'){assert.equal(init?.method,'GET');assert.equal(u.searchParams.get('target_user_id'),w.user);const row=await raw(db,w.user);if(onBaseRead)await onBaseRead();return Response.json([{...row,revision:Number(row.revision),materialized_revision:Number(row.materialized_revision)}])}
   if(u.pathname.endsWith('/pjsdas_command_ledger')){const bounds=/gt\.(\d+),resulting_revision.lte\.(\d+)/.exec(u.searchParams.get('and'));assert.ok(bounds);const rows=(await db.query('select * from pjsdas_command_ledger where user_id=$1 and resulting_revision>$2 and resulting_revision<=$3 and gmail_empty_poll_run is not null order by resulting_revision',[w.user,bounds[1],bounds[2]])).rows;return Response.json(rows.map(r=>({...r,resulting_revision:Number(r.resulting_revision)})))}
   throw Error('Unexpected synthetic endpoint')
  }
