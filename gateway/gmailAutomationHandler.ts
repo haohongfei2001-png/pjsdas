@@ -1,3 +1,4 @@
+import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
 import { automationGoogleRefreshLifecycle } from './googleRefreshLifecycle.js'
 import { runControlledGmailExecutions, runControlledGmailReconciliations } from './gmailControlledExecution.js'
 import { createAutomationConnectionStore } from './automationConnectionStore.js'
@@ -15,6 +16,8 @@ export interface GmailAutomationHandlerConfig {
   now?: () => Date
   executionControlsEnabled?: boolean
   executionBudgetMs?: number
+  /** Server-only candidate injection; constructed with the current budget-bound transport. */
+  rowLayoutFactory?: (fetchImpl: typeof fetch) => Pick<TransactionalWorkspaceStoreOptions, 'rowLayoutReader' | 'rowLayoutWriter'>
 }
 
 function json(status: number, body: unknown) {
@@ -106,6 +109,7 @@ export function createGmailAutomationHandler(config: GmailAutomationHandlerConfi
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,
           fetchImpl: config.fetchImpl,
+          rowLayoutFactory: config.rowLayoutFactory,
           now: config.now,
         })
         await store.updateGmailRunState(binding.userId, {

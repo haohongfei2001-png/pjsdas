@@ -79,7 +79,7 @@ begin
    end if;
   end loop;
  end if;
- return pjsdas_rows_internal.apply_rows(req,jsonb_build_object('managementAuthorization',jsonb_build_object('grantId',active_grant.id,'grantRevision',active_grant.revision,'consentVersion',active_grant.consent_version)));
+ return pjsdas_rows_internal.apply_rows(req||jsonb_build_object('clientId',target_client_id),jsonb_build_object('managementAuthorization',jsonb_build_object('grantId',active_grant.id,'grantRevision',active_grant.revision,'consentVersion',active_grant.consent_version)));
 end$$;
 revoke all on function pjsdas_rows_candidate.commit_private_reminder(jsonb,uuid,bigint,text) from public,anon,authenticated;
 grant execute on function pjsdas_rows_candidate.commit_private_reminder(jsonb,uuid,bigint,text) to service_role;

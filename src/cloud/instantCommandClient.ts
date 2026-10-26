@@ -515,10 +515,12 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
       : { action: 'command', commandId: record.commandId, baseRevision, command: { type: 'domain', value: record.command } })
     if (request.response.status === 409 && request.payload.outcome === 'CONFLICT') return reconcile(record, request.payload, request.lease.assertCurrent)
     if (!request.response.ok) {
+      if (request.payload.code === 'WORKSPACE_RECOVERY_TERMINAL' && request.payload.retryable === false)
+        return reject(record, '这次修改已确认未保存；本机草稿仍保留，请检查冲突后重新操作。', 'conflict')
       if ([401, 403].includes(request.response.status)) {
         const message = request.response.status === 401
           ? '登录已过期；修改保留在本机，重新登录后会先核对原操作。'
-          : '账号访问暂不可用；修改保留在本机，访问恢复后会先核对原操作。'
+          : '当前权限或账号访问不足，暂时无法确认原操作结果；修改保留在本机，权限恢复后先核对回执。'
         settleConnectedInteraction(record.accountKey, record.commandId, 'pending', message)
         emit(record, undefined, message)
         return

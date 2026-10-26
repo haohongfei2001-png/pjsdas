@@ -1,3 +1,4 @@
+import { withWorkspaceRowsRuntime } from './workspaceRowsRuntime.js'
 import { resolvePlanningTimezone } from '../src/timePlanningPreferences.js'
 import { fingerprintWorkspace } from '../src/cloud/workspaceFingerprint.js'
 import { hashMutationPayload } from './mutationKernel.js'
@@ -6,6 +7,7 @@ import {
   createTransactionalWorkspaceStore,
   type MutationPrincipalKind,
   type ConnectedWorkspaceRecord,
+  type TransactionalWorkspaceStoreOptions,
 } from './transactionalWorkspaceStore.js'
 import {
   WorkspaceSourceError,
@@ -13,7 +15,7 @@ import {
   type WorkspaceWriteInput,
 } from './workspaceSource.js'
 
-export interface TransactionalWorkspaceSourceOptions {
+export interface TransactionalWorkspaceSourceOptions extends Pick<TransactionalWorkspaceStoreOptions, 'rowLayoutReader' | 'rowLayoutWriter'> {
   userId: string
   supabaseUrl: string
   serviceRoleKey: string
@@ -36,10 +38,13 @@ function revisionFromWorkspaceVersion(value: string | undefined) {
 }
 
 export function createTransactionalWorkspaceSource(options: TransactionalWorkspaceSourceOptions): WorkspaceSource {
+  options = withWorkspaceRowsRuntime(options)
   const store = createTransactionalWorkspaceStore({
     supabaseUrl: options.supabaseUrl,
     serviceRoleKey: options.serviceRoleKey,
     fetchImpl: options.fetchImpl,
+    rowLayoutReader: options.rowLayoutReader,
+    rowLayoutWriter: options.rowLayoutWriter,
   })
   const now = options.now ?? (() => new Date())
   const timezone = options.timezone?.trim() || 'UTC'
@@ -55,7 +60,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
     },
     async read() {
       readPreimage = undefined
-      const workspace = await store.readForUser(options.userId, { includeStoredSchema: options.reuseReadPreimage })
+      const workspace = await store.readForUser(options.userId, { includeStoredSchema: options.reuseReadPreimage || Boolean(options.rowLayoutReader) })
       if (!workspace) {
         throw new WorkspaceSourceError(
           'WORKSPACE_MIGRATION_REQUIRED',
@@ -65,7 +70,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       }
       // Private one-shot preimage; callers may mutate the returned snapshot.
       // Reuse never survives this source instance or bypasses server CAS.
-      readPreimage = options.reuseReadPreimage ? structuredClone(workspace) : undefined
+      readPreimage = options.reuseReadPreimage || workspace.rowEpoch ? structuredClone(workspace) : undefined
       return {
         snapshot: workspace.snapshot,
         context: {
@@ -87,7 +92,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       else if (observed?.userId === options.userId && observed.revision === expectedRevision) {
         const identity = await store.readIdentityForUser(options.userId)
         if (!identity) workspace = null
-        else if (identity.workspaceId !== observed.workspaceId || identity.revision !== observed.revision || identity.schemaVersion !== observed.storedSchemaVersion) {
+        else if (identity.workspaceId !== observed.workspaceId || identity.rowEpoch !== observed.rowEpoch || identity.revision !== observed.revision || identity.schemaVersion !== observed.storedSchemaVersion) {
           throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The observed workspace identity or revision changed; read it again before writing.', true)
         } else workspace = observed
       } else workspace = await store.readForUser(options.userId)
@@ -108,6 +113,7 @@ export function createTransactionalWorkspaceSource(options: TransactionalWorkspa
       const affectedObjects = diffCommandObjects(workspace.snapshot, input.snapshot)
       const timestamp = now().toISOString()
       const result = await store.commitAuthoritativeForUser({
+        rowPreimage: workspace,
         userId: options.userId,
         commandId: semanticCommand?.commandId ?? `snapshot-write:${writer}:${expectedRevision}:${payloadHash}`,
         operation: semanticCommand?.operation ?? 'SnapshotWrite',

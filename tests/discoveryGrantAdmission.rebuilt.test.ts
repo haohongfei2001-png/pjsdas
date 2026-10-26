@@ -65,7 +65,7 @@ describe('B2 rebuilt admission through authoritative store and ingestion', () =>
     const db = new LedgerHarness(), value = await command(); db.liveAuthorization = clone(DELEGATED)
     await expect(commitVerifiedDiscoveryRun(db.source(DELEGATED), value, { discoveryAuthorization: proof as typeof DELEGATED })).rejects.toMatchObject({ code: 'AUTH_FORBIDDEN' })
     expect(db.attempts).toEqual([]); expect(db.writes).toEqual([]); expect(db.rows.size).toBe(0)
-    expect(db.calls.filter(call => call.url.pathname.includes('/rpc/'))).toEqual([])
+    expect(db.calls.filter(call => call.method === 'POST' && call.url.pathname.includes('/rpc/'))).toEqual([])
   })
 
   it('uses the protected RPC and never falls back after server admission denial', async () => {

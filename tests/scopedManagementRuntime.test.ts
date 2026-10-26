@@ -61,7 +61,7 @@ describe('scoped management admission', () => {
           reads++
           return Response.json(reads === 1 ? [row] : mode === 'revoke' ? [] : [{ ...row, ...(mode === 'revision' ? { revision: 2 } : { id: '00000000-0000-4000-8000-000000000004' }) }])
         }
-        expect(String(input)).toContain('/pjsdas_workspaces?')
+        expect(String(input)).toContain('/rpc/pjsdas_read_legacy_workspace_v1?')
         return Response.json([{ id: 'synthetic-workspace', user_id: owner, revision: 0, schema_version: 4, snapshot }])
       })
       const runtime = createOwnerScopedManagementRuntime({ ...o, consumerEnabled: 'enabled', ...(domain==='business'?{enabled:undefined,audience:{allowed:true,mode:'allowlist',role:'beta'},consumerCohort:{accountIds:owner+',00000000-0000-4000-8000-000000000009',clientId:client}}:{}) })!

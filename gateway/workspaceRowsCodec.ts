@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { isDeepStrictEqual } from 'node:util'
 /** Stage-A lossless JSON-wire codec. Not a rollout or a replacement for domain guards. */
 export const workspaceRowCollections = ['opportunities', 'opportunityAliases', 'processes', 'processEvents', 'scheduleNodes', 'actions', 'prep', 'applicationGroups', 'decisionRequests', 'semanticReceipts', 'reminderIntents', 'reminderOutbox', 'discoveryInbox', 'timeline', 'changeSets'] as const
@@ -53,7 +54,21 @@ export function decodeWorkspaceRows(input: unknown): JsonObject {
 }
 /** Full before/after entity images, not the client UI projection delta. */
 export function diffWorkspaceRows(before: unknown, after: unknown): WorkspaceRowDelta {
+  return diffEncodedWorkspaceRows(encodeWorkspaceRows(before), encodeWorkspaceRows(after))
+}
+/** Candidate resource admission, not a newly approved product quota. */
+export function diffReadableWorkspaceRows(before: unknown, after: unknown): WorkspaceRowDelta {
   const left = encodeWorkspaceRows(before), right = encodeWorkspaceRows(after)
+  check(Buffer.byteLength(JSON.stringify(right.envelope)) <= 1_048_576 && right.rows.length <= 65_024)
+  let bytes = 0
+  for (const row of right.rows) {
+    const size = Buffer.byteLength(JSON.stringify(row))
+    check(size <= 1_048_574); bytes += size + 2
+  }
+  check(bytes <= 33_554_432)
+  return diffEncodedWorkspaceRows(left, right)
+}
+function diffEncodedWorkspaceRows(left: WorkspaceRowEncoding, right: WorkspaceRowEncoding): WorkspaceRowDelta {
   const key = (row: WorkspaceEntityRow) => JSON.stringify([row.collection, row.id])
   const a = new Map(left.rows.map(row => [key(row), row])), b = new Map(right.rows.map(row => [key(row), row]))
   const changes: WorkspaceRowChange[] = []

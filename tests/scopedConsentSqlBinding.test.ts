@@ -49,9 +49,9 @@ describe('immutable consent and deployed SQL bindings', () => {
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       expect(init?.method ?? 'GET').toBe('GET')
       const url = new URL(String(input))
-      expect(url.searchParams.get('user_id')).toBe(`eq.${owner}`)
+      expect(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? url.searchParams.get('target_user_id') : url.searchParams.get('user_id')).toBe(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? owner : `eq.${owner}`)
       if (url.pathname.endsWith('pjsdas_business_management_grants')) return Response.json(revoked ? [] : [planningGrant])
-      expect(url.pathname).toBe('/rest/v1/pjsdas_workspaces')
+      expect(url.pathname).toBe('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1')
       return Response.json([{ id: 'synthetic-workspace', user_id: owner, revision: 0, schema_version: 4, snapshot }])
     })
     const runtime = createOwnerScopedManagementRuntime({ enabled: 'enabled', transactional: true,

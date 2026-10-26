@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'gateway/workspaceRows*.ts'
+      - 'gateway/transactionalWorkspace*.ts'
+      - 'gateway/aiCaptureLedger.ts'
+      - 'gateway/discoveryReadinessReader.ts'
+      - 'gateway/gmailAutomation*.ts'
+      - 'gateway/gmailControlledExecution.ts'
       - 'tests/workspaceRows*.test.ts'
       - 'tests/sql/workspace-rows*.mjs'
       - 'tests/sql/candidates/workspace-rows*.sql'
@@ -51,7 +56,7 @@ jobs:
           await db.end()
           JS
       - name: Codec and fail-closed adapter tests
-        run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts --maxWorkers=2
+        run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts tests/workspaceRowsStoreRouting.test.ts tests/workspaceRowsStoreBridge.test.ts tests/workspaceRowsRuntime.test.ts --maxWorkers=2
       - name: Real HTTP candidate (no production credentials or deployment)
         env:
           TA_ROW_DATABASE_URL: postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres

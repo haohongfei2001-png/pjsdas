@@ -36,7 +36,7 @@ begin
    is distinct from (select coalesce(jsonb_agg(m order by m->>'collection'),'[]'::jsonb) from jsonb_array_elements(h.manifest) m where m->>'collection'<>'timeline') then
    raise exception 'discovery profile cannot alter protected collection presence/count' using errcode='42501';end if;
  end if;
- return pjsdas_rows_internal.apply_rows(req,jsonb_build_object('managementAuthorization',jsonb_build_object('grantId',active_grant.id,'grantRevision',active_grant.revision,'consentVersion',active_grant.consent_version)));
+ return pjsdas_rows_internal.apply_rows(req||jsonb_build_object('clientId',target_client_id),jsonb_build_object('managementAuthorization',jsonb_build_object('grantId',active_grant.id,'grantRevision',active_grant.revision,'consentVersion',active_grant.consent_version)));
 end$$;
 revoke all on function pjsdas_rows_candidate.commit_discovery_profile(jsonb,uuid,bigint,text) from public,anon,authenticated;
 grant execute on function pjsdas_rows_candidate.commit_discovery_profile(jsonb,uuid,bigint,text) to service_role;

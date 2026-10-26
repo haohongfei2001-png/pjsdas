@@ -41,9 +41,9 @@ describe('runtime-to-authoritative SQL adapter',()=>{
     expect(body.target_snapshot.data.actions[0].title).toBe('Synthetic')
     return status===403?Response.json({code:'42501',message:'revoked'},{status}):Response.json([{outcome:'COMMITTED',workspace_id:'fixture-workspace',revision:1,receipt:{}}])
    }
-   expect(url.searchParams.get('user_id')).toBe(`eq.${owner}`)
+   expect(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? url.searchParams.get('target_user_id') : url.searchParams.get('user_id')).toBe(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? owner : `eq.${owner}`)
    if(url.pathname.endsWith('pjsdas_business_management_grants'))return Response.json([grant])
-   if(url.pathname.endsWith('pjsdas_workspaces'))return Response.json([{id:'fixture-workspace',user_id:owner,snapshot,revision:0,schema_version:4}])
+   if(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1'))return Response.json([{id:'fixture-workspace',user_id:owner,snapshot,revision:0,schema_version:4}])
    if(url.pathname.endsWith('pjsdas_command_ledger'))return Response.json([])
    throw new Error('Unexpected fixture request')
   })

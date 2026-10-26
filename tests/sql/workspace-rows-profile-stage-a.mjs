@@ -1,3 +1,4 @@
+import { createLegacyManagementOracle } from './workspace-rows-legacy-oracle.mjs'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
@@ -11,6 +12,7 @@ export async function testProfileRows({ db, source, origin, token, connectionStr
   const initial = createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], timeline: [{ id: 'synthetic-retained-audit', kind: 'change_set_applied', category: 'data', source: 'system', occurredAt: at, recordedAt: at, title: 'Synthetic retained audit' }] }, at)
   await db.query('insert into auth.users(id) values($1)', [userId])
   const workspaceId = (await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4) returning id', [userId, initial])).rows[0].id
+ const oracle=await createLegacyManagementOracle(db,userId,initial)
   const encoded = encodeWorkspaceRows(initial)
   await db.query('insert into pjsdas_rows_candidate.head(id,user_id,envelope,manifest,legacy_snapshot) values($1,$2,$3,$4,$5)', [workspaceId, userId, encoded.envelope, JSON.stringify(encoded.manifest), initial])
   await db.query('insert into pjsdas_rows_candidate.item select $1,$2,x.collection,x.id,x.ordinal,x.value,0 from jsonb_to_recordset($3) as x(collection text,id text,ordinal bigint,value jsonb)', [workspaceId, userId, JSON.stringify(encoded.rows)])
@@ -22,7 +24,7 @@ export async function testProfileRows({ db, source, origin, token, connectionStr
   const command = { commandId: 'synthetic-profile-command', payloadHash: 'c'.repeat(64), compensation: core.compensation, grantId, grantRevision: 1, clientId }
   const legacy = async (snapshot = core.snapshot, overrides = {}) => {
     const values = { userId, commandId: command.commandId, operation: 'discovery_profile_management', payloadHash: command.payloadHash, revision: 0, snapshot, principal: 'delegated_mcp', clientId, grantId, grantRevision: 1, provenance: {}, ...overrides }
-    return (await db.query('select * from public.pjsdas_commit_discovery_profile_workspace_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [values.userId, values.commandId, values.operation, values.payloadHash, values.revision, JSON.stringify(values.snapshot), 4, values.principal, values.clientId, JSON.stringify(values.provenance), JSON.stringify(core.compensation), null, '{}', values.grantId, values.grantRevision])).rows[0]
+    return (await oracle.query('select * from public.pjsdas_commit_discovery_profile_workspace_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [values.userId, values.commandId, values.operation, values.payloadHash, values.revision, JSON.stringify(values.snapshot), 4, values.principal, values.clientId, JSON.stringify(values.provenance), JSON.stringify(core.compensation), null, '{}', values.grantId, values.grantRevision])).rows[0]
   }
   // Actual existing public function is the authorization/protected-data oracle.
   for (const patch of [{ clientId: randomUUID() }, { grantRevision: 99 }, { grantId: wrongGrant }]) {

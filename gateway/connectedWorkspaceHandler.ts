@@ -95,11 +95,15 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Delegated OAuth clients cannot call the first-party connected workspace endpoint.', false)
       }
       const store = createTransactionalWorkspaceStore({
+        signal: request.signal,
+        auditReadAuthorization: { userId: identity.userId, principal: 'first_party_web' },
         supabaseUrl: config.supabaseUrl,
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
       })
       const commands = createAuthoritativeCommandExecutor({
+        signal: request.signal,
+        auditReadAuthorization: { userId: identity.userId, principal: 'first_party_web' },
         supabaseUrl: config.supabaseUrl,
         serviceRoleKey: config.serviceRoleKey,
         fetchImpl,
@@ -260,6 +264,7 @@ export function createConnectedWorkspaceHandler(config: ConnectedWorkspaceHandle
         const affectedObjects = diffCommandObjects(current.snapshot, nextSnapshot)
         const timestamp = new Date().toISOString()
         const result = await store.commitAuthoritativeForUser({
+        rowPreimage: current,
           userId: identity.userId,
           commandId: body.commandId,
           operation: 'SyncLocalSnapshot',

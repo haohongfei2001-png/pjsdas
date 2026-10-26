@@ -22,7 +22,6 @@ export function createOpportunityManagementTools(options: {
   resolveGrant: (principal: MutationPrincipal) => Promise<OpportunityManagementGrant | undefined>
 }) {
   const principal = Object.freeze({ ...options.principal })
-  const store = createTransactionalWorkspaceStore(options.storeOptions)
   async function authorize(admitted?: OpportunityManagementGrant) {
     const grant = await options.resolveGrant(principal)
     assertOpportunityManagementGrant(principal, grant)
@@ -32,6 +31,9 @@ export function createOpportunityManagementTools(options: {
   return { async invoke(name: OpportunityManagementToolName, input: unknown): Promise<CallToolResult> {
     try {
       const admitted = await authorize()
+      const storeOptions = { ...options.storeOptions, auditReadAuthorization: { userId: principal.userId, principal: 'delegated_mcp' as const,
+        family: 'opportunity_v3' as const, grantId: admitted.id, grantRevision: admitted.revision, clientId: principal.clientId! } }
+      const store = createTransactionalWorkspaceStore(storeOptions)
       assertNoScoringInput(input)
       if (name === 'get_opportunity_management') {
         const parsed = getOpportunityManagementSchema.parse(input)
@@ -42,7 +44,7 @@ export function createOpportunityManagementTools(options: {
         await authorize(admitted)
         return result({ authorized: true, consentVersion: 3, capability: 'workspace.opportunity.manage', workspaceVersion: `txn:${current.revision}`, data })
       }
-      const executor = createAuthoritativeCommandExecutor({ ...options.storeOptions, resolveOpportunityManagementGrant: async () => authorize(admitted) })
+      const executor = createAuthoritativeCommandExecutor({ ...storeOptions, resolveOpportunityManagementGrant: async () => authorize(admitted) })
       let executed
       let submittedCommandId: string
       if (name === 'execute_opportunity_management') {

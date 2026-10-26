@@ -105,7 +105,7 @@ describe('first-party connected workspace endpoint', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 5, schema_version: 1 }])
       }
       return json({ error: 'unexpected' }, 500)
@@ -147,7 +147,7 @@ describe('first-party connected workspace endpoint', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: current.version }])
       }
       if (url.includes('/rest/v1/pjsdas_command_ledger?')) return json([])
@@ -207,7 +207,7 @@ describe('first-party connected workspace endpoint', () => {
     expect(response.headers.get('server-timing')).toMatch(/workspace;dur=\d/)
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map(call => String(call[0]))
     expect(calls.filter(url => url.endsWith('/auth/v1/user'))).toHaveLength(1)
-    expect(calls.filter(url => url.includes('/pjsdas_workspaces?'))).toHaveLength(1)
+    expect(calls.filter(url => url.includes('/rpc/pjsdas_read_legacy_workspace_v1?'))).toHaveLength(1)
     expect(calls.find(url => url.includes('/rpc/pjsdas_commit_workspace_v2'))).toContain('select=outcome,workspace_id,revision,receipt')
     expect(body.snapshot).toBeUndefined()
     expect(JSON.stringify(body).length).toBeLessThan(20000)
@@ -273,7 +273,7 @@ describe('first-party connected workspace endpoint', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: authoritative, revision: 9, schema_version: authoritative.version }])
       }
       if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
@@ -383,7 +383,7 @@ describe('first-party connected workspace endpoint', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/v1/user')) return json({ id: 'user-a' })
-      if (url.includes('/pjsdas_workspaces?')) return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: payloadHash ? 1206 : 1204, schema_version: current.version }])
+      if (url.includes('/rpc/pjsdas_read_legacy_workspace_v1?')) return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: payloadHash ? 1206 : 1204, schema_version: current.version }])
       if (url.includes('/pjsdas_command_ledger?')) return json(payloadHash ? [{ command_id: receipt.commandId, operation: 'domain:set_date_capacity', payload_hash: payloadHash, resulting_revision: 1205, receipt }] : [])
       if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
         const body = JSON.parse(String(init?.body)); payloadHash = body.target_payload_hash

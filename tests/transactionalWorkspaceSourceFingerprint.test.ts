@@ -70,8 +70,8 @@ function fixture(checkpoint = false) {
     const url = new URL(String(input))
     expect(url.origin).toBe('https://fixture.invalid')
     paths.push(url.pathname)
-    if (url.pathname === '/rest/v1/pjsdas_workspaces') {
-      expect(url.searchParams.get('user_id')).toBe(`eq.${USER_ID}`)
+    if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
+      expect(url.searchParams.get('target_user_id')).toBe(USER_ID)
       return json([{ id: 'synthetic-workspace', user_id: USER_ID, revision,
         schema_version: current.version, snapshot: current }])
     }

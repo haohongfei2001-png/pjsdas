@@ -1,10 +1,11 @@
+import { withWorkspaceRowsRuntime } from './workspaceRowsRuntime.js'
 import { z } from 'zod/v4'
 import { semanticIntakeSchema } from './semanticIntake.js'
 import type { AiCaptureReview } from './aiCaptureContract.js'
 import type { AiCapturePreviewInput } from './aiCapturePreview.js'
 import { hashMutationPayload } from './mutationKernel.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
-import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
+import { createTransactionalWorkspaceStore, type TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
 
 export const aiCaptureLedgerRowSchema = z.object({
   user_id: z.string().min(1), request_id: z.string().min(1), payload_hash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -30,6 +31,7 @@ export const aiCapturePayloadHash = (input: AiCapturePreviewInput) => hashMutati
  * The SQL policy defaults disabled, requires explicitly provisioned free-only credit,
  * and permanently reserves the worst-case units even on an unknown model result. */
 export function createAiCaptureLedger(options: TransactionalWorkspaceStoreOptions): AiCaptureLedger {
+  options = withWorkspaceRowsRuntime(options)
   if (!options.serviceRoleKey.trim()) throw new WorkspaceSourceError('AI_CAPTURE_NOT_ENABLED', 'Capture ledger credential is unavailable.', false)
   const base = options.supabaseUrl.replace(/\/+$/, '')
   const headers = { authorization: `Bearer ${options.serviceRoleKey}`, apikey: options.serviceRoleKey, 'content-type': 'application/json' }
@@ -52,6 +54,18 @@ export function createAiCaptureLedger(options: TransactionalWorkspaceStoreOption
     },
     async admit(input) {
       if (!Number.isSafeInteger(input.reservationUnits) || input.reservationUnits <= 0) throw new WorkspaceSourceError('AI_CAPTURE_NOT_ENABLED', 'Approved free-only reservation is not configured.', false)
+      if (options.rowLayoutReader) {
+        try {
+          const identity = await createTransactionalWorkspaceStore(options).readIdentityForUser(input.userId)
+          if (identity?.rowEpoch) {
+            if (!options.rowLayoutWriter?.admitCapture || identity.revision !== input.expectedRevision) throw new Error('Row admission unavailable or stale')
+            await options.rowLayoutWriter.admitCapture(input.userId, identity.rowEpoch, input.expectedRevision, {
+              requestId: input.requestId, payloadHash: input.payloadHash, text: input.text, timezone: input.timezone, referenceTime: input.referenceTime, reservationUnits: input.reservationUnits,
+            })
+            return
+          }
+        } catch { throw new WorkspaceSourceError('AI_CAPTURE_ADMISSION_REJECTED', 'Durable row capture admission is rejected or uncertain; do not dispatch to the model.', false) }
+      }
       await request('rpc/pjsdas_admit_ai_capture', { target_user_id: input.userId, target_request_id: input.requestId, target_payload_hash: input.payloadHash,
         target_text: input.text, target_timezone: input.timezone, target_reference_time: input.referenceTime, target_expected_revision: input.expectedRevision, target_reservation_units: input.reservationUnits })
     },

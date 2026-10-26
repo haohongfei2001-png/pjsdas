@@ -112,7 +112,7 @@ it('missing or revoked v7 consent returns only an authorization explanation, wit
  const {parsed,fetchImpl}=await catalog({},200,true,'get_consumer_business_management')
  expect(parsed.result.structuredContent).toMatchObject({authorized:false,consentVersion:7,reason:'EXPLICIT_CONSENT_REQUIRED'})
  expect(fetchImpl.mock.calls).toHaveLength(4)
- expect(fetchImpl.mock.calls.some(([url])=>String(url).includes('/pjsdas_workspaces'))).toBe(false)
+ expect(fetchImpl.mock.calls.some(([url])=>String(url).includes('/rpc/pjsdas_read_legacy_workspace_v1'))).toBe(false)
 })
 it('preserves the existing 25-tool release surface for unmarked owners and other beta users',async()=>{
  for(const role of ['owner','beta'] as const){

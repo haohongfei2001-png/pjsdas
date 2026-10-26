@@ -1,3 +1,4 @@
+import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
 import { isStrictEmptyGmailPoll, type TrustedEmptyGmailCheckpoint } from './emptyGmailCheckpoint.js'
 import { parseFragment, serialize, type DefaultTreeAdapterTypes } from 'parse5'
 import type { GmailExecutionObserver } from './gmailExecutionDiagnostics.js'
@@ -876,6 +877,7 @@ export async function runGmailReconciliationForBinding(options: {
   googleClientSecret: string
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
+  rowLayoutFactory?: (fetchImpl: typeof fetch) => Pick<TransactionalWorkspaceStoreOptions, 'rowLayoutReader' | 'rowLayoutWriter'>
   now?: () => Date
   forceStart?: boolean
   execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canProcessNextMessage?: () => boolean }
@@ -912,6 +914,7 @@ export async function runGmailReconciliationForBinding(options: {
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
         reuseReadPreimage: true,
+        ...options.rowLayoutFactory?.(fetchImpl),
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })
@@ -1616,6 +1619,7 @@ export async function runGmailAutomationForBinding(options: {
   googleClientSecret: string
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
+  rowLayoutFactory?: (fetchImpl: typeof fetch) => Pick<TransactionalWorkspaceStoreOptions, 'rowLayoutReader' | 'rowLayoutWriter'>
   now?: () => Date
   execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void>; canFetchNextBatch?: () => boolean; checkpointEmptyPoll?: TrustedEmptyGmailCheckpoint }
 }): Promise<GmailAutomationRunResult> {
@@ -1644,6 +1648,7 @@ export async function runGmailAutomationForBinding(options: {
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
         reuseReadPreimage: true,
+        ...options.rowLayoutFactory?.(fetchImpl),
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })
@@ -1803,6 +1808,7 @@ async function runLegacyGmailAutomationForBinding(options: {
   googleClientSecret: string
   refreshLifecycle?: GoogleRefreshLifecycle
   fetchImpl?: typeof fetch
+  rowLayoutFactory?: (fetchImpl: typeof fetch) => Pick<TransactionalWorkspaceStoreOptions, 'rowLayoutReader' | 'rowLayoutWriter'>
   now?: () => Date
   execution?: { observer?: GmailExecutionObserver; beforeWorkspaceWrite: () => Promise<void> }
 }): Promise<GmailAutomationRunResult> {
@@ -1830,6 +1836,7 @@ async function runLegacyGmailAutomationForBinding(options: {
         principalKind: 'automation',
         sourceId: GMAIL_SOURCE_ID,
         reuseReadPreimage: true,
+        ...options.rowLayoutFactory?.(fetchImpl),
         timezone: 'Asia/Shanghai',
         fetchImpl,
       })

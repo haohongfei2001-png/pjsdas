@@ -46,8 +46,8 @@ try {
         assert.equal(init?.method ?? 'GET', 'GET')
         const url = new URL(String(input))
         if (url.pathname.endsWith('/pjsdas_command_ledger')) return Response.json([])
-        assert.ok(url.pathname.endsWith('/pjsdas_workspaces'))
-        assert.equal(url.searchParams.get('user_id'), `eq.${owner}`)
+        assert.ok(url.pathname.endsWith('/rpc/pjsdas_read_legacy_workspace_v1'))
+        assert.equal(url.searchParams.get('target_user_id'), owner)
         return Response.json([{
           id: owner, user_id: owner, revision: 1,
           schema_version: snapshot.version, snapshot,
@@ -65,7 +65,7 @@ try {
     fetchImpl: async (input, init) => new Promise((resolve, reject) => {
       const query = new URL(String(input)).searchParams
       assert.equal(query.get('select'), 'user_id,profile:snapshot->data->discoveryProfile')
-      assert.equal(query.get('user_id'), `eq.${owner}`)
+      assert.equal(query.get('target_user_id'), owner)
       assert.ok(init.signal)
       // Cooperate with the production reader's AbortSignal, like native fetch.
       init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true })

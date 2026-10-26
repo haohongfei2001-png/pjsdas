@@ -1,0 +1,42 @@
+/** Default-off capability, not a quota or a production storage policy. A complete
+ * original prepared input must fit the EXISTING bounded RPC after lossless
+ * compression. No partial intent is admitted and no reducer is run on recovery. */
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { gzipSync, gunzipSync } from 'node:zlib'
+import type { ConnectedAuthoritativeCommitInput, ConnectedWorkspaceRecord } from './transactionalWorkspaceStore.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+
+export interface DurablePreparedIntent {
+  protocol: 'workspace-prepared-intent-v1'
+  before: ConnectedWorkspaceRecord
+  input: Omit<ConnectedAuthoritativeCommitInput, 'rowPreimage'>
+  manifestSha256: string
+  deadlineAt: number
+}
+export interface EncodedPreparedIntent { encoding: 'gzip-v1'; base64: string; sha256: string; bytes: number; compressedSha256: string }
+const sha = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
+const fail = () => { throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid durable prepared intent; original outcome must be resolved without re-evaluation.', false) }
+export function encodePreparedIntent(value: DurablePreparedIntent): EncodedPreparedIntent {
+  const raw = Buffer.from(JSON.stringify(value)), compressed = gzipSync(raw)
+  return { encoding: 'gzip-v1', base64: compressed.toString('base64'), sha256: sha(raw), bytes: raw.length, compressedSha256: sha(compressed) }
+}
+export function decodePreparedIntent(encoded: EncodedPreparedIntent, reservedBytes: number): DurablePreparedIntent {
+  if (encoded?.encoding !== 'gzip-v1' || !Number.isSafeInteger(encoded.bytes) || encoded.bytes < 1
+    || !Number.isSafeInteger(reservedBytes) || reservedBytes < encoded.bytes || typeof encoded.base64 !== 'string'
+    || Buffer.byteLength(encoded.base64) > 2_097_152) return fail()
+  const compressed = Buffer.from(encoded.base64, 'base64')
+  if (compressed.toString('base64') !== encoded.base64 || sha(compressed) !== encoded.compressedSha256) return fail()
+  let raw: Buffer
+  try { raw = gunzipSync(compressed, { maxOutputLength: encoded.bytes }) } catch { return fail() }
+  // A canonical single gzip member rejects concatenated streams, trailing data,
+  // alternate headers and ambiguous encodings as well as decompression bombs.
+  if (raw.length !== encoded.bytes || sha(raw) !== encoded.sha256 || !gzipSync(raw).equals(compressed)) return fail()
+  let value: DurablePreparedIntent
+  try { value = JSON.parse(raw.toString('utf8')) } catch { return fail() }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Buffer.from(JSON.stringify(value)).equals(raw)) return fail()
+  if (value.protocol !== 'workspace-prepared-intent-v1' || !Number.isSafeInteger(value.deadlineAt)
+    || !value.before || !value.input || !/^[a-f0-9]{64}$/.test(value.manifestSha256)
+    || Object.hasOwn(value.input, 'rowPreimage')) return fail()
+  return value
+}

@@ -1,3 +1,4 @@
+import { createLegacyManagementOracle } from './workspace-rows-legacy-oracle.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
@@ -11,6 +12,7 @@ export async function testReminderRows({ db, source, origin, token }) {
   const initial = createSnapshot({ opportunities: [], processes: [], processEvents: [], actions: [], prep: [], applicationGroups: [], scheduleNodes: [node], timeline: [] }, at)
   await db.query('insert into auth.users(id) values($1)', [userId])
   const workspaceId = (await db.query('insert into public.pjsdas_workspaces(user_id,snapshot,schema_version) values($1,$2,4) returning id', [userId, initial])).rows[0].id
+ const oracle=await createLegacyManagementOracle(db,userId,initial)
   const seedRows = async snapshot => {
     const encoded = encodeWorkspaceRows(snapshot)
     await db.query('insert into pjsdas_rows_candidate.head(id,user_id,envelope,manifest,legacy_snapshot) values($1,$2,$3,$4,$5) on conflict(id) do update set envelope=excluded.envelope,manifest=excluded.manifest', [workspaceId, userId, encoded.envelope, JSON.stringify(encoded.manifest), snapshot])
@@ -25,7 +27,7 @@ export async function testReminderRows({ db, source, origin, token }) {
   const command = { commandId: 'synthetic-reminder-command', payloadHash: 'f'.repeat(64), compensation: core.compensation, grantId, grantRevision: 1, clientId }
   const legacy = async (snapshot, options = {}) => {
     const v = { commandId: command.commandId, operation: 'private_reminder_management', revision: 0, clientId, grantId, grantRevision: 1, provenance: {}, ...options }
-    return (await db.query('select * from public.pjsdas_commit_private_reminder_workspace_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [userId, v.commandId, v.operation, command.payloadHash, v.revision, JSON.stringify(snapshot), 4, 'delegated_mcp', v.clientId, JSON.stringify(v.provenance), JSON.stringify(core.compensation), null, '{}', v.grantId, v.grantRevision])).rows[0]
+    return (await oracle.query('select * from public.pjsdas_commit_private_reminder_workspace_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [userId, v.commandId, v.operation, command.payloadHash, v.revision, JSON.stringify(snapshot), 4, 'delegated_mcp', v.clientId, JSON.stringify(v.provenance), JSON.stringify(core.compensation), null, '{}', v.grantId, v.grantRevision])).rows[0]
   }
   const raw = async (state, after, options = {}) => {
     const req = { ...diffWorkspaceRows(state.snapshot, after), workspaceId, userId, expectedEpoch: state.epoch, expectedRevision: state.revision, operation: 'private_reminder_management', principal: 'delegated_mcp', commandId: 'synthetic-raw-reminder', payloadHash: 'e'.repeat(64), compensation: {}, ...options }
@@ -62,7 +64,7 @@ export async function testReminderRows({ db, source, origin, token }) {
   const a = external('synthetic-external-a'), b = external('synthetic-external-b'), linked = { ...privateRow, id: 'synthetic-outbox-linked', purpose: 'overdue', dedupeKey: node.id + '@1|overdue', state: 'paused' }
   fixture.data.reminderIntents = [a, privateRow, b, linked]
   fixture.data.reminderOutbox = [{ id: 'synthetic-outbox', reminderIntentId: linked.id, operation: 'upsert', capability: 'chatgpt_tasks', state: 'pending', attemptCount: 0, payloadFingerprint: 'synthetic', createdAt: at, updatedAt: at }]
-  await db.query('update public.pjsdas_workspaces set snapshot=$2 where id=$1', [workspaceId, fixture]); await seedRows(fixture)
+  await db.query('update public.pjsdas_workspaces set snapshot=$2 where id=$1', [workspaceId, fixture]); await oracle.setSnapshot(fixture); await seedRows(fixture)
   const state = await source.read(userId)
   for (const variant of ['external-order', 'external-value', 'linked-value', 'linked-delete']) {
     const after = structuredClone(fixture)

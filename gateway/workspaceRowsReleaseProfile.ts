@@ -1,0 +1,8 @@
+/** R1p forward release: explicit server profiles choose NEW admissions only.
+ * No profile activates any flag or grants a recovery capability. Absence keeps
+ * original flag semantics; all features remain default-off. Every release
+ * supports the same compiled three-mode authenticated recovery registry. */
+export const workspaceRowsReleaseProfiles: Readonly<Record<string, 'fragments-v1' | 'pages-v1'>> = Object.freeze({
+  'compatible-fragments-v1': 'fragments-v1',
+  'compatible-pages-v1': 'pages-v1',
+})

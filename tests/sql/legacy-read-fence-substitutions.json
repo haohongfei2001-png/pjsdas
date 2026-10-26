@@ -1,0 +1,47 @@
+[
+  {
+    "signature": "pjsdas_admit_ai_capture(uuid,text,text,text,text,timestamp with time zone,bigint,bigint)",
+    "old": "select w.* into workspace from public.pjsdas_workspaces w where w.user_id = target_user_id for update",
+    "replacement": "select * into workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_checkpoint_empty_gmail_poll_v1(uuid,uuid,text,text,bigint,text,text,jsonb)",
+    "old": "select * into w from public.pjsdas_workspaces where user_id=target_user_id for update",
+    "replacement": "select * into w from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_consumer_business_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,uuid,bigint)",
+    "old": "select w.* into stored_workspace from public.pjsdas_workspaces w where w.user_id=target_user_id for update",
+    "replacement": "select * into stored_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_discovery_profile_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,uuid,bigint)",
+    "old": "select * into stored_workspace from public.pjsdas_workspaces\n    where user_id = target_user_id for update",
+    "replacement": "select * into stored_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_discovery_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,jsonb)",
+    "old": "select w.* into checkpoint_workspace from public.pjsdas_workspaces w where w.user_id = target_user_id for update",
+    "replacement": "select * into checkpoint_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_opportunity_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,uuid,bigint)",
+    "old": "select * into stored_workspace from public.pjsdas_workspaces where user_id = target_user_id for update",
+    "replacement": "select * into stored_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_planning_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,uuid,bigint)",
+    "old": "select * into stored_workspace from public.pjsdas_workspaces\n    where user_id = target_user_id for update",
+    "replacement": "select * into stored_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_commit_private_reminder_workspace_v1(uuid,text,text,text,bigint,jsonb,integer,text,text,jsonb,jsonb,timestamp with time zone,jsonb,uuid,bigint)",
+    "old": "select * into stored_workspace from public.pjsdas_workspaces\n    where user_id = target_user_id for update",
+    "replacement": "select * into stored_workspace from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  },
+  {
+    "signature": "pjsdas_drain_empty_gmail_runs_v1(uuid,bigint)",
+    "old": "select * into w from public.pjsdas_workspaces where user_id=target_user_id for update",
+    "replacement": "select * into w from pjsdas_rows_internal.lock_legacy_workspace(target_user_id)"
+  }
+]

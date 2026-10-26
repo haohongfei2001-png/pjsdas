@@ -7,3 +7,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local synthetic validation outputs and reconstructed source closures.
+.ta-validation/

@@ -40,7 +40,7 @@ it('rejects an invalid oversized stored profile before paid retrieval, with fail
     fetchImpl: async (input, init) => {
       const path = new URL(String(input)).pathname; calls.push(path)
       if (path.endsWith('pjsdas_claim_enabled_discovery_automation_bindings_v2')) return Response.json([{ user_id: USER, google_subject: 'synthetic-subject', refresh_token_ciphertext: 'unused', discovery_consent_generation: GENERATION }])
-      if (path === '/rest/v1/pjsdas_workspaces' && (init?.method ?? 'GET') === 'GET') return db.fetch(input, init)
+      if (path === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1' && (init?.method ?? 'GET') === 'GET') return db.fetch(input, init)
       if (path.endsWith('/pjsdas_update_google_automation_state')) {
         const patch = JSON.parse(String(init?.body)).state_patch
         expect(patch.success_at).toBeNull(); expect(patch.last_error).toContain('最多 30 项')
@@ -52,7 +52,7 @@ it('rejects an invalid oversized stored profile before paid retrieval, with fail
   const body = await response.json()
   expect(JSON.stringify(body)).toContain('最多 30 项')
   expect(body).toMatchObject({ successfulUsers: 0, failedUsers: 1 })
-  expect(calls).toEqual(['/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings_v2', '/rest/v1/pjsdas_workspaces', '/rest/v1/rpc/pjsdas_update_google_automation_state'])
+  expect(calls).toEqual(['/rest/v1/rpc/pjsdas_claim_enabled_discovery_automation_bindings_v2', '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1', '/rest/v1/rpc/pjsdas_update_google_automation_state'])
   expect(work.search).not.toHaveBeenCalled(); expect(work.reserveSearch).not.toHaveBeenCalled(); expect(work.generateTextImpl).not.toHaveBeenCalled(); expect(work.reserveSpend).not.toHaveBeenCalled()
   expect(db.snapshot).toEqual(before); expect(db.writes).toEqual([])
 })

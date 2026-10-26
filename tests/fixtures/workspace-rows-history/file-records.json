@@ -1,0 +1,4992 @@
+{
+  "01c7fe02bb2b92296e23e75ea1717cbda2cef9f6bc643a16169be5c9e66b8ecb": {
+    "gitBlob": "00901a11acb999ff9623d31cf5b9cfb47bf3e22a",
+    "bytes": 18070,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./semanticTargetMatching.js",
+        "path": "src/semanticTargetMatching.ts"
+      }
+    ]
+  },
+  "0297f557819cf3a45f160a70bf75c5a1dd88830ea1108c69334c01923a6c208b": {
+    "gitBlob": "3e923a34cc6dcfc1671efd225593b0babdb0f574",
+    "bytes": 3533,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./semanticTargetMatching.js",
+        "path": "src/semanticTargetMatching.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      }
+    ]
+  },
+  "04f7473cb3b8dcd2e18bb8ac7a3349c18ffa31bc35a209fa59be9760482ee93f": {
+    "gitBlob": "3af2b5de42a4aadce77a2e140ab23d0ed1c4e748",
+    "bytes": 10162,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./audienceAccess.js",
+        "path": "gateway/audienceAccess.ts"
+      },
+      {
+        "specifier": "./ownerManagementConsentStore.js",
+        "path": "gateway/ownerManagementConsentStore.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "06398eff15b544ef2e07168bafb36f07f6e34ef3e5a0174540440147c792bd23": {
+    "gitBlob": "a3bebcb5a6746240b4e27091c568ce6ea9d27cf4",
+    "bytes": 7425,
+    "storage": "repository",
+    "imports": []
+  },
+  "0681765f65d5311cac177f8c5c55fa8cb2a2797ac07b28b778f7f30d7ebb1041": {
+    "gitBlob": "c34d206722e8e9310057cc590984791ace4716a2",
+    "bytes": 5821,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/privateReminderManagement.js",
+        "path": "src/privateReminderManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementAccess.js",
+        "path": "gateway/privateReminderManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "06d5e65431464af0c144bf69fa645eb6b2b0952c11980c6ca85cc9bf2a66affa": {
+    "gitBlob": "84ba200341bac844e6d561536014a2b4d968c373",
+    "bytes": 1434,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      }
+    ]
+  },
+  "0976bc58ac034f5aec23e78a9d6981d419a363f7f508ffe7bcf3b2f7970f1d30": {
+    "gitBlob": "0d6bfebd7f5ca3ce2b6dcb4f657a54a1572f6a0e",
+    "bytes": 6125,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "../discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "../snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "09ba3557386ee3d89187be00d1919af5fc707f88085a72ffc5941ddc039db285": {
+    "gitBlob": "e83da1e33bb3426f7a9d1ef8d97ed3bc2b59af31",
+    "bytes": 11845,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryScopeSchema.js",
+        "path": "src/discoveryScopeSchema.ts"
+      },
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "0ab2e4522f1329427289134d1ac2a3c9de33d552f8467e0df5ecfa41e9845ca9": {
+    "gitBlob": "3325220ffe1d469eb733416003da526bad31485a",
+    "bytes": 23919,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./discoveryQuality.js",
+        "path": "src/discoveryQuality.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "./ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./sourceRegistry.js",
+        "path": "src/sourceRegistry.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "0c6af322bac2c0eb3fa552d0f952588e50dd61f3562af98240cb30c95e35ae6c": {
+    "gitBlob": "f611d7e342637c2c39cc93a5d5e11f3f8e0c330f",
+    "bytes": 1187,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "0d0be12f703dfe79c27cb7c04de664b2dd64b9631fae5f409bb132d0bb737532": {
+    "gitBlob": "8f7b805e63250015ab395386dbe636a3eb62e54c",
+    "bytes": 14813,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "../src/domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "1096d4144ba4400cb6f1831fcab660805a9270a8c8bf67a4d4c479162a4e76f2": {
+    "gitBlob": "fb5c63d88bdbcb8072bad7dd40b7a3d0e7653c12",
+    "bytes": 443,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./progressUpdateV4.js",
+        "path": "src/progressUpdateV4.ts"
+      },
+      {
+        "specifier": "./progressInputPolicy.js",
+        "path": "src/progressInputPolicy.ts"
+      },
+      {
+        "specifier": "./progressInputPolicy.js",
+        "path": "src/progressInputPolicy.ts"
+      }
+    ]
+  },
+  "1151bffa0de534c0fdabd5e6287144c9b096d55e730415c0da0e02d4355cedc3": {
+    "gitBlob": "2d363b4ad9fa3af2849cbf158162350ef06d2d57",
+    "bytes": 24784,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./discoveryScopeEvidence.js",
+        "path": "src/discoveryScopeEvidence.ts"
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./discoveryQuality.js",
+        "path": "src/discoveryQuality.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "124d65f15a47e2a7de8e874be84ae18501468ef20fbd162b3555ec2f9db083bc": {
+    "gitBlob": "0590c38c5feeb0a4b6037a6719503f9b4f202ad8",
+    "bytes": 3073,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./progressUpdateV3.js",
+        "path": "src/progressUpdateV3.ts"
+      },
+      {
+        "specifier": "./notificationParser.js",
+        "path": "src/notificationParser.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./progressUpdateV3.js",
+        "path": "src/progressUpdateV3.ts"
+      },
+      {
+        "specifier": "./progressUpdateV3.js",
+        "path": "src/progressUpdateV3.ts"
+      }
+    ]
+  },
+  "130ce2f93b4fdec196dbcc5b12bdb18733dae1055545006a600651c2da1b2dad": {
+    "gitBlob": "2f06cf31733bdef05b59424662802b13dd378697",
+    "bytes": 5946,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "131e79fd0bbed4b4ad9d6ec3aa06144645866bac9008abe9fb72446f96ba8bc8": {
+    "gitBlob": "d46338e2280cdd678b63fded0af6e689c6bde7d8",
+    "bytes": 3047,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "167d0853f865cb63866952a7933691b987dfcc88ba13d08213e3b659e2da5a63": {
+    "gitBlob": "40ef0caed9ad7910c286ff9ec52635504e5b66e7",
+    "bytes": 2556,
+    "storage": "repository",
+    "imports": []
+  },
+  "18ec94c51f4c98ce10b1d292a3594b4a175d089a4d7dc8e94881731d5a954983": {
+    "gitBlob": "b89b31286d75dc2797213cb5ba82cd09029e264d",
+    "bytes": 2832,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "../src/changeSet.js",
+        "path": "src/changeSet.ts"
+      }
+    ]
+  },
+  "1921b79cb75f665f9040bf0fe8288508309d2594655d79367ec282ee30d7f08c": {
+    "gitBlob": "11897d908e353c9949baa1318c91e538a0f946c8",
+    "bytes": 20099,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "../scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "../deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "../fixedEventGuardLogic.js",
+        "path": "src/fixedEventGuardLogic.ts"
+      },
+      {
+        "specifier": "../model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "./localDayCapacity.js",
+        "path": "src/today/localDayCapacity.ts"
+      },
+      {
+        "specifier": "../timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "../todayBrief.js",
+        "path": "src/todayBrief.ts"
+      }
+    ]
+  },
+  "1c06a2af60ff70907611946915ac48dbda8302afe4eec4b9880e318a044d21e7": {
+    "gitBlob": "ca872ef99517801b020aa7852530efbcdb654f83",
+    "bytes": 795,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryScopeSchema.js",
+        "path": "src/discoveryScopeSchema.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "1c6d420b506adef62be24be616915a4a3437a64554833414702e1d6fe9baf9a5": {
+    "gitBlob": "0a52792035add35a22bc8cc7209b20322e89a692",
+    "bytes": 864,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      }
+    ]
+  },
+  "1c8f8d5ca47c185952ebe3be109702f63949334efb552fb3e82cfc38dbc007fa": {
+    "gitBlob": "04413be439c055e6ed448d8fd9d21f4597b0f1ef",
+    "bytes": 3580,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "./postingRefresh.js",
+        "path": "src/postingRefresh.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "1cff049d3ae37e5cc44a25f27c837a74e350b106a9665489ce5ed11f398ff94f": {
+    "gitBlob": "c43d9248d2ad1af25f3871cb29d430c90c097ded",
+    "bytes": 2135,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./consumerBusinessManagementTools.js",
+        "path": "gateway/consumerBusinessManagementTools.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "../src/timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "1fcbc634014ae229c5ac792cea195bdb5c226d4f71260ea44d9b72ec718a1b5b": {
+    "gitBlob": "e5a6319ff9c622c1108dfa99ed078c8fe025cdd6",
+    "bytes": 4611,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "20f61b867ac14a7f9a658b82cf792f00d73f59756690b9659a2dc9adaf6e151a": {
+    "gitBlob": "779cef44d75db3db91e4bddd42300eb593c083f3",
+    "bytes": 11385,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./opportunityAssessment.js",
+        "path": "src/opportunityAssessment.ts"
+      },
+      {
+        "specifier": "./richOpportunity.js",
+        "path": "src/richOpportunity.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "21c696bdfdf2c4f345ddcf6fc6cf79e36f0fca58259626d7093428bab46b2aea": {
+    "gitBlob": "570cd3d49fbdd51d45880bbfe2e65f7967540dd9",
+    "bytes": 5174,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "236e0c4479a5c9e811482b481d5b003233e4343c8bb7db6cbd66db2e2549883c": {
+    "gitBlob": "676bc28bf3f9007f786156b29148a2383b30766b",
+    "bytes": 1425,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "258f9a1d9d73e2a771e63d5eb7e650d1e5bbf6e5b311f02c9fcd8fed2a8fd058": {
+    "gitBlob": "e9fb85598b9ccd6191ff6ccb130429b9521e02d1",
+    "bytes": 5151,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./verifiedOpportunityCommand.js",
+        "path": "src/verifiedOpportunityCommand.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "25f359acffe2a022670e438e1fc8eb2ba03431defcc9318b3e6a1a15b9887277": {
+    "gitBlob": "e2251bb126ce90ebf3e3de1c4c8359c9bb6c0758",
+    "bytes": 39420,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./opportunityAssessment.js",
+        "path": "src/opportunityAssessment.ts"
+      },
+      {
+        "specifier": "./richOpportunity.js",
+        "path": "src/richOpportunity.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./reminders.js",
+        "path": "src/reminders.ts"
+      },
+      {
+        "specifier": "./timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      }
+    ]
+  },
+  "283563e25f1864e5efbd9ab6798e7bdb1a60f29677339a2a270d5b118cfdcf26": {
+    "gitBlob": "83c68c5d1f67fa2d2e6f132b25cdcd82a79b8f31",
+    "bytes": 1436,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      }
+    ]
+  },
+  "2a9b227003961803929f6e97a1837ab3c2c747150a151ccf88cf753da65edf78": {
+    "gitBlob": "64471bad503ee1dc3398062d254a13bc91f9c46a",
+    "bytes": 3298,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./mcpActionStatusCommand.js",
+        "path": "src/mcpActionStatusCommand.ts"
+      },
+      {
+        "specifier": "./mcpProgressCommand.js",
+        "path": "src/mcpProgressCommand.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      }
+    ]
+  },
+  "2b2351ba2854ce2229ac6677668bdabde8a1289b0f6088159ed347d90382d4f8": {
+    "gitBlob": "0b4a009df735eca0477de5bc83ec37e752302b42",
+    "bytes": 4739,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      }
+    ]
+  },
+  "2f10bfb11a9bd6430d2201a61f8a2324b396845c024c17cc86de7a37d482d59b": {
+    "gitBlob": "cfe14545ac98dc717bf74e9fd8e16c31e58def45",
+    "bytes": 3958,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "3005a5bf32190c0b4e526de27845b14fb89d4ae5ce23d0d036a3ceefec457c3a": {
+    "gitBlob": "21ac65d451d4368c426d8f5674f84be073278ceb",
+    "bytes": 12706,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./progressUpdate.js",
+        "path": "src/progressUpdate.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "3088870657e0563ff6489fc625e79d4e1552dfc9961aa64ee09db827504ef740": {
+    "gitBlob": "f5446c7ebfdac4242596e8c28b5fd180a26c542b",
+    "bytes": 9519,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./progressUpdate.js",
+        "path": "src/progressUpdate.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "32c4d04c656f8cb8fdb3ed345b3448a850b256a2df1bf7ca55bffce4641274a1": {
+    "gitBlob": "b7f5fe525ba7151d11a29be96f495747089f30ec",
+    "bytes": 1484,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "33f97c492a46b1c0effd1b2f6be60820f4d2be1af2efa1ca19256800cc4a2b74": {
+    "gitBlob": "d199ec5fc0914a9f0e1a57ca8a07b024e1877733",
+    "bytes": 82127,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./verifiedPostingRefreshCommand.js",
+        "path": "src/verifiedPostingRefreshCommand.ts"
+      },
+      {
+        "specifier": "./verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "./scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "./verifiedOpportunityCommand.js",
+        "path": "src/verifiedOpportunityCommand.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./deadlineCorrection.js",
+        "path": "src/deadlineCorrection.ts"
+      },
+      {
+        "specifier": "./processFactCorrection.js",
+        "path": "src/processFactCorrection.ts"
+      },
+      {
+        "specifier": "./actionStatusUndo.js",
+        "path": "src/actionStatusUndo.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./scheduleOccurrenceEvidence.js",
+        "path": "src/scheduleOccurrenceEvidence.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "./reminders.js",
+        "path": "src/reminders.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      }
+    ]
+  },
+  "349d6cbb9fb0aa67ccb62eab143a7713f861fb94921abf34e2ff3f07f1e3b6e2": {
+    "gitBlob": "e5327f8e839ad86fd59b290b3d4254ad627a773c",
+    "bytes": 82089,
+    "storage": "repository"
+  },
+  "3808719d1e853a640cddafa62252eba25a3b647b86c895f78289e3bfce2a81f7": {
+    "gitBlob": "bb768ed73188450e82372ca8c488246af2a54815",
+    "bytes": 10421,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "./autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "382861bd586565f7984bd4b2a70bb79d46334411e88b90ffcce19e363103490a": {
+    "gitBlob": "40e891dd4d1d771113910f6bb16f6d06f5efd796",
+    "bytes": 439,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      }
+    ]
+  },
+  "3975f097df394fd31c67377bc014c9960c6aef0c68312eafed46e07d54fd2aad": {
+    "gitBlob": "7e706da3018203a3e601a1c5b0b87f2da7991803",
+    "bytes": 2292,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      }
+    ]
+  },
+  "3b12a76a75f91529ca0486912120f54622df7be8476465aa14693e7c2f9803ad": {
+    "gitBlob": "801e5475db8f0b296f39e60fa91a68591db0c1ef",
+    "bytes": 7461,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./aiCaptureContract.js",
+        "path": "gateway/aiCaptureContract.ts"
+      },
+      {
+        "specifier": "./semanticIntake.js",
+        "path": "gateway/semanticIntake.ts"
+      },
+      {
+        "specifier": "../src/webSemanticInterpretation.js",
+        "path": "src/webSemanticInterpretation.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "ai",
+        "external": true
+      }
+    ]
+  },
+  "3b404bb13eaddb9cb580ce304ab3822de0298fc4dc20351f8b4645c2c697c7cc": {
+    "gitBlob": "b47dc27725827f1284ca695c02aa5ab0b7e4ca37",
+    "bytes": 3929,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      }
+    ]
+  },
+  "3dc28b63563e20fab0d9f652f3039ed50e6c46bbdec66631a14822e8309b230d": {
+    "gitBlob": "24b3d433199d50f042ea48ccfd3dece3f488545d",
+    "bytes": 231,
+    "storage": "repository"
+  },
+  "3e306141f38a5b5511280fb25c8883ff9dcd2c89d57b43668952ed767c7f3fc4": {
+    "gitBlob": "d81a1640ac90bafa82227bd8e88d7a9e1d3ec811",
+    "bytes": 6345,
+    "storage": "repository",
+    "imports": []
+  },
+  "3f3f1c2cdf5324fcd8d968b5ede60f8e942cd5743b81b557aa78ad92353afc3b": {
+    "gitBlob": "e95104e78e3a91615b423ea8ebe490a7d194779a",
+    "bytes": 235,
+    "storage": "repository",
+    "imports": []
+  },
+  "4183dab5a95c81d6313a6b302216eb5d15fbdc027f18c1db9ff551bdb7dde64e": {
+    "gitBlob": "80a001d9b4a2176276394a72322dbbc72a9c8d19",
+    "bytes": 4039,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      }
+    ]
+  },
+  "41b6a7022a4c71cfcbf0eaf852bd3aefe7a0d5909908a5b3aca14aa817c576ec": {
+    "gitBlob": "af7e41a0a2eafc4235c4a50b57936e31b076c1de",
+    "bytes": 51298,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./workspaceRowsRuntime.js",
+        "path": "gateway/workspaceRowsRuntime.ts"
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceRowsCandidate.js",
+        "path": "gateway/workspaceRowsCandidate.ts"
+      },
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceCommitFailureDiagnostic.js",
+        "path": "gateway/workspaceCommitFailureDiagnostic.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeBatch.js",
+        "path": "src/discoveryScopeBatch.ts"
+      },
+      {
+        "specifier": "./emptyGmailCheckpoint.js",
+        "path": "gateway/emptyGmailCheckpoint.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "4202c84e24c01f807fd37f9d3083f96228fc7829a5e65f48b9f2835930aafa55": {
+    "gitBlob": "98bcb0db9774c73fee387aa6bd76b9d48074e55b",
+    "bytes": 11125,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "431ded3f265314146ee0de2fa917f10cc6814ef270b1ff3711940bba117989b4": {
+    "gitBlob": "83673a83f695b9e9cfff5d3301ad4835fad33cfa",
+    "bytes": 5442,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/planningManagement.js",
+        "path": "src/planningManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./planningManagementAccess.js",
+        "path": "gateway/planningManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "440906df98b970cf7684f6a7a8b71faca0939bec5365b24d5449d9bc5340a3f4": {
+    "gitBlob": "58be4d528c55b1d1cd9c46f27d159a0efd443115",
+    "bytes": 15539,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "./consumerWorkspaceBootstrap.js",
+        "path": "gateway/consumerWorkspaceBootstrap.ts"
+      },
+      {
+        "specifier": "../src/cloud/workspaceFingerprint.js",
+        "path": "src/cloud/workspaceFingerprint.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./commandObjects.js",
+        "path": "gateway/commandObjects.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      }
+    ]
+  },
+  "44f453946b14363c867140d44a9ce666f2351ff0653ede0f0e7f5083368971e8": {
+    "gitBlob": "7cb33da414a427e5beb570eb5535ad6d185519b3",
+    "bytes": 13900,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      }
+    ]
+  },
+  "45be7413a47ba4d3f4378f6d1fb5d1e45cff649859acbf8f546229e907158355": {
+    "gitBlob": "361f123e47d79e8fca9973ec9adfdc3aa58f16b6",
+    "bytes": 21253,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "467dd922ce10584c9e415966e5dc435ad0a7ce61f618fdcac40d1b4ceb87c3e8": {
+    "gitBlob": "a364002b3c6b20b53a65608ace2837ffe53f7b89",
+    "bytes": 24467,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "../src/preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "../src/sourceCalendar.js",
+        "path": "src/sourceCalendar.ts"
+      },
+      {
+        "specifier": "../src/opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "../src/userJobFactsSchema.js",
+        "path": "src/userJobFactsSchema.ts"
+      },
+      {
+        "specifier": "./semanticIntake.js",
+        "path": "gateway/semanticIntake.ts"
+      },
+      {
+        "specifier": "../src/webSemanticInterpretation.js",
+        "path": "src/webSemanticInterpretation.ts"
+      },
+      {
+        "specifier": "../src/boundInterviewReschedule.js",
+        "path": "src/boundInterviewReschedule.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      },
+      {
+        "specifier": "./aiCaptureTemporalGrounding.js",
+        "path": "gateway/aiCaptureTemporalGrounding.ts"
+      }
+    ]
+  },
+  "46ae147f7e50bd20d98529f385e3cd5a990341e29abc445a51a020a441a4f556": {
+    "gitBlob": "9710338ecaf1602a88523c7130d034fc95485c74",
+    "bytes": 5919,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStoreBridge.js",
+        "path": "gateway/workspaceRowsStoreBridge.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStagedBridge.js",
+        "path": "gateway/workspaceRowsStagedBridge.ts"
+      },
+      {
+        "specifier": "./workspaceRowsReleaseProfile.js",
+        "path": "gateway/workspaceRowsReleaseProfile.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "4a896ec1a9b2f737949aacc55365818cae5c6469bac751edc14d4ef5d99c9225": {
+    "gitBlob": "4327937ef41e87972caaa545c9481e20e05d7c0d",
+    "bytes": 3019,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./actionStatusUndo.js",
+        "path": "src/actionStatusUndo.ts"
+      },
+      {
+        "specifier": "./domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      }
+    ]
+  },
+  "4bcc7a44ac3f40ccdababcf3d2d1e9838ef333d13fae8c981702a8830e56f1f3": {
+    "gitBlob": "5e19b5f8bf5534ae2e10d1575e039e703e7f6554",
+    "bytes": 20732,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./progressUpdateV2.js",
+        "path": "src/progressUpdateV2.ts"
+      },
+      {
+        "specifier": "./notificationParser.js",
+        "path": "src/notificationParser.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "4c5e6df1a701700a051cd19195e3ea1ca5b3570db66ac3213d7659400f28c1f1": {
+    "gitBlob": "aa9880ea647b5ba2cbc2cabf6f321994a12ee6ab",
+    "bytes": 10981,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "../src/userJobFactsSchema.js",
+        "path": "src/userJobFactsSchema.ts"
+      },
+      {
+        "specifier": "./latestStartTemporal.js",
+        "path": "gateway/latestStartTemporal.ts"
+      },
+      {
+        "specifier": "../src/legacyProcessCorrection.js",
+        "path": "src/legacyProcessCorrection.ts"
+      },
+      {
+        "specifier": "../src/decisionDismissal.js",
+        "path": "src/decisionDismissal.ts"
+      },
+      {
+        "specifier": "../src/opportunityMerge.js",
+        "path": "src/opportunityMerge.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "4cd902d17d4e498e1c16333d53686910d95649ead31fcabbdfdce35b3a44b086": {
+    "gitBlob": "f83186a7bf4af6acfcfde2a02aebda094e473868",
+    "bytes": 16526,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/userJobFactsSchema.js",
+        "path": "src/userJobFactsSchema.ts"
+      },
+      {
+        "specifier": "./latestStartTemporal.js",
+        "path": "gateway/latestStartTemporal.ts"
+      },
+      {
+        "specifier": "../src/decisionDismissal.js",
+        "path": "src/decisionDismissal.ts"
+      },
+      {
+        "specifier": "../src/opportunityMerge.js",
+        "path": "src/opportunityMerge.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/semanticIntake.js",
+        "path": "src/semanticIntake.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "4cf81ca3f774f89e59e2214796ff14325131b3df5631dd840c438bcc4fdc5684": {
+    "gitBlob": "29803534cd403d14fa8e29ea2e3db2083f69a58a",
+    "bytes": 6427,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:fs/promises",
+        "external": true
+      },
+      {
+        "specifier": "node:path",
+        "external": true
+      },
+      {
+        "specifier": "node:url",
+        "external": true
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/ai/readLayer.js",
+        "path": "src/ai/readLayer.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeBatch.js",
+        "path": "src/discoveryScopeBatch.ts"
+      }
+    ]
+  },
+  "4f8455c88f99309d870c5b9aba18750887eb058add0b30624e1bdcbbca2c2d79": {
+    "gitBlob": "c171fb0b5ddf3c667aa1575aebc73e85fb708e67",
+    "bytes": 5616,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "./sourceCalendar.js",
+        "path": "src/sourceCalendar.ts"
+      },
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      }
+    ]
+  },
+  "51b3842961d70b21fd206f298af5a5552c04621ae3838e197f86b1e729bc1c99": {
+    "gitBlob": "731bb4249d0d16cd1d8ae03f9cd690f36b791367",
+    "bytes": 4705,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "5327fa6574353a7ee2069179d7250bcb31a72cd51177bfb34927f26a9c8ceb42": {
+    "gitBlob": "787988673489020c636ef2e05ab59301dcb7824f",
+    "bytes": 68821,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./aiCaptureLedger.js",
+        "path": "gateway/aiCaptureLedger.ts"
+      },
+      {
+        "specifier": "../src/jobReadState.js",
+        "path": "src/jobReadState.ts"
+      },
+      {
+        "specifier": "../src/verifiedOpportunityCommand.js",
+        "path": "src/verifiedOpportunityCommand.ts"
+      },
+      {
+        "specifier": "../src/postingRefresh.js",
+        "path": "src/postingRefresh.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeSchema.js",
+        "path": "src/discoveryScopeSchema.ts"
+      },
+      {
+        "specifier": "./discoverySourceVerifier.js",
+        "path": "gateway/discoverySourceVerifier.ts"
+      },
+      {
+        "specifier": "../src/autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "../src/discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/privateReminderManagement.js",
+        "path": "src/privateReminderManagement.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementAccess.js",
+        "path": "gateway/privateReminderManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfileManagement.js",
+        "path": "src/discoveryProfileManagement.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementAccess.js",
+        "path": "gateway/discoveryProfileManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/planningManagement.js",
+        "path": "src/planningManagement.ts"
+      },
+      {
+        "specifier": "./planningManagementAccess.js",
+        "path": "gateway/planningManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/businessManagement.js",
+        "path": "src/businessManagement.ts"
+      },
+      {
+        "specifier": "./businessManagementAccess.js",
+        "path": "gateway/businessManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/workspaceDelta.js",
+        "path": "src/workspaceDelta.ts"
+      },
+      {
+        "specifier": "../src/instantCommandKinds.js",
+        "path": "src/instantCommandKinds.ts"
+      },
+      {
+        "specifier": "../src/actionStatusUndo.js",
+        "path": "src/actionStatusUndo.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "../src/semanticIntake.js",
+        "path": "src/semanticIntake.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/discoveryStatusCommand.js",
+        "path": "src/discoveryStatusCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfileCommand.js",
+        "path": "src/discoveryProfileCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryPromotionCommand.js",
+        "path": "src/discoveryPromotionCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpInboxCommand.js",
+        "path": "src/mcpInboxCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpDiscoveryApplyCommand.js",
+        "path": "src/mcpDiscoveryApplyCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpActionStatusCommand.js",
+        "path": "src/mcpActionStatusCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpRulesCommand.js",
+        "path": "src/mcpRulesCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpSourceRefreshCommand.js",
+        "path": "src/mcpSourceRefreshCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpDiscardCommand.js",
+        "path": "src/mcpDiscardCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpProgressCommand.js",
+        "path": "src/mcpProgressCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpMixedCommand.js",
+        "path": "src/mcpMixedCommand.ts"
+      },
+      {
+        "specifier": "../src/processEventDeleteCommand.js",
+        "path": "src/processEventDeleteCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "../src/ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "../src/cloud/workspaceFingerprint.js",
+        "path": "src/cloud/workspaceFingerprint.ts"
+      },
+      {
+        "specifier": "./proposalToken.js",
+        "path": "gateway/proposalToken.ts"
+      },
+      {
+        "specifier": "../src/discoveryQuality.js",
+        "path": "src/discoveryQuality.ts"
+      },
+      {
+        "specifier": "./userCommands.js",
+        "path": "gateway/userCommands.ts"
+      },
+      {
+        "specifier": "./semanticIntake.js",
+        "path": "gateway/semanticIntake.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./commandObjects.js",
+        "path": "gateway/commandObjects.ts"
+      }
+    ]
+  },
+  "53c3ed82c6f3fb48e2485494ff70c0adc98274e8be7666b29d6d4ef919100564": {
+    "gitBlob": "5b039cdda095f766620c7dab812c5c88a51feaf9",
+    "bytes": 789,
+    "storage": "repository",
+    "imports": []
+  },
+  "53e08354d5031b9f091020008f5b060b8172c5b89f55adcd404d246a8b48ed51": {
+    "gitBlob": "8d99df3bdaa508ce840449231af3c50d36f5c3e2",
+    "bytes": 52710,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./workspaceRowsRuntime.js",
+        "path": "gateway/workspaceRowsRuntime.ts"
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceRowsCandidate.js",
+        "path": "gateway/workspaceRowsCandidate.ts"
+      },
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceCommitFailureDiagnostic.js",
+        "path": "gateway/workspaceCommitFailureDiagnostic.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeBatch.js",
+        "path": "src/discoveryScopeBatch.ts"
+      },
+      {
+        "specifier": "./emptyGmailCheckpoint.js",
+        "path": "gateway/emptyGmailCheckpoint.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./workspaceRowsAuditSpool.js",
+        "path": "gateway/workspaceRowsAuditSpool.ts"
+      }
+    ]
+  },
+  "55c51fd01183491f12d15fd70aac53890cdfa0bda7e9b42fe5b785e9a4ddf6d5": {
+    "gitBlob": "3d764a3ab2ce6b8a0b142b5cff5751f7e0908032",
+    "bytes": 2204,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryFeedback.js",
+        "path": "src/discoveryFeedback.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      }
+    ]
+  },
+  "567c0b7789cfbe4faaad2535b5199b9ebfeeeb58e2e77cc6c99f4c7bf79ac11d": {
+    "gitBlob": "5da99102c576536b863560e2e7cb5f6ebb91cc5b",
+    "bytes": 12532,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "598d1b8baefc0b7e82631bd76a8ccb3fe743ee225b5c2c0de0c56dce4a05b61a": {
+    "gitBlob": "31d78d48d0f6137c6f403589fe1bc379849359e9",
+    "bytes": 8774,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "5a08d1bd278ebbfe2cfc7d8f26b452e3093e48e1e0ad8687df3b2dc6cd9fb538": {
+    "gitBlob": "4440f4f1374eafb6b99cd028492e0911c0a86de0",
+    "bytes": 15357,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "./consumerWorkspaceBootstrap.js",
+        "path": "gateway/consumerWorkspaceBootstrap.ts"
+      },
+      {
+        "specifier": "../src/cloud/workspaceFingerprint.js",
+        "path": "src/cloud/workspaceFingerprint.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./commandObjects.js",
+        "path": "gateway/commandObjects.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      }
+    ]
+  },
+  "5a279520d501829b4a93dff1a281b281dd91d3ad7bbcfa6daf62efa7aa1e241a": {
+    "gitBlob": "c45a3871ce2d4f7cc4af3d4aef2bb5c10e7bd8fe",
+    "bytes": 2251,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./actionStatusUndo.js",
+        "path": "src/actionStatusUndo.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      }
+    ]
+  },
+  "5d5a86af4b3b1184e5e0f54c3d8389c0bc6321b5974850d4d3e030c241064ad5": {
+    "gitBlob": "817021f64136d78fb35b9909a2c71a50027664ff",
+    "bytes": 3213,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "parse5",
+        "external": true
+      }
+    ]
+  },
+  "5eda84a582770b2ff13e0b597501be87227f7f6edf56f10816cec97b79fdbd38": {
+    "gitBlob": "2b59d2f5b556fcad0744e4930e16b1f8363e7d68",
+    "bytes": 1446,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "5fbf5b5916de13028860504c3a4500b14ab2ac9cee9d772b5d91345887c14c4b": {
+    "gitBlob": "7f6be22f35c53b35cd305e92d99dc8eec4ca7ec4",
+    "bytes": 1606,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStoreBridge.js",
+        "path": "gateway/workspaceRowsStoreBridge.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "600b1d45f59ec89fd370c1411d948ecffd19adcba883565002014169a21bebae": {
+    "gitBlob": "68d87be54ce06c798f689553c8a6f30dffa5c380",
+    "bytes": 3108,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementRuntime.js",
+        "path": "gateway/consumerBusinessManagementRuntime.ts"
+      },
+      {
+        "specifier": "./scopedManagementGrantStore.js",
+        "path": "gateway/scopedManagementGrantStore.ts"
+      },
+      {
+        "specifier": "./opportunityManagementTools.js",
+        "path": "gateway/opportunityManagementTools.ts"
+      },
+      {
+        "specifier": "./planningManagementTools.js",
+        "path": "gateway/planningManagementTools.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementTools.js",
+        "path": "gateway/discoveryProfileManagementTools.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementTools.js",
+        "path": "gateway/privateReminderManagementTools.ts"
+      },
+      {
+        "specifier": "./audienceAccess.js",
+        "path": "gateway/audienceAccess.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "61c1c3521ab5858ef498f080da6e2aeb2e6b05d9d854bc4e6dbda87b11dad1e5": {
+    "gitBlob": "c3d9027ca3af42abf44a09dbc5cca9ad45f30ec6",
+    "bytes": 5930,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "6495961ce1c9910fb1184cd396c60737b8853a1ec16725adb7621bb9599504b1": {
+    "gitBlob": "085ffe82fa56bdd628910651ce3cbadbbbf00a72",
+    "bytes": 4618,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "674755655667a9b0512e15fb4ecaba64c176d7c9cbba4d8a0d605aa3541f4e5b": {
+    "gitBlob": "96c6e96ecffdf1e9ce1d357eff73cd736189ddc8",
+    "bytes": 5954,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "689d032b006835858be7d1964e54922da04a8f3097db98f16b70aaf099fda024": {
+    "gitBlob": "49e7abb1cfbf73b78e2dcc8525cba1923f1d082c",
+    "bytes": 1688,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "6a7193b0c8280f9861eeffebe764f5c75aee5a1972db03a6670dccb40bdbc497": {
+    "gitBlob": "386184ad5459218361761dad8ca41694f3432657",
+    "bytes": 8764,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoverySourceAuthorities.js",
+        "path": "gateway/discoverySourceAuthorities.ts"
+      },
+      {
+        "specifier": "../src/discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryPublicSource.js",
+        "path": "gateway/discoveryPublicSource.ts"
+      },
+      {
+        "specifier": "./discoveryRecruitingLinks.js",
+        "path": "gateway/discoveryRecruitingLinks.ts"
+      }
+    ]
+  },
+  "6c1ab890ea0874ff3741a3a55fea216e919bf800ad6115de74f317edd62722b2": {
+    "gitBlob": "860fe1b2fd02fa629921a772221911b034f055a3",
+    "bytes": 28296,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./fixedEventGuardLogic.js",
+        "path": "src/fixedEventGuardLogic.ts"
+      },
+      {
+        "specifier": "./scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "./decisionV3.js",
+        "path": "src/decisionV3.ts"
+      },
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./today/consumerTimePlan.js",
+        "path": "src/today/consumerTimePlan.ts"
+      },
+      {
+        "specifier": "./today/localDayCapacity.js",
+        "path": "src/today/localDayCapacity.ts"
+      },
+      {
+        "specifier": "./ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "6d54ddf2bebd74e1320ded5117b4627e72e7a2d40c7e31f651fadac73be7d0fa": {
+    "gitBlob": "41a4d661e0d3b2e32800885584b9f4c750f75eaa",
+    "bytes": 950,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "7280f625e2704281d5de0c8542fc2c5902334bb6e293873dbdd71ec0c708d8fd": {
+    "gitBlob": "463a298b1df2d33d6668b79ffc1507469a99d937",
+    "bytes": 3508,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./decisionCoreV3.js",
+        "path": "src/decisionCoreV3.ts"
+      },
+      {
+        "specifier": "./decisionCoreV3.js",
+        "path": "src/decisionCoreV3.ts"
+      },
+      {
+        "specifier": "./fixedEventGuardLogic.js",
+        "path": "src/fixedEventGuardLogic.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      }
+    ]
+  },
+  "762709ad47853416b288abacdd9c5d38505398fb9681716e89e4ea8a6876dab3": {
+    "gitBlob": "79dc02b4d33f7cf2cfac1afdc672048b877b633c",
+    "bytes": 8647,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:net",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryNetwork.js",
+        "path": "gateway/discoveryNetwork.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "768ad58dab12369d30f2791ce8a593e5f243576bdee93081de0e214b53530f96": {
+    "gitBlob": "b5c318e8123925bfe79145becaf32d404a06d817",
+    "bytes": 2285,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      }
+    ]
+  },
+  "778229007fc6441a35e236302351c2af98571e35258d477b9bdb177e8b7403c1": {
+    "gitBlob": "42e9f4c618ff44c77817f70716189bf820488ab6",
+    "bytes": 5832,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/discoveryProfileManagement.js",
+        "path": "src/discoveryProfileManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementAccess.js",
+        "path": "gateway/discoveryProfileManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "785b46b1ebcdab9f85603da2728a60ab1efdd1268750e4e533da06ec089d457f": {
+    "gitBlob": "681ba6f8b57660abef266b3eef550d81d575f163",
+    "bytes": 9616,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "78e86f11dde02cc4e4fa099e902716571218fd6ba0d92630340bb5748bee26d3": {
+    "gitBlob": "caaadda53c7d0be03edb6408308d1dd9b37610b9",
+    "bytes": 1067,
+    "storage": "repository",
+    "imports": []
+  },
+  "7a199c9ffd08835a2d4ce372f059b9bbeeee691a61b54ab755c7113d408989f4": {
+    "gitBlob": "9b1bd9ab906f121e289e06041c069940aba3f3f7",
+    "bytes": 5419,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "7ac8442b549b41b2f9596dce3d24b650f0137d3e569e516b1b1b69b087a36c81": {
+    "gitBlob": "0013ab33627be2a221094466535b90b4573d6ff8",
+    "bytes": 1074,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      }
+    ]
+  },
+  "7d26538f96e51c0fd71c09c4896515f913ed82f722039c009b3fc0806b25c16f": {
+    "gitBlob": "0220919ad5386e5aa23366fb8c67e9ae62d27edf",
+    "bytes": 1575,
+    "storage": "repository",
+    "imports": []
+  },
+  "7d655dffe1fbba3dd7c5f8f6a0a9cf7bcbc6f4d15edc0ccf1d1112efa64e31d7": {
+    "gitBlob": "412149b64aebc656bc223357e1661f318619d01c",
+    "bytes": 22762,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStoreBridge.js",
+        "path": "gateway/workspaceRowsStoreBridge.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCandidate.js",
+        "path": "gateway/workspaceRowsCandidate.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCodec.js",
+        "path": "gateway/workspaceRowsCodec.ts"
+      },
+      {
+        "specifier": "./workspaceRowsLargeCommandPrototype.js",
+        "path": "gateway/workspaceRowsLargeCommandPrototype.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStagedDocumentsPrototype.js",
+        "path": "gateway/workspaceRowsStagedDocumentsPrototype.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceRowsDurableIntent.js",
+        "path": "gateway/workspaceRowsDurableIntent.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "7f88663b415a7431dabe23276523c94d67bd8ef43719fe40701ba15bfb3211ca": {
+    "gitBlob": "178fd09b42802a2ab64f2175d9b6fa8c74c6a6fe",
+    "bytes": 3435,
+    "storage": "repository",
+    "imports": []
+  },
+  "800d21ad2606dd68b88b58794f9939c50e70cd8fe5608d8403d33af70eab4262": {
+    "gitBlob": "9d8e6c9a8ca3a7bb4a8709691c4872b900c984d5",
+    "bytes": 6795,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "../src/businessManagement.js",
+        "path": "src/businessManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "80182edd036b835fd52a8f7a76cae6f5c138b508d19984d7ea2e782d3b16332b": {
+    "gitBlob": "52cd9c932e117730548adeb4be3202a796544755",
+    "bytes": 3084,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementRuntime.js",
+        "path": "gateway/consumerBusinessManagementRuntime.ts"
+      },
+      {
+        "specifier": "./scopedManagementGrantStore.js",
+        "path": "gateway/scopedManagementGrantStore.ts"
+      },
+      {
+        "specifier": "./opportunityManagementTools.js",
+        "path": "gateway/opportunityManagementTools.ts"
+      },
+      {
+        "specifier": "./planningManagementTools.js",
+        "path": "gateway/planningManagementTools.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementTools.js",
+        "path": "gateway/discoveryProfileManagementTools.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementTools.js",
+        "path": "gateway/privateReminderManagementTools.ts"
+      },
+      {
+        "specifier": "./audienceAccess.js",
+        "path": "gateway/audienceAccess.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "80eda96bbc4898b86cc0c1625764609a545f80c3d34458c9bc334ebc8d5b230c": {
+    "gitBlob": "368c305c9d184b7145c27a65119cf3a39a886922",
+    "bytes": 473,
+    "storage": "blob",
+    "imports": []
+  },
+  "8173ddb285aa863b270c4a41cc792be12e99ed34cfbcf20d281cf7bd2752e168": {
+    "gitBlob": "9135e311d1dac816662527556273c40eabd6bc15",
+    "bytes": 3978,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "./autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "81a59987cbb153164ebb2a7e6888549443fb45a5bfb23c8400444d1907210053": {
+    "gitBlob": "e2eb87bfdad0d93171048fc326e0ea2ea8c1d3d5",
+    "bytes": 21417,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./readModelSnapshot.js",
+        "path": "src/readModelSnapshot.ts"
+      },
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./decisionV3.js",
+        "path": "src/decisionV3.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "82551714ac2923d3dd4832815902873d4a358266a514178ce9e454d84f61fbf1": {
+    "gitBlob": "61a788ec379af4e949bc69625f7f4a7486ef9f5f",
+    "bytes": 6005,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      }
+    ]
+  },
+  "827b7482e9460032430a8cf30ba8b4069660407780c83d7f74ab08f335ca9241": {
+    "gitBlob": "bb8d3c7b4c3c4e6d4e7137e5bf0d3f71fa29be89",
+    "bytes": 26398,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./progressUpdateV4.js",
+        "path": "src/progressUpdateV4.ts"
+      },
+      {
+        "specifier": "./notificationParser.js",
+        "path": "src/notificationParser.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "83a3d2ebc7006e6642d31ff58c0fde17adaf6fd31a23ebe1ec3fb1e8e17015bb": {
+    "gitBlob": "308ad3a81731106e6a23af1c6bf96f9386e35de6",
+    "bytes": 9330,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "../discoveryQualityReason.js",
+        "path": "src/discoveryQualityReason.ts"
+      },
+      {
+        "specifier": "../discoveryRun.js",
+        "path": "src/discoveryRun.ts"
+      }
+    ]
+  },
+  "84e2e1ab7192e6fc1bddbe52df41f379695b1a3ff03d83c5a62210d1b0cfc19a": {
+    "gitBlob": "3c04de4fe754527192582caf442a412b59e99c32",
+    "bytes": 10169,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "85ec10aad5a6e988a94f83f6b505bc615708f5a79831e7cde7601d28692663b3": {
+    "gitBlob": "ce4454baeb5c10dc450fae4552cb19a8cc1859b4",
+    "bytes": 8745,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./semanticTargetMatching.js",
+        "path": "src/semanticTargetMatching.ts"
+      }
+    ]
+  },
+  "86f9d2f743dad6b1ee035f9d9c725f68e8e8e59f8a14a752ac1552f48ab6c3c3": {
+    "gitBlob": "e79101122caa41d9b8550987583ddadf1d5c899b",
+    "bytes": 5462,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/aiAccess/scopedConsentContract.js",
+        "path": "src/aiAccess/scopedConsentContract.ts"
+      },
+      {
+        "specifier": "./scopedManagementConsent.js",
+        "path": "gateway/scopedManagementConsent.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "89908296551f7bb8698590af4d597e4eec74a65cc52aa71bf443c8cddedb7409": {
+    "gitBlob": "3f689fdcd6348c87a958919c14ec76fa3f3abb5a",
+    "bytes": 9301,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "8d0d37d3b8bf5216906ec3344d41d23ed6df8403df8692ed24522bf579361bf8": {
+    "gitBlob": "b38204304f7c710974a8730fffa48a7922554905",
+    "bytes": 162,
+    "storage": "repository"
+  },
+  "8f065c25de9b1d9ea3196026455431065fdafe4c0ca2ec3b00cfa6cbcdf9e929": {
+    "gitBlob": "cf80d8d8df474835608205b27b40faaf52de5257",
+    "bytes": 3467,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoverySourceAuthorities.js",
+        "path": "gateway/discoverySourceAuthorities.ts"
+      }
+    ]
+  },
+  "8f6a864ea1a43136dda3e45c9defb7ea5a272d8208a43d795423f56b2dcac461": {
+    "gitBlob": "12a42404a4a8ca7293eb0bd5063bbcdcca84877d",
+    "bytes": 3617,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./productionTopology.js",
+        "path": "gateway/productionTopology.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./consumerReviewLease.js",
+        "path": "gateway/consumerReviewLease.ts"
+      }
+    ]
+  },
+  "90faaf0c56d3450db94abdbebbd10382b59558d2d1b66461015a87002a74da8c": {
+    "gitBlob": "99e790e48fc099d986faf12f0ad22037967d57e5",
+    "bytes": 3886,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      }
+    ]
+  },
+  "92f4c4315b91e447ff2fb7b035410ab60d0e6b15d6a0c906e5baf82c7a4104f3": {
+    "gitBlob": "4df8dca56b75775fd1f0ef9aea44863df65ad5d1",
+    "bytes": 999,
+    "storage": "repository",
+    "imports": []
+  },
+  "9720a45210a8fe006be97bc9d034328ee33eea18b9fa59cd9e386d097fd54741": {
+    "gitBlob": "1e9a86a3b1bd67aefb3040508c08a941f1259231",
+    "bytes": 27391,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "../fixedEventGuardLogic.js",
+        "path": "src/fixedEventGuardLogic.ts"
+      },
+      {
+        "specifier": "../opportunityDecisionRead.js",
+        "path": "src/opportunityDecisionRead.ts"
+      },
+      {
+        "specifier": "../applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "../today/localDayCapacity.js",
+        "path": "src/today/localDayCapacity.ts"
+      },
+      {
+        "specifier": "../deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "../opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "../decisionV3.js",
+        "path": "src/decisionV3.ts"
+      },
+      {
+        "specifier": "../discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "../discoveryFeedback.js",
+        "path": "src/discoveryFeedback.ts"
+      },
+      {
+        "specifier": "../processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "../snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "../todayBrief.js",
+        "path": "src/todayBrief.ts"
+      },
+      {
+        "specifier": "../today/consumerTimePlan.js",
+        "path": "src/today/consumerTimePlan.ts"
+      },
+      {
+        "specifier": "../scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "../model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "9c868b75505e295be33e509023dfc857e358c0c42c1920d5e5aa6f90555c3108": {
+    "gitBlob": "8be7c13788cf48a828723c5d71e14d57df5b56c5",
+    "bytes": 11793,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./ingestionHardening.js",
+        "path": "src/ingestionHardening.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./discoverySearchEvidence.js",
+        "path": "src/discoverySearchEvidence.ts"
+      },
+      {
+        "specifier": "./discoveryScopeBatch.js",
+        "path": "src/discoveryScopeBatch.ts"
+      },
+      {
+        "specifier": "./discoveryScopeEvidence.js",
+        "path": "src/discoveryScopeEvidence.ts"
+      }
+    ]
+  },
+  "9d43822fcfca562066e294f1e1f42d3324dee7e91776b04fb2b3c921db67b24c": {
+    "gitBlob": "6254c10f20e12acd0dce687e30dcd7f31ec1fa65",
+    "bytes": 4669,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceRowsCodec.js",
+        "path": "gateway/workspaceRowsCodec.ts"
+      }
+    ]
+  },
+  "9d9449c4f4125fc8834b9fec2a731197723f01e7a16333d841b52bcc66cbb36c": {
+    "gitBlob": "c02466f9a9d6831a6f44cbc29c6f28ab6d85117e",
+    "bytes": 6052,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./sourceCalendar.js",
+        "path": "src/sourceCalendar.ts"
+      },
+      {
+        "specifier": "./reminders.js",
+        "path": "src/reminders.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "9df5987536c4e983527d3eb9100a0529ff4dfeb7b06ade1aad321a3495dab2c0": {
+    "gitBlob": "2fdb0208b06ba2ce711f2a96fd2b3717a436807a",
+    "bytes": 31039,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./notificationParser.js",
+        "path": "src/notificationParser.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "9f7d4ee21dffa807be3ac1670265d3431995b256529ffefd7881c5519b3f6654": {
+    "gitBlob": "f1ca12e1c5a3ce32497327c42ebda518afa01af3",
+    "bytes": 15341,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./deadlineOrder.js",
+        "path": "src/deadlineOrder.ts"
+      },
+      {
+        "specifier": "./discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./discoveryScopeEvidence.js",
+        "path": "src/discoveryScopeEvidence.ts"
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./discoveryQualityReason.js",
+        "path": "src/discoveryQualityReason.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "a7266d1c85fa6947c70073256d9a73e4c459e97b0b4ef24b5c48dcab498ef4c5": {
+    "gitBlob": "e935337c4f4097887626cfa43dcb106e3130d948",
+    "bytes": 507,
+    "storage": "repository"
+  },
+  "a848e4ae2c8ac5d8379d3d9ea198c23da395bf40d3ab2f26426239aab9c3694f": {
+    "gitBlob": "5705c1a13171330a3f7ead7200bf5840eb498fcd",
+    "bytes": 1270,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./aiCaptureLedger.js",
+        "path": "gateway/aiCaptureLedger.ts"
+      },
+      {
+        "specifier": "./aiCapturePreview.js",
+        "path": "gateway/aiCapturePreview.ts"
+      },
+      {
+        "specifier": "./aiCapturePreviewHandler.js",
+        "path": "gateway/aiCapturePreviewHandler.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "a934e7cf34595ec02ef52e8e6621d06e35f5e853349c2a5bf126cdae852072dd": {
+    "gitBlob": "3687564256e006b119a60ab5b81ab61a88c33f00",
+    "bytes": 88540,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./semanticCompletionContext.js",
+        "path": "src/semanticCompletionContext.ts"
+      },
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./boundInterviewReschedule.js",
+        "path": "src/boundInterviewReschedule.ts"
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "./decisionDismissal.js",
+        "path": "src/decisionDismissal.ts"
+      },
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./processFactCorrection.js",
+        "path": "src/processFactCorrection.ts"
+      },
+      {
+        "specifier": "./domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./semanticTargetMatching.js",
+        "path": "src/semanticTargetMatching.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "./reminders.js",
+        "path": "src/reminders.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./decisionActionability.js",
+        "path": "src/decisionActionability.ts"
+      }
+    ]
+  },
+  "aa25e754680b439d21fe6be013492e40f79af825eb019a3a082535e80d58fd7b": {
+    "gitBlob": "df6af7be4e09331c0da77fbbdfe7b22bc05e891c",
+    "bytes": 6137,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./workspaceRowsRuntime.js",
+        "path": "gateway/workspaceRowsRuntime.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./semanticIntake.js",
+        "path": "gateway/semanticIntake.ts"
+      },
+      {
+        "specifier": "./aiCaptureContract.js",
+        "path": "gateway/aiCaptureContract.ts"
+      },
+      {
+        "specifier": "./aiCapturePreview.js",
+        "path": "gateway/aiCapturePreview.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "aa2baa5abd25f294f458302f86499119a319da669ebbb52603b894714c8849d8": {
+    "gitBlob": "2efa163d1fb108b3394966f577081bab7ca49218",
+    "bytes": 3979,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "./domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./postingRefresh.js",
+        "path": "src/postingRefresh.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      }
+    ]
+  },
+  "acc6676557cf5025955d2d67eccc072f9dcdac7ad6a4b634fe301212dea45216": {
+    "gitBlob": "00362ae2473feb53fde46c3c903f705b329e79c8",
+    "bytes": 1817,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../../gateway/supabaseProject.ts",
+        "path": "gateway/supabaseProject.ts"
+      },
+      {
+        "specifier": "../../gateway/scopedManagementRuntime.ts",
+        "path": "gateway/scopedManagementRuntime.ts"
+      },
+      {
+        "specifier": "../../api/workspace.ts",
+        "path": "api/workspace.ts"
+      }
+    ]
+  },
+  "adc7ae8cbcebd9e3e8a750c907631ee63539dbd5fddb59b649bd22d05866fdd5": {
+    "gitBlob": "3478376793d352cefd5044b1753471f7efd6bd44",
+    "bytes": 15916,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "ae482bd63ad4a3f41642f7f91c3a89072d83babc13f25ca08fe9038ab13ab47a": {
+    "gitBlob": "50ffb0b51885ddc7b2e3c32466b0ce36f0017f61",
+    "bytes": 5991,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      }
+    ]
+  },
+  "ae7d277fe94a92e85bb1b549a0817890618a128732fc5dada4572bc74e759b82": {
+    "gitBlob": "220615dfbcb63badc73f8614d19af19c482bba0c",
+    "bytes": 8081,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:dns/promises",
+        "external": true
+      },
+      {
+        "specifier": "node:http",
+        "external": true
+      },
+      {
+        "specifier": "node:https",
+        "external": true
+      },
+      {
+        "specifier": "node:net",
+        "external": true
+      },
+      {
+        "specifier": "node:stream",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "afe7728ab3280240551ec32d5b5c6e56c0458950796a048156e5e2acaba1c4b3": {
+    "gitBlob": "d4777f44a48b4e13a3c84d07099f51c09c288914",
+    "bytes": 26577,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      },
+      {
+        "specifier": "./discoverySearchEvidence.js",
+        "path": "src/discoverySearchEvidence.ts"
+      },
+      {
+        "specifier": "./discoveryScopeBatch.js",
+        "path": "src/discoveryScopeBatch.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      }
+    ]
+  },
+  "b1e7d7d99a941c3dc826a2696c85776a4bd8b0cea3264f129c484593b6249d00": {
+    "gitBlob": "f2ee6d6070cf3f1725ece7d7d8b6807d57d5c5e2",
+    "bytes": 5849,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./workspaceRowsCandidate.js",
+        "path": "gateway/workspaceRowsCandidate.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "b28ffc673a56ef159f21c56153832ac965ae0b9f9d86267dffcc3e2a06693d4f": {
+    "gitBlob": "ad829ae6db39a638458a4b8a0528210d56b0a99a",
+    "bytes": 65202,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./aiCaptureLedger.js",
+        "path": "gateway/aiCaptureLedger.ts"
+      },
+      {
+        "specifier": "../src/jobReadState.js",
+        "path": "src/jobReadState.ts"
+      },
+      {
+        "specifier": "../src/verifiedOpportunityCommand.js",
+        "path": "src/verifiedOpportunityCommand.ts"
+      },
+      {
+        "specifier": "../src/postingRefresh.js",
+        "path": "src/postingRefresh.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeSchema.js",
+        "path": "src/discoveryScopeSchema.ts"
+      },
+      {
+        "specifier": "./discoverySourceVerifier.js",
+        "path": "gateway/discoverySourceVerifier.ts"
+      },
+      {
+        "specifier": "../src/autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "../src/discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/privateReminderManagement.js",
+        "path": "src/privateReminderManagement.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementAccess.js",
+        "path": "gateway/privateReminderManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfileManagement.js",
+        "path": "src/discoveryProfileManagement.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementAccess.js",
+        "path": "gateway/discoveryProfileManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/planningManagement.js",
+        "path": "src/planningManagement.ts"
+      },
+      {
+        "specifier": "./planningManagementAccess.js",
+        "path": "gateway/planningManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/businessManagement.js",
+        "path": "src/businessManagement.ts"
+      },
+      {
+        "specifier": "./businessManagementAccess.js",
+        "path": "gateway/businessManagementAccess.ts"
+      },
+      {
+        "specifier": "../src/workspaceDelta.js",
+        "path": "src/workspaceDelta.ts"
+      },
+      {
+        "specifier": "../src/instantCommandKinds.js",
+        "path": "src/instantCommandKinds.ts"
+      },
+      {
+        "specifier": "../src/actionStatusUndo.js",
+        "path": "src/actionStatusUndo.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "../src/semanticIntake.js",
+        "path": "src/semanticIntake.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/discoveryStatusCommand.js",
+        "path": "src/discoveryStatusCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfileCommand.js",
+        "path": "src/discoveryProfileCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryPromotionCommand.js",
+        "path": "src/discoveryPromotionCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpInboxCommand.js",
+        "path": "src/mcpInboxCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpDiscoveryApplyCommand.js",
+        "path": "src/mcpDiscoveryApplyCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpActionStatusCommand.js",
+        "path": "src/mcpActionStatusCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpRulesCommand.js",
+        "path": "src/mcpRulesCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpSourceRefreshCommand.js",
+        "path": "src/mcpSourceRefreshCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpDiscardCommand.js",
+        "path": "src/mcpDiscardCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpProgressCommand.js",
+        "path": "src/mcpProgressCommand.ts"
+      },
+      {
+        "specifier": "../src/mcpMixedCommand.js",
+        "path": "src/mcpMixedCommand.ts"
+      },
+      {
+        "specifier": "../src/processEventDeleteCommand.js",
+        "path": "src/processEventDeleteCommand.ts"
+      },
+      {
+        "specifier": "../src/discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "../src/ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "../src/cloud/workspaceFingerprint.js",
+        "path": "src/cloud/workspaceFingerprint.ts"
+      },
+      {
+        "specifier": "./proposalToken.js",
+        "path": "gateway/proposalToken.ts"
+      },
+      {
+        "specifier": "../src/discoveryQuality.js",
+        "path": "src/discoveryQuality.ts"
+      },
+      {
+        "specifier": "./userCommands.js",
+        "path": "gateway/userCommands.ts"
+      },
+      {
+        "specifier": "./semanticIntake.js",
+        "path": "gateway/semanticIntake.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./commandObjects.js",
+        "path": "gateway/commandObjects.ts"
+      }
+    ]
+  },
+  "b29522f23e306b94b74760726c36898922eb121a2c9ec9a6aabba9337cd53ae0": {
+    "gitBlob": "f9209178c0f8a97c6f6b427f2c715650ecfe62e8",
+    "bytes": 3162,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "b30fa1b1b3397d97b9a38e208da53221a8c1e8784d8135204bd8a68afe55f71d": {
+    "gitBlob": "6c067049b3cfe2c7a7e31a7bec8c8dc22fc591d2",
+    "bytes": 9154,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./aiCaptureContract.js",
+        "path": "gateway/aiCaptureContract.ts"
+      },
+      {
+        "specifier": "./aiCaptureLedger.js",
+        "path": "gateway/aiCaptureLedger.ts"
+      },
+      {
+        "specifier": "./aiCapturePreview.js",
+        "path": "gateway/aiCapturePreview.ts"
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      }
+    ]
+  },
+  "b31e0ab9cf51e6327b1b42270f2a2d882217019fd601eb300a92f37fbf24d060": {
+    "gitBlob": "f950c00cb9c019a53fa0c0550ed5961adcac3b67",
+    "bytes": 4390,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./domainCommands.js",
+        "path": "src/domainCommands.ts"
+      },
+      {
+        "specifier": "./verifiedOpportunityCommand.js",
+        "path": "src/verifiedOpportunityCommand.ts"
+      },
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./discoveryFeedback.js",
+        "path": "src/discoveryFeedback.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timeline.js",
+        "path": "src/timeline.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "b5a5c201857d9f3d5b7aff15d75acf7c3e0bece05211e3c3e6db3cce2de77232": {
+    "gitBlob": "314e26476496d13cc98addacee913c02f055f798",
+    "bytes": 2360,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./companyIdentity.js",
+        "path": "src/companyIdentity.ts"
+      },
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "b6b24373c997369c7bafc54d44576ca4dde704ee5be8ad6139699be40fefb3d6": {
+    "gitBlob": "0d9d5d10a89cd92ca2bc16703bbd4342309142cd",
+    "bytes": 4135,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "./planningManagementAccess.js",
+        "path": "gateway/planningManagementAccess.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementAccess.js",
+        "path": "gateway/discoveryProfileManagementAccess.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementAccess.js",
+        "path": "gateway/privateReminderManagementAccess.ts"
+      },
+      {
+        "specifier": "./scopedManagementConsent.js",
+        "path": "gateway/scopedManagementConsent.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "b83706404847aa8c8bcfc57de31e97c465642e098ede9c427df901a740e7127a": {
+    "gitBlob": "7a6d24165573294280607bfb48b6972ad5df7686",
+    "bytes": 32942,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./semanticCompletionContext.js",
+        "path": "src/semanticCompletionContext.ts"
+      },
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./boundInterviewReschedule.js",
+        "path": "src/boundInterviewReschedule.ts"
+      },
+      {
+        "specifier": "./sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      },
+      {
+        "specifier": "./webPlanningTime.js",
+        "path": "src/webPlanningTime.ts"
+      },
+      {
+        "specifier": "./explicitStructuredQuotedJob.js",
+        "path": "src/explicitStructuredQuotedJob.ts"
+      },
+      {
+        "specifier": "./webRecruitingTime.js",
+        "path": "src/webRecruitingTime.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./progressUpdate.js",
+        "path": "src/progressUpdate.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "b96ecc616303727e3acd0cd4b6d05e6c8d6bb78a19700af437b0de42de654453": {
+    "gitBlob": "13c30f7efc4957173ea2081e9f4c4818099430de",
+    "bytes": 4007,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../gateway/aiCaptureRuntime.js",
+        "path": "gateway/aiCaptureRuntime.ts"
+      },
+      {
+        "specifier": "../gateway/aiCapturePreviewHandler.js",
+        "path": "gateway/aiCapturePreviewHandler.ts"
+      },
+      {
+        "specifier": "../gateway/transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "../gateway/consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "../gateway/scopedManagementConsentHandler.js",
+        "path": "gateway/scopedManagementConsentHandler.ts"
+      },
+      {
+        "specifier": "../gateway/ownerManagementConsentHandler.js",
+        "path": "gateway/ownerManagementConsentHandler.ts"
+      },
+      {
+        "specifier": "../gateway/connectedWorkspaceHandler.js",
+        "path": "gateway/connectedWorkspaceHandler.ts"
+      },
+      {
+        "specifier": "../gateway/supabaseProject.js",
+        "path": "gateway/supabaseProject.ts"
+      },
+      {
+        "specifier": "../gateway/productionTopology.js",
+        "path": "gateway/productionTopology.ts"
+      },
+      {
+        "specifier": "../gateway/audienceAccess.js",
+        "path": "gateway/audienceAccess.ts"
+      }
+    ]
+  },
+  "ba0463df443f7e58142af542a97f7113e3b23f7006e0356fc9a34a6236d2f1b2": {
+    "gitBlob": "929474fb02790da71b512eab78c2116b35f0320b",
+    "bytes": 1414,
+    "storage": "repository",
+    "imports": []
+  },
+  "bd6e5e72bb5c54352c31df9eb08038967f14fe6d5b84933ac8612c9afad248b0": {
+    "gitBlob": "8395d34d4bb1597ff1fb41f98c358fb00ce046c0",
+    "bytes": 21448,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./semanticTargetMatching.js",
+        "path": "src/semanticTargetMatching.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "beb4c20a7d52f8bf04bd464de5c86f464943e12abdb1a07c7df0a908ecd44697": {
+    "gitBlob": "b67354b436553d0c88301f715da080a1622abb37",
+    "bytes": 3966,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStoreBridge.js",
+        "path": "gateway/workspaceRowsStoreBridge.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStagedBridge.js",
+        "path": "gateway/workspaceRowsStagedBridge.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "bf3256106a59182ab75a816022618a0d488fe78bccbfdb48a186132db44325df": {
+    "gitBlob": "31838cf2c40e7d4a03bf1a84894244a4bd093321",
+    "bytes": 3833,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:fs/promises",
+        "external": true
+      },
+      {
+        "specifier": "node:os",
+        "external": true
+      },
+      {
+        "specifier": "node:path",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceRowsLargeCommandPrototype.js",
+        "path": "gateway/workspaceRowsLargeCommandPrototype.ts"
+      }
+    ]
+  },
+  "bfe02af5e587dc9232ffc5d5f488d930fe403ae2da27b79f33462d7f0f7fb35f": {
+    "gitBlob": "6390ae01dacad993d2180a474e16bba45793ff1c",
+    "bytes": 17590,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./reminders.js",
+        "path": "src/reminders.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "c1415d7409136e03490d2cd0532a5e97f12a57be98d44da145ec7b42ca222892": {
+    "gitBlob": "284a4fcdddb2fed9ea50c2a5112d0405ffc71cea",
+    "bytes": 1577,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../todayBrief.js",
+        "path": "src/todayBrief.ts"
+      },
+      {
+        "specifier": "../timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      }
+    ]
+  },
+  "c2349842f7663194a1cd9c7758c1e77a23b5406043942ad1bcd0d90f81200ec2": {
+    "gitBlob": "e9e8c7bf611523ea2ce00bbb2a7b9a49c9caf048",
+    "bytes": 806,
+    "storage": "repository",
+    "imports": []
+  },
+  "c34e0d2be9e8059db93ee679fd00f671e4ede82f9ec054adb5b4423f7b111708": {
+    "gitBlob": "e3a8ff562799df2cf86a3e8c87f4027d6f6ce46a",
+    "bytes": 1463,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "c573d651a89a8e89f7ffbe949b6217598c12d8a10a2cb7aaca4f8d794d00a9c0": {
+    "gitBlob": "75a0685c0946fb6dc94e3dc82d30b1f0e0f67ce0",
+    "bytes": 19570,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./opportunityAssessment.js",
+        "path": "src/opportunityAssessment.ts"
+      },
+      {
+        "specifier": "./progressUpdate.js",
+        "path": "src/progressUpdate.ts"
+      },
+      {
+        "specifier": "./richOpportunity.js",
+        "path": "src/richOpportunity.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      }
+    ]
+  },
+  "c58271f94aa36b6d6d9bd5996e2cb2c631557a839bf803aec312b14a0878ebfc": {
+    "gitBlob": "faab981f66996826c2d0e4c5227359c942f10d9b",
+    "bytes": 3744,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryPublicSource.js",
+        "path": "gateway/discoveryPublicSource.ts"
+      }
+    ]
+  },
+  "c73f1acc8ab0866c6390916d5b8e2bbe0b520c0c5497a71c9beb2a396e68aa00": {
+    "gitBlob": "a89f2b7ea02c146d0e5fdddcd05f9045c5ecac81",
+    "bytes": 11986,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./aiCaptureContract.js",
+        "path": "gateway/aiCaptureContract.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "../src/sourceTemporal.js",
+        "path": "src/sourceTemporal.ts"
+      }
+    ]
+  },
+  "c81ea1dea5a9aa25ac595246e99ccdf1e8cb2ac6b6906dc47103ec07ff0bf97c": {
+    "gitBlob": "150bd89df1e0c1bb2a112910ac5360518ee7f666",
+    "bytes": 397,
+    "storage": "repository"
+  },
+  "c8aacdd3de590bd8f1182dc106ec9b8442969ffc2ffb7d911a7873ef0e4c91e7": {
+    "gitBlob": "ba78f218c209190ba081202105541845a4bc1759",
+    "bytes": 21101,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:util",
+        "external": true
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStoreBridge.js",
+        "path": "gateway/workspaceRowsStoreBridge.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCandidate.js",
+        "path": "gateway/workspaceRowsCandidate.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCodec.js",
+        "path": "gateway/workspaceRowsCodec.ts"
+      },
+      {
+        "specifier": "./workspaceRowsLargeCommandPrototype.js",
+        "path": "gateway/workspaceRowsLargeCommandPrototype.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStagedDocumentsPrototype.js",
+        "path": "gateway/workspaceRowsStagedDocumentsPrototype.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceRowsDurableIntent.js",
+        "path": "gateway/workspaceRowsDurableIntent.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "c911f7098317bb7cae7f91dc4a3fbf1653e1bb2a5462f84a9d12b087137ce400": {
+    "gitBlob": "4b0f177351d12ae76e6ed2d1b3edfddc2a01c2cc",
+    "bytes": 11789,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./opportunityCanonicalization.js",
+        "path": "src/opportunityCanonicalization.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "c981dbb9bbfaf04a553fa3e657c59a49ae5a24d664af44694847c176475c7b41": {
+    "gitBlob": "96009ecca727d78ccfa43a2391a5a514792f526b",
+    "bytes": 968,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/sourceCalendar.js",
+        "path": "src/sourceCalendar.ts"
+      }
+    ]
+  },
+  "caba231ce8cc204a7140b82e72abd39ab714c7364d8ec787134dd2c40fec8e26": {
+    "gitBlob": "ceac57fce9fdc1190f514321e2e87c9abcc22a56",
+    "bytes": 340,
+    "storage": "repository",
+    "imports": []
+  },
+  "cc566b7746883d76db2d760fa670268679c4de508f0bb9b32a2018d8e3373a28": {
+    "gitBlob": "135e86a45536970f40676bd36f183be39e23153b",
+    "bytes": 3016,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      }
+    ]
+  },
+  "cc9c534b70f8d5d8572b1e61dfcff9f75f1204552289f1f0096e0ab4e729287a": {
+    "gitBlob": "943538f7876daa44e19b30236511a1a6d5919438",
+    "bytes": 8934,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "cdc1f0825fe0563a9a03d1bcbf2c40008c1cc22d672094ed1162c805efe63db3": {
+    "gitBlob": "11c2d81b3e3a1a05ea7b9215acfe11a0192dc5d5",
+    "bytes": 404,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "ced5a9b9340991b4daa753faf2b4bc635febec27c763daae61888f7f57bf11d5": {
+    "gitBlob": "7fef74fe20133850ffad47e38b19a9fd8ff7cec4",
+    "bytes": 5086,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:zlib",
+        "external": true
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./workspaceRowsStagedDocumentsPrototype.js",
+        "path": "gateway/workspaceRowsStagedDocumentsPrototype.ts"
+      }
+    ]
+  },
+  "d150bb05c5de4c52ffae7385e8d8c517a0a65f97d557384ef10a6c4b4eac9d7e": {
+    "gitBlob": "634fc83a4ac60f5a76d17deffe632a10f85d9d44",
+    "bytes": 23125,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./notificationIdentityMemo.js",
+        "path": "src/notificationIdentityMemo.ts"
+      },
+      {
+        "specifier": "./notificationIdentityRegions.js",
+        "path": "src/notificationIdentityRegions.ts"
+      },
+      {
+        "specifier": "./companyIdentity.js",
+        "path": "src/companyIdentity.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "d408452ec5f681583c9f1e7f0bffc80dd8e8aec239011435ecd73f7709dfeb7d": {
+    "gitBlob": "d907add61bbe014fc8060c08cf4de6834735f7ee",
+    "bytes": 15058,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "d69394b63fe93c13eadd4ceec2eb4ff5f5c29e0f9c7d9f1c765a665112e169ff": {
+    "gitBlob": "f9febb6b226537fa2e6c6d8ad524cace1a08d39d",
+    "bytes": 2617,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./scheduleNodes.js",
+        "path": "src/scheduleNodes.ts"
+      }
+    ]
+  },
+  "dbd0618be0660c4d79bfbbeff6e562608a117086231cbe938e47109faeeb5f93": {
+    "gitBlob": "0b2ff55e6e941bef440c46a9bde260a7402b8682",
+    "bytes": 43579,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCodec.js",
+        "path": "gateway/workspaceRowsCodec.ts"
+      }
+    ]
+  },
+  "dfb4bb8897ef2a1f5a6b12149ff396d343daac1f574f4e51ea18ecc4e8cf9d3a": {
+    "gitBlob": "8823a010ba6e7bfec32c5fce7d67fbbf2b7a77a9",
+    "bytes": 1753,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "dfdd5a92cee0c83075122c335d6e68b0fc0e00878741495cf0e934ec028fb0cc": {
+    "gitBlob": "d774cb772612687168dba32e8ed21c3cca47f4f0",
+    "bytes": 29151,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/discoveryFactSchema.js",
+        "path": "src/discoveryFactSchema.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "../src/discoveryProfileManagement.js",
+        "path": "src/discoveryProfileManagement.ts"
+      },
+      {
+        "specifier": "../src/discoveryScopeEvidence.js",
+        "path": "src/discoveryScopeEvidence.ts"
+      },
+      {
+        "specifier": "../src/verifiedDiscoveryCommand.js",
+        "path": "src/verifiedDiscoveryCommand.ts"
+      },
+      {
+        "specifier": "../src/jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./discoverySourceAuthorities.js",
+        "path": "gateway/discoverySourceAuthorities.ts"
+      },
+      {
+        "specifier": "./discoveryPublisher.js",
+        "path": "gateway/discoveryPublisher.ts"
+      },
+      {
+        "specifier": "./discoveryDomesticAuthority.js",
+        "path": "gateway/discoveryDomesticAuthority.ts"
+      },
+      {
+        "specifier": "./discoveryRecruitingLinks.js",
+        "path": "gateway/discoveryRecruitingLinks.ts"
+      },
+      {
+        "specifier": "../src/autonomousIngestion.js",
+        "path": "src/autonomousIngestion.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      },
+      {
+        "specifier": "./discoveryPublicSource.js",
+        "path": "gateway/discoveryPublicSource.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryPublicSource.js",
+        "path": "gateway/discoveryPublicSource.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      },
+      {
+        "specifier": "./discoveryHtml.js",
+        "path": "gateway/discoveryHtml.ts"
+      }
+    ]
+  },
+  "e0b0fe8b81e17597979674423e6bdaf23c929f57c72143b5fee774b66b675cb5": {
+    "gitBlob": "f8a5d6d2534aa7eb883a89533a4fb0a6c7935984",
+    "bytes": 4322,
+    "storage": "repository",
+    "imports": []
+  },
+  "e41fb5a7f5ee29b3dd858c4b25913ce0c5f720e985ec06ada13d589cd50dbb20": {
+    "gitBlob": "aa1f4a66763bc16f3fd76ab4655e5a5384fd44b4",
+    "bytes": 10096,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./processEvents.js",
+        "path": "src/processEvents.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "e6a2e427811aed1e5b6bf711f9b184df7b079f0712292eec8fef2fbdba6871b4": {
+    "gitBlob": "6ac062957583f5f10427a19a6b43a237c766fe1e",
+    "bytes": 2966,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "node:crypto",
+        "external": true
+      },
+      {
+        "specifier": "node:zlib",
+        "external": true
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "e6a7631cdad447d8434bbeef4a8cfe69f6b93357d0bc71590b602dc56dfc38a9": {
+    "gitBlob": "1af1b6e3071a9d2454b4372f3457e2c8fbc2326b",
+    "bytes": 55499,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:buffer",
+        "external": true
+      },
+      {
+        "specifier": "./workspaceRowsAuditSpool.js",
+        "path": "gateway/workspaceRowsAuditSpool.ts"
+      },
+      {
+        "specifier": "./workspaceRowsLargeCommandPrototype.js",
+        "path": "gateway/workspaceRowsLargeCommandPrototype.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./workspaceRowsCodec.js",
+        "path": "gateway/workspaceRowsCodec.ts"
+      }
+    ]
+  },
+  "e92fe9717f24d258a2ac72a1fb5e1fe342aaf38b3ecb533bb53e1a326770710a": {
+    "gitBlob": "12dda46450d20cfa0bb48ed5130cf6af88ab4d92",
+    "bytes": 2447,
+    "storage": "repository",
+    "imports": []
+  },
+  "e97e4e44e2d2c255fc2560e8e7753204dc9a9b4fedd26f1baed13f6c98031177": {
+    "gitBlob": "fdbc2657b86fa4fec4778472f18417147ca7933a",
+    "bytes": 2091,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "./discoveryInbox.js",
+        "path": "src/discoveryInbox.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./ai/mcpProposal.js",
+        "path": "src/ai/mcpProposal.ts"
+      }
+    ]
+  },
+  "e9854b6a11e355851d35b216e3f028538ee2fb520718c84bb15cb24bd152cabd": {
+    "gitBlob": "f5061b75f053c8255b143505a77f6f3f6723419e",
+    "bytes": 5666,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "../src/scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "@modelcontextprotocol/server",
+        "external": true
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "../src/opportunityManagement.js",
+        "path": "src/opportunityManagement.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "./authoritativeCommands.js",
+        "path": "gateway/authoritativeCommands.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "e9b8c0e7376f36906aed18b8033317cf4026f0797e4e09dd0a032c0c1c83e354": {
+    "gitBlob": "b014d704edd6dce5b1cb343bc6e72db08987eaf7",
+    "bytes": 7607,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./jobPosting.js",
+        "path": "src/jobPosting.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      },
+      {
+        "specifier": "./changeSet.js",
+        "path": "src/changeSet.ts"
+      }
+    ]
+  },
+  "ea36f7e0eba232f4ad63ccf30dee9bcca9337f58b793d5526f313682de25f515": {
+    "gitBlob": "fb58caa932b73a61089926524788d6e9739051c9",
+    "bytes": 1755,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./opportunityCreation.js",
+        "path": "src/opportunityCreation.ts"
+      }
+    ]
+  },
+  "ebd421c2f35203b5cf8ba41a4064418f1b4b28b269f35f325b051e2e0f787bc1": {
+    "gitBlob": "c936361978595a3ffc315ade8fd50635489bc004",
+    "bytes": 25983,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./sourceCalendar.js",
+        "path": "src/sourceCalendar.ts"
+      },
+      {
+        "specifier": "./scheduleEligibility.js",
+        "path": "src/scheduleEligibility.ts"
+      },
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "ec22839ad108852ebb7f8b1d2fd88d8f0f74ab4505b431be53ab91e2e6812979": {
+    "gitBlob": "43f544648137bc89c678fa22f9c937ec549215bf",
+    "bytes": 1979,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./discoveryProfile.js",
+        "path": "src/discoveryProfile.ts"
+      },
+      {
+        "specifier": "./timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      }
+    ]
+  },
+  "ef056119aeeba4098e51c9da16ba73a66a0bed954f6fc2f32e9d77f6550d385b": {
+    "gitBlob": "7b9827f804ed641875e32b1305740f261f8b5e1d",
+    "bytes": 1621,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoveryStatus.js",
+        "path": "src/discoveryStatus.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "ef696b87247b58713ce7a521f64f14d5b15cff61e8a0d7fe24e287fefac824d3": {
+    "gitBlob": "4c3f88857b66e28776b94a031ee69d8766abd5f0",
+    "bytes": 6199,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "node:util",
+        "external": true
+      },
+      {
+        "specifier": "../src/ingestion.js",
+        "path": "src/ingestion.ts"
+      },
+      {
+        "specifier": "../src/sourceRegistry.js",
+        "path": "src/sourceRegistry.ts"
+      },
+      {
+        "specifier": "../src/snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "../src/model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "f11336965ae8e1975d69c115b5322e28a9163ca305b64f9cf78722b10d3075a0": {
+    "gitBlob": "63e00af855b002b11027d8787c087f6fdc09330c",
+    "bytes": 2299,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "../src/consumerWorkspaceBootstrap.js",
+        "path": "src/consumerWorkspaceBootstrap.ts"
+      },
+      {
+        "specifier": "../src/cloud/workspaceFingerprint.js",
+        "path": "src/cloud/workspaceFingerprint.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "f47879950202c604b28faca26e51d897112af27377dfdfe4f3661a237e316ba0": {
+    "gitBlob": "a06673f12bb440ca02292c66b9ff1651a018d413",
+    "bytes": 18692,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./discoverySearchEvidence.js",
+        "path": "src/discoverySearchEvidence.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      },
+      {
+        "specifier": "./sourceRegistry.js",
+        "path": "src/sourceRegistry.ts"
+      }
+    ]
+  },
+  "f6416aa796cf996c8b9f03f5ee32520b87fe8a0cb6b5c90da28fdb9360e67b8c": {
+    "gitBlob": "a353e50a26652fddde0711f710eea74e580a8550",
+    "bytes": 4111,
+    "storage": "blob",
+    "imports": [
+      {
+        "specifier": "./consumerBusinessManagementAccess.js",
+        "path": "gateway/consumerBusinessManagementAccess.ts"
+      },
+      {
+        "specifier": "./opportunityManagementAccess.js",
+        "path": "gateway/opportunityManagementAccess.ts"
+      },
+      {
+        "specifier": "./planningManagementAccess.js",
+        "path": "gateway/planningManagementAccess.ts"
+      },
+      {
+        "specifier": "./discoveryProfileManagementAccess.js",
+        "path": "gateway/discoveryProfileManagementAccess.ts"
+      },
+      {
+        "specifier": "./privateReminderManagementAccess.js",
+        "path": "gateway/privateReminderManagementAccess.ts"
+      },
+      {
+        "specifier": "./scopedManagementConsent.js",
+        "path": "gateway/scopedManagementConsent.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./transactionalWorkspaceStore.js",
+        "path": "gateway/transactionalWorkspaceStore.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "f9358455296effedc627e7bd11cbca0d2f7bc0bcb2c8530d75fc258b4f277740": {
+    "gitBlob": "4120f15a44847df0c44af8a55fb7f0c2d23ff3d5",
+    "bytes": 1152,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "f99009f27d75e57052fb3a2544375f2a1594124178d31424ce3e53c32f8ef049": {
+    "gitBlob": "18bf63203bb34fba47994def03ea59021ba98d9b",
+    "bytes": 8314,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "fbfcff30a7eb2ff8e7d3626c004f34bc00a2acb725624f1b850c68ed9e5496b8": {
+    "gitBlob": "d5c8988aecb98e1780db203f0cd62593e783bf07",
+    "bytes": 16724,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./scoringRetirement.js",
+        "path": "src/scoringRetirement.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./decisionRules.js",
+        "path": "src/decisionRules.ts"
+      },
+      {
+        "specifier": "./snapshot.js",
+        "path": "src/snapshot.ts"
+      },
+      {
+        "specifier": "./timePlanningPreferences.js",
+        "path": "src/timePlanningPreferences.ts"
+      }
+    ]
+  },
+  "fc2a31c143622afbb6608d20654106b626de9d3845483da06b9de47ecd322452": {
+    "gitBlob": "867fc90931e993da5a0b4f68384d288e8348659f",
+    "bytes": 3772,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./preparationRetirement.js",
+        "path": "src/preparationRetirement.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  },
+  "fcad3fe21ebaafe7f73801746a32f6cd39157ee42edbba3ed353c1d2c07ac447": {
+    "gitBlob": "a9b0c19c27512a6f8946a75ce22d1238407bf20e",
+    "bytes": 1232,
+    "storage": "repository"
+  },
+  "fcd569def1dd436ddc2ea0f7148c39428a33d68d1e4992bc1137670db5224c80": {
+    "gitBlob": "55de197f8cb87875d8775b8c7f54454a992e39e3",
+    "bytes": 9656,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./consumerTestCohort.js",
+        "path": "gateway/consumerTestCohort.ts"
+      },
+      {
+        "specifier": "zod/v4",
+        "external": true
+      },
+      {
+        "specifier": "./supabaseIdentity.js",
+        "path": "gateway/supabaseIdentity.ts"
+      },
+      {
+        "specifier": "./ownerManagementConsentHandler.js",
+        "path": "gateway/ownerManagementConsentHandler.ts"
+      },
+      {
+        "specifier": "../src/aiAccess/scopedConsentContract.js",
+        "path": "src/aiAccess/scopedConsentContract.ts"
+      },
+      {
+        "specifier": "./scopedManagementConsent.js",
+        "path": "gateway/scopedManagementConsent.ts"
+      },
+      {
+        "specifier": "./scopedManagementConsentStore.js",
+        "path": "gateway/scopedManagementConsentStore.ts"
+      },
+      {
+        "specifier": "./mutationKernel.js",
+        "path": "gateway/mutationKernel.ts"
+      },
+      {
+        "specifier": "./workspaceSource.js",
+        "path": "gateway/workspaceSource.ts"
+      }
+    ]
+  },
+  "fdaacb4f43b1ae9aa77b9852ed61daa9090fbe7071024e9b431d5c004f8d2196": {
+    "gitBlob": "8da2b3299124e474f9d783b9f606d3a37be276c6",
+    "bytes": 13181,
+    "storage": "repository",
+    "imports": [
+      {
+        "specifier": "./applicationDeadline.js",
+        "path": "src/applicationDeadline.ts"
+      },
+      {
+        "specifier": "./model.js",
+        "path": "src/model.ts"
+      }
+    ]
+  }
+}

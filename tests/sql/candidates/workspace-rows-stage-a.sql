@@ -10,6 +10,7 @@ create table pjsdas_rows_candidate.head (
  id uuid primary key, user_id uuid not null unique, revision bigint not null default 0,
  epoch uuid not null default gen_random_uuid(), format text not null default 'workspace-rows-v1',
  envelope jsonb not null, manifest jsonb not null, legacy_snapshot jsonb not null,
+ schema_version integer not null default 4 check(schema_version>0),
  unique(id,user_id),check(revision>=0)
 );
 create table pjsdas_rows_candidate.item (
@@ -24,6 +25,7 @@ create table pjsdas_rows_candidate.item (
 create table pjsdas_rows_candidate.ledger (
  workspace_id uuid not null,user_id uuid not null,command_id text not null,payload_hash text not null,
  resulting_revision bigint not null,receipt jsonb not null,compensation jsonb not null,effect_digest text not null,
+ principal_kind text,client_id text,provenance jsonb not null default '{}'::jsonb,expected_revision bigint,effective_time timestamptz,created_at timestamptz not null default now(),
  primary key(workspace_id,command_id),unique(workspace_id,resulting_revision),
  foreign key(workspace_id,user_id) references pjsdas_rows_candidate.head(id,user_id)
 );
@@ -38,7 +40,12 @@ create function pjsdas_rows_candidate.reject_raw_overwrite() returns trigger lan
  return new;end$$;
 create trigger reject_raw before update on pjsdas_rows_candidate.head for each row execute function pjsdas_rows_candidate.reject_raw_overwrite();
 create function pjsdas_rows_candidate.valid_state(w uuid) returns boolean language sql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
- select not exists(select 1 from pjsdas_rows_candidate.head h where h.id=w and
+ select exists(select 1 from pjsdas_rows_candidate.head where id=w)
+ and not exists(select 1 from pjsdas_rows_candidate.head h where h.id=w and octet_length(h.envelope::text)>1048576)
+ and (select count(*)<=65024 and coalesce(max(n),0)<=1048574 and coalesce(sum(n+2),0)<=33554432 from
+   (select octet_length(jsonb_build_object('collection',collection,'id',id,'ordinal',ordinal,'value',value)::text) n
+    from pjsdas_rows_candidate.item where workspace_id=w) sizes)
+ and not exists(select 1 from pjsdas_rows_candidate.head h where h.id=w and
  (jsonb_typeof(h.envelope) is distinct from 'object' or jsonb_typeof(h.envelope->'data') is distinct from 'object' or jsonb_typeof(h.manifest) is distinct from 'array'))
  and not exists(select 1 from pjsdas_rows_candidate.head h cross join lateral jsonb_array_elements(h.manifest) m where h.id=w and
  (jsonb_typeof(m) is distinct from 'object' or not (m ?& array['collection','count']) or (m-array['collection','count'])<>'{}'::jsonb
@@ -52,25 +59,59 @@ create function pjsdas_rows_candidate.valid_state(w uuid) returns boolean langua
   left join lateral (select count(*) n,count(distinct ordinal) nd,min(ordinal) lo,max(ordinal) hi from pjsdas_rows_candidate.item i where i.workspace_id=w and i.collection=m->>'collection') c on true
   where h.id=w and (c.n<>(m->>'count')::bigint or c.nd<>c.n or (c.n>0 and (c.lo<>0 or c.hi<>c.n-1))))
 $$;
+-- Original command identity spans retained and current history. A cutover must
+-- never make an old committed command look new. Conflicting duplicates fail
+-- closed; neither store silently wins an ambiguous import.
+create function pjsdas_rows_internal.original_command(target_workspace_id uuid,target_user_id uuid,target_command_id text)
+returns jsonb language plpgsql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
+declare old public.pjsdas_command_ledger%rowtype;fresh pjsdas_rows_candidate.ledger%rowtype;has_old boolean;has_fresh boolean;
+begin
+ select * into old from public.pjsdas_command_ledger where user_id=target_user_id and command_id=target_command_id;has_old:=found;
+ select * into fresh from pjsdas_rows_candidate.ledger where user_id=target_user_id and command_id=target_command_id;has_fresh:=found;
+ if has_old and (old.workspace_id is distinct from target_workspace_id or old.status is distinct from 'COMMITTED')
+ or has_fresh and (fresh.workspace_id is distinct from target_workspace_id or fresh.receipt->>'status' is distinct from 'COMMITTED') then
+ raise exception 'invalid original command identity' using errcode='42501';end if;
+ if has_old and has_fresh and (
+ old.operation is distinct from fresh.receipt->>'operation' or old.payload_hash is distinct from fresh.payload_hash
+ or old.expected_revision is distinct from fresh.expected_revision or old.principal_kind is distinct from fresh.principal_kind
+ or old.client_id is distinct from fresh.client_id or old.provenance is distinct from fresh.provenance
+ or old.compensation is distinct from nullif(fresh.compensation,'null'::jsonb) or old.effective_time is distinct from fresh.effective_time
+ or old.resulting_revision is distinct from fresh.resulting_revision or (old.receipt-'committedAt') is distinct from (fresh.receipt-'committedAt')
+ ) then raise exception 'ambiguous original command identity' using errcode='42501';end if;
+ if has_old then return jsonb_build_object('payloadHash',old.payload_hash,'receipt',old.receipt,'revision',old.resulting_revision);end if;
+ if has_fresh then return jsonb_build_object('payloadHash',fresh.payload_hash,'receipt',fresh.receipt,'revision',fresh.resulting_revision);end if;
+ return null;
+end$$;
+revoke all on function pjsdas_rows_internal.original_command(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function pjsdas_rows_internal.original_command(uuid,uuid,text) to service_role;
 create function pjsdas_rows_internal.apply_rows(req jsonb,trusted_receipt_context jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
-declare h pjsdas_rows_candidate.head%rowtype;l pjsdas_rows_candidate.ledger%rowtype;c jsonb;oldrow pjsdas_rows_candidate.item%rowtype;foundrow boolean;n integer:=0;r jsonb;
+declare h pjsdas_rows_candidate.head%rowtype;original jsonb;c jsonb;oldrow pjsdas_rows_candidate.item%rowtype;foundrow boolean;n integer:=0;r jsonb;
 begin
  if req->>'contract' is distinct from 'workspace-rows-v1'
  or jsonb_typeof(req->'commandId') is distinct from 'string' or nullif(req->>'commandId','') is null or coalesce(req->>'payloadHash','') !~ '^[0-9a-f]{64}$'
  or octet_length(req::text)>2097152 or jsonb_typeof(req->'changes') is distinct from 'array'
  or jsonb_array_length(req->'changes')>2000 then raise exception 'invalid narrow request' using errcode='22023';end if;
+ if (req ? 'receiptContext' and req->'receiptContext' is distinct from 'null'::jsonb and jsonb_typeof(req->'receiptContext') is distinct from 'object')
+ or (req ? 'provenance' and req->'provenance' is distinct from 'null'::jsonb and jsonb_typeof(req->'provenance') is distinct from 'object')
+ or jsonb_typeof(trusted_receipt_context) is distinct from 'object' then
+ raise exception 'invalid command audit metadata' using errcode='22023';end if;
  select * into h from pjsdas_rows_candidate.head where id=(req->>'workspaceId')::uuid for update;
  if not found or h.user_id is distinct from (req->>'userId')::uuid then raise exception 'workspace owner mismatch' using errcode='42501';end if;
  if h.epoch is distinct from (req->>'expectedEpoch')::uuid or h.format is distinct from 'workspace-rows-v1' then raise exception 'unsupported generation' using errcode='PT409';end if;
- select * into l from pjsdas_rows_candidate.ledger where workspace_id=h.id and command_id=req->>'commandId';
- if found then
-  if l.payload_hash is distinct from req->>'payloadHash' then raise exception 'command payload differs' using errcode='23505';end if;
-  return jsonb_build_object('outcome','ALREADY_APPLIED','revision',l.resulting_revision,'receipt',l.receipt);
+ original:=pjsdas_rows_internal.original_command(h.id,h.user_id,req->>'commandId');
+ if original is not null then
+  if original->>'payloadHash' is distinct from req->>'payloadHash' then raise exception 'command payload differs' using errcode='23505';end if;
+  return jsonb_build_object('outcome','ALREADY_APPLIED','revision',original->'revision','receipt',original->'receipt');
  end if;
  if h.revision is distinct from (req->>'expectedRevision')::bigint or h.epoch is distinct from (req->>'expectedEpoch')::uuid then
   return jsonb_build_object('outcome','CONFLICT','revision',h.revision);end if;
  if h.format is distinct from 'workspace-rows-v1' then raise exception 'unsupported layout' using errcode='PT409';end if;
+ if jsonb_typeof(req#>'{afterEnvelope,version}') is distinct from 'number'
+ or (req#>>'{afterEnvelope,version}') !~ '^[1-9][0-9]*$'
+ or (req#>>'{afterEnvelope,version}')::numeric<h.schema_version
+ or (req ? 'schemaVersion' and req->'schemaVersion' is distinct from req#>'{afterEnvelope,version}') then
+ raise exception 'invalid schema version or downgrade' using errcode='22023';end if;
  if h.envelope is distinct from req->'beforeEnvelope' or h.manifest is distinct from req->'beforeManifest' then raise exception 'preimage metadata mismatch' using errcode='PT409';end if;
  if exists(select 1 from jsonb_array_elements(req->'changes') x group by x->>'collection',x->>'id' having count(*)>1) then raise exception 'duplicate effect key' using errcode='22023';end if;
  for c in select value from jsonb_array_elements(req->'changes') loop
@@ -89,10 +130,16 @@ begin
   end if;
   n:=n+1;
  end loop;
- update pjsdas_rows_candidate.head set revision=h.revision+1,envelope=req->'afterEnvelope',manifest=req->'afterManifest' where id=h.id;
+ update pjsdas_rows_candidate.head set revision=h.revision+1,envelope=req->'afterEnvelope',manifest=req->'afterManifest',schema_version=(req#>>'{afterEnvelope,version}')::integer where id=h.id;
  if pjsdas_rows_candidate.valid_state(h.id) is not true then raise exception 'incomplete collection manifest' using errcode='22023';end if;
- r:=jsonb_build_object('commandId',req->>'commandId','receiptId','command-receipt:'||(req->>'commandId'),'status','COMMITTED','operation',req->>'operation','revision',h.revision+1,'committedAt',now()) || trusted_receipt_context;
- insert into pjsdas_rows_candidate.ledger values(h.id,h.user_id,req->>'commandId',req->>'payloadHash',h.revision+1,r,req->'compensation',md5((req->'changes')::text));
+ r:=coalesce(nullif(req->'receiptContext','null'::jsonb),'{}'::jsonb) || trusted_receipt_context || jsonb_build_object('commandId',req->>'commandId','receiptId','command-receipt:'||(req->>'commandId'),'status','COMMITTED','operation',req->>'operation','revision',h.revision+1,'committedAt',now(),'undoAvailable',req->'compensation' is not null and req->'compensation' is distinct from 'null'::jsonb);
+ insert into pjsdas_rows_candidate.ledger(workspace_id,user_id,command_id,payload_hash,resulting_revision,receipt,compensation,effect_digest,principal_kind,client_id,provenance,expected_revision,effective_time)
+ values(h.id,h.user_id,req->>'commandId',req->>'payloadHash',h.revision+1,r,coalesce(req->'compensation','null'::jsonb),md5((req->'changes')::text),req->>'principal',req->>'clientId',coalesce(nullif(req->'provenance','null'::jsonb),'{}'::jsonb),(req->>'expectedRevision')::bigint,(req->>'effectiveTime')::timestamptz);
+ -- Never commit an immutable audit row that the bounded logical history reader
+ -- cannot later return. Projection overhead is conservatively included.
+ if (select octet_length((to_jsonb(l)-'effect_digest')::text)+octet_length(to_jsonb(l.receipt->>'operation')::text)+64>2097150
+     from pjsdas_rows_candidate.ledger l where l.workspace_id=h.id and l.command_id=req->>'commandId') then
+  raise exception 'audit record exceeds candidate read eligibility' using errcode='22023';end if;
  return jsonb_build_object('outcome','COMMITTED','revision',h.revision+1,'receipt',r);
 end$$;
 -- A private-schema primitive is not exposed by PostgREST's candidate schema.
@@ -110,23 +157,30 @@ end$$;
 -- STAGE A CANDIDATE ONLY: one statement snapshot binds each page to its head.
 create function pjsdas_rows_candidate.read_head(target_user_id uuid) returns jsonb
 language sql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
- select jsonb_build_object('workspaceId',id,'userId',user_id,'revision',revision,'epoch',epoch,'format',format,'envelope',envelope,'manifest',manifest)
+ select jsonb_build_object('workspaceId',id,'userId',user_id,'revision',revision,'epoch',epoch,'format',format,'schemaVersion',schema_version,'envelope',envelope,'manifest',manifest)
  from pjsdas_rows_candidate.head where user_id=target_user_id
 $$;
-create function pjsdas_rows_candidate.read_page(target_user_id uuid,target_workspace_id uuid,target_epoch uuid,target_revision bigint,after_collection text default null,after_ordinal bigint default null) returns jsonb
-language sql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
- with h as (select * from pjsdas_rows_candidate.head where id=target_workspace_id and user_id=target_user_id),
- page as (select i.collection,i.id,i.ordinal,i.value from pjsdas_rows_candidate.item i join h on h.id=i.workspace_id
- where h.epoch=target_epoch and h.revision=target_revision and h.format='workspace-rows-v1'
- and ((after_collection is null and after_ordinal is null) or (after_collection is not null and after_ordinal>=0 and (i.collection,i.ordinal)>(after_collection,after_ordinal)))
- order by i.collection,i.ordinal limit 127),
- data as (select coalesce(jsonb_agg(to_jsonb(page) order by collection,ordinal),'[]'::jsonb) rows,count(*) n from page)
- select case when not exists(select 1 from h) then jsonb_build_object('outcome','NOT_FOUND')
- when (after_collection is null)<>(after_ordinal is null) or after_ordinal<0 then jsonb_build_object('outcome','INVALID_CURSOR')
- when not exists(select 1 from h where epoch=target_epoch and revision=target_revision and format='workspace-rows-v1') then jsonb_build_object('outcome','CONFLICT')
- when octet_length(data.rows::text)>1048576 then jsonb_build_object('outcome','PAGE_TOO_LARGE')
- else jsonb_build_object('outcome','PAGE','workspaceId',target_workspace_id,'epoch',target_epoch,'revision',target_revision,'rows',data.rows,'end',n<127) end from data
-$$;
+create function pjsdas_rows_candidate.read_page(target_user_id uuid,target_workspace_id uuid,target_epoch uuid,target_revision bigint,after_collection text default null,after_ordinal bigint default null,max_rows integer default 127) returns jsonb
+language plpgsql stable security invoker set search_path=pg_catalog,pjsdas_rows_candidate as $$
+declare h record; item record; row_json jsonb; result_rows jsonb[]:='{}'::jsonb[]; size_bytes bigint:=2; n integer:=0; ended boolean:=true; row_bytes bigint;
+begin
+ select id,epoch,revision,format into h from pjsdas_rows_candidate.head where id=target_workspace_id and user_id=target_user_id;
+ if not found then return jsonb_build_object('outcome','NOT_FOUND');end if;
+ if max_rows is null or max_rows<1 or max_rows>127 or (after_collection is null)<>(after_ordinal is null) or after_ordinal<0 then return jsonb_build_object('outcome','INVALID_CURSOR');end if;
+ if h.epoch is distinct from target_epoch or h.revision is distinct from target_revision or h.format<>'workspace-rows-v1' then return jsonb_build_object('outcome','CONFLICT');end if;
+ -- Ordered index cursor; never aggregate 127 arbitrarily large entity values.
+ for item in select collection,id,ordinal,value from pjsdas_rows_candidate.item
+  where workspace_id=target_workspace_id and (after_collection is null or (collection,ordinal)>(after_collection,after_ordinal))
+  order by collection,ordinal limit max_rows+1 loop
+  row_json:=to_jsonb(item);row_bytes:=octet_length(row_json::text);
+  if n=max_rows or size_bytes+row_bytes+(case when n>0 then 2 else 0 end)>1048576 then
+   if n=0 then return jsonb_build_object('outcome','PAGE_TOO_LARGE');end if;
+   ended:=false;exit;
+  end if;
+  result_rows:=array_append(result_rows,row_json);size_bytes:=size_bytes+row_bytes+(case when n>0 then 2 else 0 end);n:=n+1;
+ end loop;
+ return jsonb_build_object('outcome','PAGE','workspaceId',target_workspace_id,'epoch',target_epoch,'revision',target_revision,'rows',result_rows,'end',ended);
+end$$;
 revoke all on all tables in schema pjsdas_rows_candidate from public,anon,authenticated;
 revoke all on all functions in schema pjsdas_rows_candidate from public,anon,authenticated;
 grant usage on schema pjsdas_rows_candidate to service_role;

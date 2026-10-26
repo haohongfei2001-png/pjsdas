@@ -28,7 +28,7 @@ describe('transactional workspace source', () => {
     const next = snapshot('2026-09-19T00:01:00.000Z')
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: 1 }])
       }
       if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
@@ -74,7 +74,7 @@ describe('transactional workspace source', () => {
     const bodies: any[] = []
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision: 7, schema_version: 1 }])
       }
       if (new URL(url).pathname === '/rest/v1/rpc/pjsdas_commit_workspace_v2') {
@@ -143,7 +143,7 @@ describe('one-shot revision-bound read preimage', () => {
     let afterIdentity: (() => void) | undefined, workspaceId = 'synthetic-ws', storedSchema = current.version
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const url = new URL(String(input))
-      if (url.pathname === '/rest/v1/pjsdas_workspaces') {
+      if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
         reads.push(String(input))
         const row = { id: workspaceId, user_id: 'user-a', revision, schema_version: storedSchema }
         const identityOnly = !url.searchParams.get('select')?.includes('snapshot')

@@ -419,13 +419,18 @@ async function recoverUnknown(accountKey: string, pending: PendingCommand, _caug
 
 function rejectBeforeExecution(accountKey: string, pending: PendingCommand, response: Response, payload?: Record<string, any>): never {
   const raw = serverError(response, payload)
+  if (payload?.code === 'WORKSPACE_RECOVERY_TERMINAL' && payload.retryable === false) {
+    const message = '这次操作已确认未提交；本机草稿已保留，请检查冲突后重新操作。'
+    patchPending(accountKey, pending.commandId, { status: 'conflict', lastError: message })
+    throw new PreExecutionCommandError(message, 'COMMAND_REJECTED')
+  }
   if (response.status === 401) {
-    const message = '登录会话已过期；服务器没有执行这次操作。重新登录后会先核对原操作。'
+    const message = '登录会话已过期；本机记录已保留，重新登录后会先核对原操作回执。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
     throw new PreExecutionCommandError(message, 'SESSION_EXPIRED_BEFORE_COMMAND')
   }
   if (response.status === 403) {
-    const message = '当前账号没有执行这次操作的权限；服务器没有提交修改。'
+    const message = '当前权限或账号访问不足，暂时无法确认原操作结果；本机记录已保留，权限恢复后先核对回执。'
     patchPending(accountKey, pending.commandId, { status: 'pending', lastError: message })
     throw new PreExecutionCommandError(message, 'AUTH_REJECTED_BEFORE_COMMAND')
   }

@@ -63,7 +63,7 @@ describe('consumer onboarding route remains gated and first-party only',()=>{
   const fetchImpl=vi.fn(async(url:RequestInfo|URL,init?:RequestInit)=>{
    const path=new URL(String(url)).pathname;calls.push(path)
    if(path==='/auth/v1/user')return json({id:owner})
-   if(path==='/rest/v1/pjsdas_workspaces')return json([])
+   if(path==='/rest/v1/rpc/pjsdas_read_legacy_workspace_v1')return json([])
    if(path==='/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1'){
     const body=JSON.parse(String(init?.body));expect(body.target_user_id).toBe(owner);expect(body.initial_snapshot.data.opportunities).toEqual([])
     return json([{workspace_id:'synthetic-ws',revision:0,snapshot:body.initial_snapshot}])
@@ -73,7 +73,7 @@ describe('consumer onboarding route remains gated and first-party only',()=>{
   const response=await createConnectedWorkspaceHandler({...config,consumerOnboardingEnabled:true,fetchImpl})(request(input))
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({workspaceVersion:'txn:0',snapshot:{data:{timePlanning:{timezone:'Europe/London'}}}})
-  expect(calls).toEqual(['/auth/v1/user','/rest/v1/pjsdas_workspaces','/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1'])
+  expect(calls).toEqual(['/auth/v1/user','/rest/v1/rpc/pjsdas_read_legacy_workspace_v1','/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1'])
  })
  it('rejects delegated self-onboarding even when the fixture feature gate is enabled',async()=>{
   const payload=Buffer.from(JSON.stringify({client_id:'00000000-0000-4000-8000-000000000001'})).toString('base64url')

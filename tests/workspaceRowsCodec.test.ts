@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeWorkspaceRows, diffWorkspaceRows, encodeWorkspaceRows } from '../gateway/workspaceRowsCodec'
+import { decodeWorkspaceRows, diffReadableWorkspaceRows, diffWorkspaceRows, encodeWorkspaceRows } from '../gateway/workspaceRowsCodec'
 
 describe('stage-A lossless row codec', () => {
   const base = () => ({ version: 4, exportedAt: '2030-01-01', extra: { a: null }, data: { opportunities: [{ id: 'a', unknown: { x: 1 } }, { id: 'b' }], timeline: [], extension: { untouched: true } } })
@@ -33,5 +33,21 @@ describe('stage-A lossless row codec', () => {
     expect(() => decodeWorkspaceRows({ ...encoded, rows: [...encoded.rows, encoded.rows[0]] })).toThrow()
     const gap = structuredClone(encoded); gap.rows[1].ordinal = 4; expect(() => decodeWorkspaceRows(gap)).toThrow()
     expect(() => decodeWorkspaceRows({ ...encoded, manifest: [...encoded.manifest, { collection: null, count: 0 }] })).toThrow()
+  })
+})
+
+describe('candidate write readability admission (not product quotas)', () => {
+  const base = { version: 4, data: { timeline: [] } }
+  it('rejects oversize headers and individual rows before constructing a write', () => {
+    expect(() => diffReadableWorkspaceRows(base, { ...base, extra: 'x'.repeat(1_048_576) })).toThrow('WORKSPACE_ROWS_INVALID')
+    expect(() => diffReadableWorkspaceRows(base, { version: 4, data: { timeline: [{ id: 'large', detail: 'x'.repeat(1_048_576) }] } })).toThrow('WORKSPACE_ROWS_INVALID')
+  })
+  it('accepts many individually bounded rows even when their first count-page exceeds a byte page', () => {
+    const after = { version: 4, data: { timeline: Array.from({ length: 120 }, (_, i) => ({ id: String(i), detail: 'x'.repeat(10_000) })) } }
+    expect(diffReadableWorkspaceRows(base, after)).toEqual(diffWorkspaceRows(base, after))
+  })
+  it('rejects total bytes and row counts that the bounded reader cannot complete', () => {
+    expect(() => diffReadableWorkspaceRows(base, { version: 4, data: { timeline: Array.from({ length: 40 }, (_, i) => ({ id: String(i), detail: 'x'.repeat(900_000) })) } })).toThrow('WORKSPACE_ROWS_INVALID')
+    expect(() => diffReadableWorkspaceRows(base, { version: 4, data: { timeline: Array.from({ length: 65_025 }, (_, i) => ({ id: String(i) })) } })).toThrow('WORKSPACE_ROWS_INVALID')
   })
 })
