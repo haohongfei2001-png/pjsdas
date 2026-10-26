@@ -1,10 +1,215 @@
 import { setupInstantServer as setup } from './fixtures/instantServer.js'
 import { test, expect } from '@playwright/test'
-import { INSTANT_NOW } from '../tests/fixtures/instantDenseWorkspace.js'
+import { INSTANT_NOW, instantDenseWorkspace } from '../tests/fixtures/instantDenseWorkspace.js'
+import { BACKEND, cors, health, seedSession } from './fixtures/todayWorkspace.js'
+import { guardMockApplicationRequests } from './support/mockApplicationRequests.js'
 
 // Video encoding competes with the measured UI on small CI runners. Keep
 // failure screenshots/traces and timing receipts without a live video encoder.
 test.use({ timezoneId: 'Asia/Shanghai', video: 'off' })
+
+test.describe('durable v2 journal', () => {
+  // A retry must not turn a first-attempt storage/recovery failure into a pass.
+  // This source-module fixture does not mount the consumer UI, restart the
+  // browser process, run an automatic recovery scheduler, or contact real PG.
+  test.describe.configure({ retries: 0 })
+  test.use({ serviceWorkers: 'block' })
+  test('retains real IndexedDB across reloads and distinguishes terminal from permission denial', async ({ page, context, browserName }, info) => {
+    const account = 'durable-v2-browser-owner'
+    const ids = { root: 'v2-terminal-root', child: 'v2-terminal-child', independent: 'v2-auth-pending' }
+    const draft = '原草稿必须保留：真实 IndexedDB 验收，未来😀'
+    const fixturePath = '/pjsdas/durable-v2-journal-fixture'
+    const requests: Array<{ action: string; commandId: string; mode: string }> = []
+    const pageErrors: string[] = []
+    const evidence = {
+      contract: 'durable-v2-real-idb-synthetic-http-v1', status: 'RUNNING', browserName,
+      actualBrowser: false, actualIndexedDB: false, actualOfflineCreation: false, actualReloads: 0,
+      syntheticHttpResponses: 0, realPostgres: false, consumerUiMounted: false, clockMocked: false,
+      cases: [] as string[], error: undefined as string | undefined,
+    }
+    let mode: 'blocked' | 'terminal' | 'forbidden' = 'blocked'
+    const guard = await guardMockApplicationRequests(context)
+    page.on('pageerror', error => pageErrors.push(String(error)))
+    const loadModules = () => page.evaluate(async account => {
+      const [db, accounts] = await Promise.all([
+        import('/pjsdas/src/db.ts'), import('/pjsdas/src/cloud/accountCacheLease.ts'),
+        import('/pjsdas/src/cloud/instantCommandClient.ts'), import('/pjsdas/src/cloud/authoritativeCommandClient.ts'),
+        import('/pjsdas/src/cloud/syncState.ts'), import('/pjsdas/src/cloud/workspaceFingerprint.ts'),
+      ])
+      accounts.setAccountCacheSession(account)
+      const realm = crypto.randomUUID()
+      ;(window as any).durableV2Realm = realm
+      return { nativeIDB: Object.prototype.toString.call(indexedDB), database: (await db.dbPromise).name,
+        account: accounts.currentAccountCacheSession(), realm }
+    }, account)
+    const readJournal = () => page.evaluate(async ({ account, ids }) => {
+      const db = await import('/pjsdas/src/db.ts')
+      const queue = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+      return {
+        records: {
+          root: await db.readCommandInteraction(account, ids.root),
+          child: await db.readCommandInteraction(account, ids.child),
+          independent: await db.readCommandInteraction(account, ids.independent),
+        },
+        pending: queue.listAccountPendingOperations(account), draft: queue.readAccountDraft(account, 'tell-pjsdas'),
+        actions: (await db.exportLocalSnapshot()).data.actions.filter(action => ['dense-action-0', 'dense-action-1'].includes(action.id)),
+      }
+    }, { account, ids })
+    const reload = async () => {
+      const previousRealm = await page.evaluate(() => (window as any).durableV2Realm)
+      await page.reload()
+      // Prove the previous JS realm disappeared before installing a new marker.
+      expect(await page.evaluate(() => (window as any).durableV2Realm)).toBeUndefined()
+      const metadata = await loadModules()
+      expect(metadata.realm).not.toBe(previousRealm)
+      evidence.actualReloads++
+    }
+    const recover = (commandId: string) => page.evaluate(async ({ account, commandId }) => {
+      await (await import('/pjsdas/src/cloud/instantCommandClient.ts')).recoverInstantInteraction(account, commandId)
+    }, { account, commandId })
+    try {
+      expect(BACKEND).toBe('https://todayaction-backend.invalid')
+      await seedSession(context, account, 'synthetic-durable-v2-token')
+      await page.route(`**${fixturePath}`, route => route.fulfill({ contentType: 'text/html', body:
+        '<!doctype html><html><head><title>Durable v2 storage fixture</title><link rel="icon" href="data:,"></head><body>Real IndexedDB; synthetic HTTP; no consumer UI.</body></html>' }))
+      await context.route(`${BACKEND}/**`, async route => {
+        if (route.request().method() === 'OPTIONS') return cors(route, {}, 204)
+        if (new URL(route.request().url()).pathname === '/api/health') return cors(route, health())
+        expect(new URL(route.request().url()).pathname).toBe('/api/workspace')
+        const body = route.request().postDataJSON()
+        requests.push({ action: body.action, commandId: body.commandId, mode })
+        if (body.action === 'receipt') {
+          await cors(route, { found: false }); evidence.syntheticHttpResponses++; return
+        }
+        expect(body.action).toBe('command')
+        if (mode === 'terminal') {
+          await cors(route, { code: 'WORKSPACE_RECOVERY_TERMINAL', retryable: false, message: 'Synthetic DB-fenced uncommitted operation' }, 400)
+          evidence.syntheticHttpResponses++; return
+        }
+        if (mode === 'forbidden') {
+          await cors(route, { code: 'AUTH_FORBIDDEN', retryable: false, message: 'Synthetic permission unavailable' }, 403)
+          evidence.syntheticHttpResponses++; return
+        }
+        return route.abort('internetdisconnected')
+      })
+      await page.goto(fixturePath)
+      const metadata = await loadModules()
+      expect(metadata.nativeIDB).toBe('[object IDBFactory]')
+      expect(metadata.database).not.toBe('')
+      expect(metadata.account).toBe(account)
+      evidence.actualBrowser = true
+      const original = await page.evaluate(async ({ snapshot, account, draft }) => {
+        const db = await import('/pjsdas/src/db.ts'), sync = await import('/pjsdas/src/cloud/syncState.ts')
+        const queue = await import('/pjsdas/src/cloud/authoritativeCommandClient.ts')
+        const fingerprint = await import('/pjsdas/src/cloud/workspaceFingerprint.ts')
+        await db.restoreLocalSnapshot(snapshot)
+        sync.bindLocalWorkspaceToUser(account)
+        const baseline = await db.exportLocalSnapshot()
+        sync.patchAccountCheckpoint(account, { lastSyncedVersion: 'txn:1204', lastSyncedFingerprint: await fingerprint.fingerprintWorkspace(baseline) })
+        queue.saveAccountDraft(account, 'tell-pjsdas', draft)
+        return baseline.data.actions.filter(action => ['dense-action-0', 'dense-action-1'].includes(action.id))
+      }, { snapshot: instantDenseWorkspace(0), account, draft })
+      let prepared!: Awaited<ReturnType<typeof readJournal>>
+      await test.step('offline original journals and draft survive a real page reload byte-for-byte', async () => {
+        await context.setOffline(true)
+        expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+        await page.evaluate(async ({ account, ids }) => {
+          const db = await import('/pjsdas/src/db.ts'), client = await import('/pjsdas/src/cloud/instantCommandClient.ts')
+          for (const [commandId, status, actionId] of [
+            [ids.root, 'done', 'dense-action-0'], [ids.child, 'skipped', 'dense-action-0'], [ids.independent, 'done', 'dense-action-1'],
+          ] as const) {
+            await client.beginInstantCommand(account, await db.exportLocalSnapshot(), { commandId, kind: 'set_action_status', actionId, status })
+            // Drain the owned deferred dispatch while the browser is offline.
+            await new Promise(resolve => setTimeout(resolve, 0))
+          }
+        }, { account, ids })
+        prepared = await readJournal()
+        expect(prepared.records.root?.state).toBe('active')
+        expect(prepared.records.child?.predecessors).toContain(ids.root)
+        expect(prepared.records.independent?.state).toBe('active')
+        expect(prepared.draft).toBe(draft)
+        expect(requests).toEqual([])
+        evidence.actualOfflineCreation = true
+        await context.setOffline(false)
+        await reload()
+        const reloaded = await readJournal()
+        expect(JSON.stringify(reloaded.records)).toBe(JSON.stringify(prepared.records))
+        expect(reloaded.draft).toBe(draft)
+        expect(requests).toEqual([])
+        evidence.actualIndexedDB = true
+        evidence.cases.push('real-idb-journal-survives-page-reload')
+      })
+      await test.step('DB-terminal conflict rolls back the dependent chain but preserves independent facts and draft', async () => {
+        mode = 'terminal'
+        await recover(ids.root)
+        const rejected = await readJournal()
+        expect(rejected.records.root?.state).toBe('conflict')
+        expect(rejected.records.child?.state).toBe('rejected')
+        expect(rejected.records.independent?.state).toBe('active')
+        for (const key of ['root', 'child', 'independent'] as const) {
+          expect(rejected.records[key]?.command).toEqual(prepared.records[key]?.command)
+          expect(rejected.records[key]?.delta).toEqual(prepared.records[key]?.delta)
+          expect(rejected.records[key]?.compensation).toEqual(prepared.records[key]?.compensation)
+        }
+        expect(rejected.actions.find(action => action.id === 'dense-action-0')).toEqual(original.find(action => action.id === 'dense-action-0'))
+        expect(rejected.actions.find(action => action.id === 'dense-action-1')?.status).toBe('done')
+        expect(rejected.pending.find(item => item.commandId === ids.root)?.status).toBe('conflict')
+        expect(rejected.draft).toBe(draft)
+        expect(requests).toEqual([{ action: 'receipt', commandId: ids.root, mode }, { action: 'command', commandId: ids.root, mode }])
+        evidence.cases.push('db-terminal-dependency-rollback-retains-draft')
+      })
+      await test.step('terminal journals survive another reload and explicit recovery sends neither command again', async () => {
+        const before = requests.length
+        const beforeReload = await readJournal()
+        await reload()
+        await recover(ids.root); await recover(ids.child)
+        const terminal = await readJournal()
+        expect(terminal.records.root?.state).toBe('conflict')
+        expect(terminal.records.child?.state).toBe('rejected')
+        expect(terminal.records).toEqual(beforeReload.records)
+        expect(terminal.actions).toEqual(beforeReload.actions)
+        expect(terminal.draft).toBe(draft)
+        expect(requests).toHaveLength(before)
+        evidence.cases.push('terminal-state-survives-second-reload-no-resend')
+      })
+      await test.step('403 retains pending facts and truthful uncertainty after reload without an automatic resend', async () => {
+        mode = 'forbidden'
+        await recover(ids.independent)
+        const denied = await readJournal(), pending = denied.pending.find(item => item.commandId === ids.independent)
+        expect(denied.records.independent?.state).toBe('active')
+        expect(pending?.status).toBe('pending')
+        expect(pending?.lastError).toMatch(/权限|访问不足/)
+        expect(pending?.lastError).toMatch(/无法确认.*结果|核对.*回执/)
+        expect(pending?.lastError).not.toMatch(/没有提交|没有执行|已确认未保存|已确认未提交/)
+        expect(denied.actions.find(action => action.id === 'dense-action-1')?.status).toBe('done')
+        expect(denied.draft).toBe(draft)
+        expect(requests.slice(-2)).toEqual([{ action: 'receipt', commandId: ids.independent, mode }, { action: 'command', commandId: ids.independent, mode }])
+        const before = requests.length
+        await reload()
+        const reloaded = await readJournal()
+        expect(reloaded.records.independent).toEqual(denied.records.independent)
+        expect(reloaded.pending.find(item => item.commandId === ids.independent)).toEqual(pending)
+        expect(reloaded.actions).toEqual(denied.actions)
+        expect(reloaded.draft).toBe(draft)
+        expect(requests).toHaveLength(before)
+        evidence.cases.push('permission-denial-is-pending-not-false-terminal-after-reload')
+      })
+      guard.assertNoUnexpectedRequests()
+      expect(pageErrors).toEqual([])
+      expect(evidence.actualReloads).toBe(3)
+      expect(evidence.syntheticHttpResponses).toBe(4)
+      expect(evidence.cases).toHaveLength(4)
+      evidence.status = 'PASS_REAL_BROWSER_IDB_SYNTHETIC_HTTP'
+    } catch (error) {
+      evidence.status = 'FAIL'; evidence.error = String(error)
+      throw error
+    } finally {
+      // Playwright owns and closes the context. Preserve failed/incomplete flags
+      // too; no actual execution claim is prefilled before its assertions pass.
+      await info.attach('durable-v2-real-idb.json', { body: JSON.stringify({ ...evidence, requests, pageErrors, blocked: guard.blocked }, null, 2), contentType: 'application/json' })
+    }
+  })
+})
 test('dense capacity and completion settle before delayed server confirmation', async ({ page, context }, info) => {
   test.setTimeout(90_000)
   const server = await setup(context)
