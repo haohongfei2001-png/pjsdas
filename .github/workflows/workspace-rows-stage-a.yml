@@ -2,6 +2,12 @@ name: Workspace rows Stage A (synthetic only)
 on:
   pull_request:
     paths:
+      - 'api/workspace.ts'
+      - 'gateway/scopedManagement*.ts'
+      - 'src/domainCommands.ts'
+      - 'src/opportunityManagement.ts'
+      - 'tests/fixtures/workspaceRows*.ts'
+      - 'docs/engineering/workspace-rows-durable-attempts-v2-contract.md'
       - 'gateway/workspaceRows*.ts'
       - 'gateway/transactionalWorkspace*.ts'
       - 'gateway/aiCaptureLedger.ts'
@@ -56,31 +62,121 @@ jobs:
           await db.end()
           JS
       - name: Codec and fail-closed adapter tests
-        run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts tests/workspaceRowsStoreRouting.test.ts tests/workspaceRowsStoreBridge.test.ts tests/workspaceRowsRuntime.test.ts --maxWorkers=2
-      - name: Real HTTP candidate inside isolated PostgreSQL service
+        run: npx vitest run tests/workspaceRowsCodec.test.ts tests/workspaceRowsCandidate.test.ts tests/workspaceRowsStoreRouting.test.ts tests/workspaceRowsStoreBridge.test.ts tests/workspaceRowsRuntime.test.ts tests/workspaceRowsDurableV2Gate.test.ts --maxWorkers=2
+      - name: Stage A and durable recovery gates inside isolated PostgreSQL service
         env:
           FIXTURE_CONTAINER: ${{ job.services.postgres.id }}
+          TA_V2_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # Keep the service's isolated network. Its published host port is not
           # server-side loopback; run the unchanged HTTP/migration suite inside it.
+          evidence="$RUNNER_TEMP/ta-row-v2-evidence"
+          mkdir "$evidence"
+          export TA_V2_SOURCE_COMMIT="$(git rev-parse HEAD)"
+          export TA_V2_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          manifest_sha=$(node tests/sql/workspace-rows-durable-v2-source.mjs --manifest "$evidence/source-manifest.json")
+          [[ "$manifest_sha" =~ ^[0-9a-f]{64}$ ]]
+          stage_a=NOT_RUN
+          core=NOT_RUN
+          safety=NOT_RUN
+          barriers=NOT_RUN
           work=$(docker exec --user postgres "$FIXTURE_CONTAINER" mktemp -d /tmp/ta-row-ci.XXXXXX)
           [[ "$work" =~ ^/tmp/ta-row-ci\.[A-Za-z0-9]+$ ]]
           trap 'docker exec --user postgres "$FIXTURE_CONTAINER" rm -rf -- "$work"' EXIT
+          finish() {
+            rc=$?
+            trap - EXIT
+            set +e
+            # Explicit sanitized files only. Never copy raw logs, DB directories,
+            # HTTP payloads, worker input/output, JWTs, or the ambient environment.
+            for group in core safety barriers; do
+              for file in result cleanup; do
+                if docker exec --user postgres "$FIXTURE_CONTAINER" test -f "$work/native-evidence/$group/$file.json"; then
+                  docker cp "$FIXTURE_CONTAINER:$work/native-evidence/$group/$file.json" "$evidence/$group-$file.json" || rc=74
+                elif [[ "${!group}" = PASS ]]; then
+                  rc=74
+                fi
+              done
+            done
+            docker exec --user postgres "$FIXTURE_CONTAINER" rm -rf -- "$work"
+            cleanup_rc=$?
+            [[ "$cleanup_rc" = 0 ]] || rc=75
+            rm -f -- "$RUNNER_TEMP/ta-row-v2-core-private.log" "$RUNNER_TEMP/ta-row-v2-safety-private.log" "$RUNNER_TEMP/ta-row-v2-barriers-private.log"
+            private_log_cleanup_rc=$?
+            [[ "$private_log_cleanup_rc" = 0 ]] || rc=75
+            node --input-type=module - "$stage_a" "$core" "$safety" "$barriers" "$cleanup_rc" "$rc" "$manifest_sha" "$private_log_cleanup_rc" <<'JS' > "$evidence/gate-state.json"
+          const [stageA, core, safety, barriers, cleanupExitCode, exitCode, manifestSha256, privateLogCleanupExitCode] = process.argv.slice(2)
+          console.log(JSON.stringify({ contract: 'durable-v2-native-ci-v1', checkoutCommit: process.env.TA_V2_SOURCE_COMMIT, checkoutTree: process.env.TA_V2_SOURCE_TREE, prHead: process.env.TA_V2_PR_HEAD_SHA, manifestSha256, stageA, groups: { core, safety, barriers }, ownedWorkRemoved: cleanupExitCode === '0', privateLogsRemoved: privateLogCleanupExitCode === '0', exitCode: Number(exitCode), hostedReady: false }, null, 2))
+          JS
+            [[ "$?" = 0 ]] || rc=76
+            exit "$rc"
+          }
+          trap finish EXIT
           docker exec --user postgres "$FIXTURE_CONTAINER" mkdir "$work/bin"
           docker cp "$(readlink -f "$(command -v node)")" "$FIXTURE_CONTAINER:$work/bin/node"
           docker cp /tmp/postgrest "$FIXTURE_CONTAINER:$work/bin/postgrest"
           # Tracked test/source allowlist only: no .git, checkout credentials,
           # ambient environment files, private artifacts, or host volume mounts.
-          git ls-files -z -- gateway src supabase/migrations tests/sql tests/fixtures \
+          git ls-files -z -- api/workspace.ts gateway src supabase/migrations tests/sql tests/fixtures \
             package.json package-lock.json tsconfig.json tsconfig.app.json tsconfig.node.json > "$RUNNER_TEMP/ta-row-ci-source-files"
           tar --null -T "$RUNNER_TEMP/ta-row-ci-source-files" -cf - node_modules tests/sql/node_modules | \
             docker exec --user postgres -i "$FIXTURE_CONTAINER" tar --no-same-owner -xf - -C "$work"
+          # Create the 0600 manifest as the same OS user that verifies it.
+          docker exec --user postgres -i "$FIXTURE_CONTAINER" sh -c 'umask 077; cat > "$1"' sh "$work/native-source.json" < "$evidence/source-manifest.json"
+          docker exec --user postgres "$FIXTURE_CONTAINER" mkdir "$work/native-evidence"
           # Fail closed if the existing image cannot execute either binary.
           docker exec --user postgres "$FIXTURE_CONTAINER" "$work/bin/node" --version
           docker exec --user postgres "$FIXTURE_CONTAINER" "$work/bin/postgrest" --version
-          docker exec --user postgres --workdir "$work" "$FIXTURE_CONTAINER" \
+          if docker exec --user postgres --workdir "$work" "$FIXTURE_CONTAINER" \
             env -i HOME="$work" LANG=C.UTF-8 PATH="$work/bin:/usr/local/bin:/usr/bin:/bin" \
             TA_ROW_DATABASE_URL=postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres \
             TA_POSTGREST_BIN="$work/bin/postgrest" \
-            node --import tsx tests/sql/workspace-rows-stage-a.mjs
+            node --import tsx tests/sql/workspace-rows-stage-a.mjs; then
+            stage_a=PASS
+          else
+            rc=$?; stage_a=FAIL; exit "$rc"
+          fi
+          # No retry or tail-only selector: independent DBs, serial core4 then
+          # one continuous safety17 then barriers7, with the original budgets.
+          for group in core safety barriers; do
+            entry=tests/sql/workspace-rows-durable-v2-acceptance.mjs
+            args=("$group")
+            if [[ "$group" = barriers ]]; then
+              entry=tests/sql/workspace-rows-durable-v2-barriers.mjs
+              args=()
+            fi
+            docker exec --user postgres "$FIXTURE_CONTAINER" mkdir "$work/native-evidence/$group"
+            if docker exec --user postgres --workdir "$work" "$FIXTURE_CONTAINER" \
+              env -i HOME="$work" LANG=C.UTF-8 PATH="$work/bin:/usr/local/bin:/usr/bin:/bin" \
+              TA_ROW_DATABASE_URL=postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres \
+              TA_POSTGREST_BIN="$work/bin/postgrest" TA_V2_POSTGREST_PORT=55765 \
+              TA_V2_VALIDATION_WINDOW=synthetic-owned-fixture \
+              TA_V2_EVIDENCE="$work/native-evidence/$group" \
+              TA_V2_SOURCE_MANIFEST="$work/native-source.json" TA_V2_SOURCE_MANIFEST_SHA256="$manifest_sha" \
+              TA_V2_SOURCE_COMMIT="$TA_V2_SOURCE_COMMIT" TA_V2_SOURCE_TREE="$TA_V2_SOURCE_TREE" TA_V2_PR_HEAD_SHA="$TA_V2_PR_HEAD_SHA" \
+              node --import tsx "$entry" "${args[@]}" > "$RUNNER_TEMP/ta-row-v2-$group-private.log" 2>&1; then
+              printf -v "$group" '%s' PASS
+              echo "Native $group gate passed"
+            else
+              rc=$?; printf -v "$group" '%s' FAIL
+              echo "Native $group gate failed; sanitized result is retained, no retry"
+              exit "$rc"
+            fi
+          done
+      - name: Upload sanitized native gate evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: durable-v2-native-gates
+          path: |
+            ${{ runner.temp }}/ta-row-v2-evidence/source-manifest.json
+            ${{ runner.temp }}/ta-row-v2-evidence/gate-state.json
+            ${{ runner.temp }}/ta-row-v2-evidence/core-result.json
+            ${{ runner.temp }}/ta-row-v2-evidence/core-cleanup.json
+            ${{ runner.temp }}/ta-row-v2-evidence/safety-result.json
+            ${{ runner.temp }}/ta-row-v2-evidence/safety-cleanup.json
+            ${{ runner.temp }}/ta-row-v2-evidence/barriers-result.json
+            ${{ runner.temp }}/ta-row-v2-evidence/barriers-cleanup.json
+          if-no-files-found: ignore
+          retention-days: 7

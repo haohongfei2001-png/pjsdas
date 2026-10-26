@@ -68,3 +68,97 @@ The current-attempt row is bounded per admitted intent, not an accumulating atte
 These are generalized synthetic engineering summaries, not production observations.
 Admission remains default off. Hosted fallback capability, production SQL/ACL,
 physical storage/crash/retention and activation remain unaccepted.
+
+## Repository-native core / safety / barrier gate
+
+The Stage A synthetic CI job now contains the native recovery acceptance harness,
+using the same checked-out runtime and candidate SQL as Stage A. This packaging
+adds no runtime, SQL, dependency, production configuration, retention, GC or
+capacity policy change. It is not the historical full-pair, all-audit-mode,
+browser-to-PostgreSQL or hosted-fallback acceptance gate.
+
+After the original Stage A suite, **three serial, independent owned fixture
+DBs** run against the existing PostgreSQL 17 service and verified PostgREST 14.5:
+
+| Group | Entry | Required unique labels |
+| --- | --- | --- |
+| Core | `workspace-rows-durable-v2-acceptance.mjs core` | 4 |
+| Safety | `workspace-rows-durable-v2-acceptance.mjs safety` | 17 |
+| Barriers | `workspace-rows-durable-v2-barriers.mjs` | 7 |
+
+These paths are under `tests/sql/` and execute with `node --import tsx`. Unknown
+selectors fail closed. The safety group is one continuous run on one fixture,
+not a stitched seven-case prefix and ten-case tail. All 28 labels must occur
+exactly once and pass; absent, extra, duplicate, failed or `NOT_RUN` labels do
+not constitute a green native gate. No automatic retry or rerun-to-green is
+provided. A failed group stops execution; later groups remain `NOT_RUN`.
+
+### Preserved assertions and budgets
+
+- Core uses a real at-least-60-second socket disconnection for both admitted API
+  and scoped commands, with their original processes exited and different PIDs
+  on recovery. It checks the same original command IDs, immutable prepared
+  bytes, authority, reservation, business time and exactly one business commit.
+  The two original protected Undo cases are separately interrupted and recovered;
+  **they do not claim a second minute-long Undo outage**.
+- Safety preserves real 10-second rollback, old-generation rejection, concurrent
+  same-ID attempt reuse, both lost-ACK paths, authority cancellation and the
+  original read/resource fences. Grant reapproval calls the existing public
+  consent function and keeps the same grant ID with a newer revision. An
+  inconsistent head/layout epoch is only a safe refusal, not proof of
+  DB-confirmed terminal noncommit. Resource-OFF negatives use a never-enrolled
+  owner rather than removing a protected scope.
+- Barrier tests observe actual PostgreSQL lock waits and both cancel/finalizer
+  orders, exact duplicate-page accounting, fixed 8 MiB representation exhaustion,
+  16 MiB success and pre-admission pool exhaustion. The original 264 MiB synthetic
+  pool fills through real admissions; no reset, reclaim, expansion or renewal is
+  used to make the continuous safety group pass.
+- The CI job remains capped at 10 minutes, with PostgREST pool 2,
+  `work_mem=2184kB` and the existing 10-second statement/attempt budgets. It runs
+  as the container's `postgres` OS user inside the service's isolated network;
+  no host networking, privileged mode, new service or `pg_hba` weakening is used.
+  Each fixture creates only its own temporary `LOGIN NOINHERIT` authenticator
+  with an independent random synthetic password, then removes it at cleanup.
+  PostgREST never authenticates as the database superuser.
+
+### Source identity and evidence boundary
+
+`workspace-rows-durable-v2-source.mjs --manifest <path>` hashes the current
+checkout-relative allowlist. CI records the actual checkout commit/tree and the
+PR head separately: a PR merge checkout must not be mislabeled as the head SHA.
+The hash manifest and its expected SHA256 accompany the transported source and
+are verified before and after each group. The transport includes only `api/workspace.ts` from `api/` for the
+real workspace handler, excludes Git metadata and ambient credentials, and
+requires neither historical Git objects nor sibling working trees. Path escape,
+manifest tampering or changed source fails the gate.
+
+The shared fixture owns its database, authenticator, observer connections and
+worker/PostgREST processes. Failure cleanup is still attempted; a cleanup or
+source-verification failure fails the group rather than preserving a green
+status. Only sanitized `result.json`, `cleanup.json`, the source manifest and
+CI group/cleanup state are eligible for the artifact. Raw payloads, JWTs,
+passwords, child stdin/stdout, private diagnostic logs and database directories
+are not uploaded. The wrapper removes its owned temporary work and private logs.
+Barrier diagnosis records only allowlisted RPC names, numeric timing/status/byte
+counts, attempt generations/deadlines and relative test-file error locations. It
+never records original bodies, full SQL, credentials or absolute paths. These
+observations do not renew attempts or alter the assertions.
+Pure contract tests cover the label sets, selectors and source-manifest
+boundaries without starting PostgreSQL.
+
+### Result interpretation and retained failures
+
+Adding this gate is not evidence that its final published commit has passed it.
+Read the exact checkout/PR-head mapping, all three new group results and cleanup
+results for that execution. A complete success may be described only as
+**native core/safety/barrier automatic-gate PASS**, not full-v2, full-pair,
+production or release readiness. Existing real-IndexedDB/reload CI is a separate
+narrow acceptance gate, not a substitute for these native cases.
+
+Earlier failures remain part of the record: the old duplicate-grant fixture's
+`23505`; old full/native deadline failures; the real scoped/pages Undo attempt
+timeout; historical sixth-producer `57014`; and the 51 ms causal-profiling result
+still marked `NOT_ATTRIBUTED`. A corrected fixture or later lower-load pass does
+not erase or explain those failures. GC work remains private and outside this
+native gate. Admission remains default off and hosted/physical-storage/crash/
+retention/activation gates remain unaccepted.
