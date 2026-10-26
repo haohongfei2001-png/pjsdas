@@ -15,6 +15,7 @@ export async function testPlanningRows({ db, source, origin, token, connectionSt
   await db.query('insert into pjsdas_rows_candidate.head(id,user_id,envelope,manifest,legacy_snapshot) values($1,$2,$3,$4,$5)', [workspaceId, userId, encoded.envelope, JSON.stringify(encoded.manifest), initial])
   await db.query('insert into pjsdas_rows_candidate.item select $1,$2,x.collection,x.id,x.ordinal,x.value,0 from jsonb_to_recordset($3) as x(collection text,id text,ordinal bigint,value jsonb)', [workspaceId, userId, JSON.stringify(encoded.rows)])
   await db.query("insert into public.pjsdas_business_management_grants(id,user_id,client_id,capability,consent_version,consent_text_hash) values($1,$2,$3,'workspace.planning.manage',4,$4)", [grantId, userId, clientId, 'c'.repeat(64)])
+  const wrongGrant = randomUUID(); await db.query("insert into public.pjsdas_business_management_grants(id,user_id,client_id,capability,consent_version,consent_text_hash) values($1,$2,$3,'workspace.manage',2,$4)", [wrongGrant, userId, clientId, 'f'.repeat(64)])
   const before = await source.read(userId), reviewed = await getPlanningManagementRead(before.snapshot)
   const core = await applyPlanningManagement(before.snapshot, { operations: [{ kind: 'patch_time_preferences', expectedFingerprint: reviewed.timePreferences.fingerprint, patch: { defaultDailyMinutes: 60 } }] }, 'synthetic-planning-command', new Date(at))
   assert.equal(core.status, 'APPLIED')
@@ -24,7 +25,7 @@ export async function testPlanningRows({ db, source, origin, token, connectionSt
     return (await db.query('select * from public.pjsdas_commit_planning_workspace_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [values.userId, values.commandId, values.operation, values.payloadHash, values.revision, JSON.stringify(values.snapshot), 4, values.principal, values.clientId, JSON.stringify(values.provenance), JSON.stringify(core.compensation), null, '{}', values.grantId, values.grantRevision])).rows[0]
   }
   // Actual existing public function is the authorization/protected-data oracle.
-  for (const patch of [{ clientId: randomUUID() }, { grantRevision: 99 }]) {
+  for (const patch of [{ clientId: randomUUID() }, { grantRevision: 99 }, { grantId: wrongGrant }]) {
     await assert.rejects(legacy(core.snapshot, patch), e => e.code === '42501')
     await assert.rejects(source.commitPlanning(before, core.snapshot, { ...command, ...patch }))
   }

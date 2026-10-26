@@ -10,6 +10,8 @@ import pg from 'pg'
 import { install, checkpointMigration } from './gmail-empty-checkpoint-fixture.mjs'
 import { migration } from './discovery-authority-fixture.mjs'
 import { testPlanningRows } from './workspace-rows-planning-stage-a.mjs'
+import { testProfileRows } from './workspace-rows-profile-stage-a.mjs'
+import { testReminderRows } from './workspace-rows-reminder-stage-a.mjs'
 import { createSnapshot } from '../../src/snapshot.ts'
 import { gmailSemanticRecordFromMessage } from '../../gateway/gmailAutomation.ts'
 import { applyGmailSemanticBatch } from '../../src/gmailSemanticIntake.ts'
@@ -44,6 +46,8 @@ try {
   await install(db); await db.query(await migration(checkpointMigration))
   await db.query(readFileSync(new URL('./candidates/workspace-rows-stage-a.sql', import.meta.url), 'utf8'))
   await db.query(readFileSync(new URL('./candidates/workspace-rows-planning-stage-a.sql', import.meta.url), 'utf8'))
+  await db.query(readFileSync(new URL('./candidates/workspace-rows-profile-stage-a.sql', import.meta.url), 'utf8'))
+  await db.query(readFileSync(new URL('./candidates/workspace-rows-reminder-stage-a.sql', import.meta.url), 'utf8'))
   const encoded = encodeWorkspaceRows(before)
   await db.query('begin')
   await db.query('insert into pjsdas_rows_candidate.head(id,user_id,envelope,manifest,legacy_snapshot) values($1,$2,$3,$4,$5)', [workspaceId, userId, encoded.envelope, JSON.stringify(encoded.manifest), before])
@@ -92,7 +96,9 @@ try {
   const noNetwork = createWorkspaceRowsCandidate({ supabaseUrl: origin, serviceRoleKey: token, fetchImpl: () => { throw new Error('disabled adapter must not fetch') } })
   await assert.rejects(noNetwork.read(userId), /DISABLED/); ok('default-off adapter performs no request')
   await testPlanningRows({ db, source, origin, token, connectionString: local.href })
-  console.log(JSON.stringify({ status: 'PASS_STAGE_A_VERTICAL_ONLY', assertions: assertions.length, open: ['product writer and 305 integration', 'remaining guard families beyond Gmail/planning', 'migration and rollback release', 'resource capacity'], production: false }))
+  await testProfileRows({ db, source, origin, token, connectionString: local.href })
+  await testReminderRows({ db, source, origin, token })
+  console.log(JSON.stringify({ status: 'PASS_STAGE_A_VERTICAL_ONLY', assertions: assertions.length, open: ['product writer and 305 integration', 'remaining guard families beyond Gmail/planning/profile/reminders', 'migration and rollback release', 'resource capacity'], production: false }))
 } finally {
   if (server && server.exitCode === null) { server.kill('SIGTERM'); await new Promise(resolve => server.once('exit', resolve)) }
   await db.end(); if (created) await admin.query('drop database ' + database); await admin.end()

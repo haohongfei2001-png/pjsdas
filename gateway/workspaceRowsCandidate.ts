@@ -18,6 +18,8 @@ export interface WorkspaceRowsGmailCommand {
   managementAuthorization?: never; aiCaptureAuthorization?: never; discoveryAuthorization?: never
 }
 export interface WorkspaceRowsPlanningCommand { commandId: string; payloadHash: string; compensation: Record<string, unknown>; grantId: string; grantRevision: number; clientId: string; operation?: 'planning_management' | 'undo_command'; undoOf?: string }
+export type WorkspaceRowsDiscoveryProfileCommand = Omit<WorkspaceRowsPlanningCommand, 'operation'> & { operation?: 'discovery_profile_management' | 'undo_command' }
+export type WorkspaceRowsPrivateReminderCommand = Omit<WorkspaceRowsPlanningCommand, 'operation'> & { operation?: 'private_reminder_management' | 'undo_command' }
 export class WorkspaceRowsCandidateError extends Error {
   constructor(readonly code: 'DISABLED' | 'INVALID' | 'CONFLICT' | 'UNAVAILABLE' | 'UNSUPPORTED', readonly retryable = false) { super(`WORKSPACE_ROWS_${code}`) }
 }
@@ -93,6 +95,48 @@ export function createWorkspaceRowsCandidate(options: WorkspaceRowsCandidateOpti
       invalid((result.outcome === 'COMMITTED' || result.outcome === 'ALREADY_APPLIED') && object(result.receipt) && result.receipt.commandId === command.commandId && result.receipt.operation === operation && result.receipt.status === 'COMMITTED' && result.receipt.revision === result.revision)
       const authorization = result.receipt.managementAuthorization
       invalid(object(authorization) && uuid(authorization.grantId) && integer(authorization.grantRevision) && authorization.grantRevision > 0 && authorization.consentVersion === 4)
+      // Current authorization is checked in SQL before replay. A replay still returns
+      // the original immutable receipt, not a rewrite with today's grant revision.
+      if (result.outcome === 'COMMITTED') invalid(authorization.grantId === command.grantId && authorization.grantRevision === command.grantRevision)
+      return { outcome: result.outcome, resultingRevision: result.revision, receipt: result.receipt }
+    },
+    /** Separate guarded entry; never route delegated Discovery-profile through the Gmail primitive. */
+    async commitDiscoveryProfile(before: WorkspaceRowsRecord, snapshot: PJSDASSnapshot, command: WorkspaceRowsDiscoveryProfileCommand) {
+      if (!writes) throw new WorkspaceRowsCandidateError('DISABLED')
+      invalid(uuid(before.workspaceId) && uuid(before.userId) && uuid(before.epoch) && integer(before.revision) && uuid(command.grantId) && integer(command.grantRevision) && command.clientId.trim().length > 0 && command.commandId.length > 0 && /^[0-9a-f]{64}$/.test(command.payloadHash))
+      invalid(Object.keys(command).every(key => ['commandId', 'payloadHash', 'compensation', 'grantId', 'grantRevision', 'clientId', 'operation', 'undoOf'].includes(key)))
+      validateSnapshot(before.snapshot); validateSnapshot(snapshot)
+      const operation = command.operation ?? 'discovery_profile_management'
+      invalid(operation === 'discovery_profile_management' ? command.undoOf === undefined : operation === 'undo_command' && typeof command.undoOf === 'string' && command.undoOf.length > 0)
+      const req = { ...diffWorkspaceRows(before.snapshot, snapshot), commandId: command.commandId, payloadHash: command.payloadHash, compensation: command.compensation, operation, provenance: command.undoOf ? { undoOf: command.undoOf } : {}, principal: 'delegated_mcp', workspaceId: before.workspaceId, userId: before.userId, expectedEpoch: before.epoch, expectedRevision: before.revision }
+      invalid(Buffer.byteLength(JSON.stringify(req)) <= 2_097_152 && req.changes.length <= 2000)
+      const result = await request('commit_discovery_profile', { req, target_grant_id: command.grantId, target_grant_revision: command.grantRevision, target_client_id: command.clientId })
+      invalid(object(result) && integer(result.revision))
+      if (result.outcome === 'CONFLICT') throw new WorkspaceRowsCandidateError('CONFLICT', true)
+      invalid((result.outcome === 'COMMITTED' || result.outcome === 'ALREADY_APPLIED') && object(result.receipt) && result.receipt.commandId === command.commandId && result.receipt.operation === operation && result.receipt.status === 'COMMITTED' && result.receipt.revision === result.revision)
+      const authorization = result.receipt.managementAuthorization
+      invalid(object(authorization) && uuid(authorization.grantId) && integer(authorization.grantRevision) && authorization.grantRevision > 0 && authorization.consentVersion === 5)
+      // Current authorization is checked in SQL before replay. A replay still returns
+      // the original immutable receipt, not a rewrite with today's grant revision.
+      if (result.outcome === 'COMMITTED') invalid(authorization.grantId === command.grantId && authorization.grantRevision === command.grantRevision)
+      return { outcome: result.outcome, resultingRevision: result.revision, receipt: result.receipt }
+    },
+    /** Separate guarded entry; never route delegated private reminder through the Gmail primitive. */
+    async commitPrivateReminder(before: WorkspaceRowsRecord, snapshot: PJSDASSnapshot, command: WorkspaceRowsPrivateReminderCommand) {
+      if (!writes) throw new WorkspaceRowsCandidateError('DISABLED')
+      invalid(uuid(before.workspaceId) && uuid(before.userId) && uuid(before.epoch) && integer(before.revision) && uuid(command.grantId) && integer(command.grantRevision) && command.clientId.trim().length > 0 && command.commandId.length > 0 && /^[0-9a-f]{64}$/.test(command.payloadHash))
+      invalid(Object.keys(command).every(key => ['commandId', 'payloadHash', 'compensation', 'grantId', 'grantRevision', 'clientId', 'operation', 'undoOf'].includes(key)))
+      validateSnapshot(before.snapshot); validateSnapshot(snapshot)
+      const operation = command.operation ?? 'private_reminder_management'
+      invalid(operation === 'private_reminder_management' ? command.undoOf === undefined : operation === 'undo_command' && typeof command.undoOf === 'string' && command.undoOf.length > 0)
+      const req = { ...diffWorkspaceRows(before.snapshot, snapshot), commandId: command.commandId, payloadHash: command.payloadHash, compensation: command.compensation, operation, provenance: command.undoOf ? { undoOf: command.undoOf } : {}, principal: 'delegated_mcp', workspaceId: before.workspaceId, userId: before.userId, expectedEpoch: before.epoch, expectedRevision: before.revision }
+      invalid(Buffer.byteLength(JSON.stringify(req)) <= 2_097_152 && req.changes.length <= 2000)
+      const result = await request('commit_private_reminder', { req, target_grant_id: command.grantId, target_grant_revision: command.grantRevision, target_client_id: command.clientId })
+      invalid(object(result) && integer(result.revision))
+      if (result.outcome === 'CONFLICT') throw new WorkspaceRowsCandidateError('CONFLICT', true)
+      invalid((result.outcome === 'COMMITTED' || result.outcome === 'ALREADY_APPLIED') && object(result.receipt) && result.receipt.commandId === command.commandId && result.receipt.operation === operation && result.receipt.status === 'COMMITTED' && result.receipt.revision === result.revision)
+      const authorization = result.receipt.managementAuthorization
+      invalid(object(authorization) && uuid(authorization.grantId) && integer(authorization.grantRevision) && authorization.grantRevision > 0 && authorization.consentVersion === 6)
       // Current authorization is checked in SQL before replay. A replay still returns
       // the original immutable receipt, not a rewrite with today's grant revision.
       if (result.outcome === 'COMMITTED') invalid(authorization.grantId === command.grantId && authorization.grantRevision === command.grantRevision)
