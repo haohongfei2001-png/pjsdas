@@ -137,8 +137,10 @@ export async function fixture(evidence){
   return t
  }
  const env={PJSDAS_SUPABASE_SERVICE_ROLE_KEY:serviceToken,PJSDAS_ALLOWED_WEB_ORIGINS:webOrigin,PJSDAS_AUDIENCE_MODE:'allowlist',PJSDAS_AI_CAPTURE:'disabled',PJSDAS_WORKSPACE_ROWS_READS:'1',PJSDAS_WORKSPACE_ROWS_WRITES:'1',PJSDAS_WORKSPACE_ROWS_READ_CONCURRENCY:'1',PJSDAS_WORKSPACE_ROWS_STAGED_DOCUMENTS:'1',PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT:'1',PJSDAS_WORKSPACE_ROWS_DURABLE_ATTEMPTS_V2:'1',PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT_ADMISSION:'1',PJSDAS_WORKSPACE_ROWS_AUDIT_BYTES:'1',PJSDAS_WORKSPACE_ROWS_AUDIT_PAGES:'1',PJSDAS_WORKSPACE_ROWS_RELEASE_PROFILE:'compatible-pages-v1',PJSDAS_WORKSPACE_COMMIT_METADATA_ONLY:'1',PJSDAS_WORKSPACE_COMMIT_RAW_JSON:'1',PJSDAS_GMAIL_EMPTY_CHECKPOINTS:'0',PJSDAS_GMAIL_EMPTY_CHECKPOINT_READS:'0'}
- async function cold(input,overrides={}){
-  const child=spawn(process.execPath,['--import','tsx',join(root,'tests/sql/workspace-rows-durable-v2-cold-worker.mjs')],{cwd:root,env:{...process.env,...env,...overrides,TA_INTENT_PROXY:proxyOrigin},stdio:['pipe','pipe','pipe']})
+ async function cold(input,overrides={},entry='native'){
+  assert(['native','consumer-http'].includes(entry),'Unknown owned worker')
+  const worker=entry==='native'?'workspace-rows-durable-v2-cold-worker.mjs':'consumer-pg-http-worker.mjs'
+  const child=spawn(process.execPath,['--import','tsx',join(root,'tests/sql',worker)],{cwd:root,env:{...process.env,...env,...overrides,TA_INTENT_PROXY:proxyOrigin},stdio:['pipe','pipe','pipe']})
   const info={child,pid:child.pid,startedAt:Date.now(),commandId:input.body?.commandId,mode:input.mode??'api'};children.push(info)
   let out='';child.stdout.on('data',d=>out+=d);child.stderr.resume()
   info.done=new Promise((ok,no)=>{child.once('error',no);child.once('exit',(code,signal)=>{Object.assign(info,{exitAt:Date.now(),code,signal});code===0?ok():no(Error(`Cold worker exited unsuccessfully`))})})
@@ -152,6 +154,12 @@ export async function fixture(evidence){
  const decoded=(t,reservedBytes=16777216)=>decodePreparedIntent(t.encoded,reservedBytes)
  const observer=async(label)=>{assert(/^[a-z0-9_-]+$/.test(label));const client=new pg.Client({connectionString:url.href,application_name:'ta_v2_barrier_'+label});ownedClients.push(client);await client.connect();await client.query("set statement_timeout='10s'");return client}
  return{db,scalar,rpc,make,reserve,cold,invoke,current,ledger,intent,reservation,decoded,observer,close,calls,children,faults,drain,snapshots,
+  async consumer(snapshot){
+   assert(snapshot.data.actions.length>0&&snapshot.data.actions.length<=20,'Small synthetic consumer workspace only')
+   const ids=await seed(snapshot,{enroll:false})
+   // Only synthetic identity setup; UI must create every command/Undo ID.
+   return{ids,accessToken:jwt({role:'authenticated',sub:ids.userId})}
+  },
   setDrop(rule){assert.equal(drop,undefined);drop=rule},assertNoDrop(){assert.equal(drop,undefined)},setOffline(value){offline=value},isOffline:()=>offline,
   identity:t=>({identity:t.identity,target_user_id:t.ids.userId}),env,
   async probeDisconnected(){assert(offline);await assert.rejects(nativeFetch(proxyOrigin+'/rest/v1/',{signal:AbortSignal.timeout(1000)}));return Date.now()}}

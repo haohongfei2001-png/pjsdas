@@ -1,0 +1,105 @@
+name: Consumer UI recovery to PostgreSQL (synthetic only)
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'api/workspace.ts'
+      - 'api/health.ts'
+      - 'gateway/**'
+      - 'supabase/migrations/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'scripts/verify-installed-runtime-lock.mjs'
+      - 'e2e/consumerPostgresRecovery.e2e.ts'
+      - 'e2e/fixtures/todayWorkspace.ts'
+      - 'e2e/support/**'
+      - 'tests/sql/**'
+      - 'tests/fixtures/**'
+      - 'tests/consumerPostgresGate.test.ts'
+      - 'playwright.consumer-pg.config.mts'
+      - '.github/workflows/consumer-pg-browser.yml'
+      - 'package*.json'
+      - 'tests/sql/package*.json'
+permissions:
+  contents: read
+jobs:
+  consumer-pg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-fixture-only
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix tests/sql
+      - name: Install the existing pinned browser runner
+        run: |
+          node scripts/verify-installed-runtime-lock.mjs --capture
+          npm install --no-save @playwright/test@1.63.0
+          node scripts/verify-installed-runtime-lock.mjs
+          npx playwright install --with-deps chromium
+      - name: Install the existing verified public PostgREST fixture binary
+        run: |
+          curl --fail --location --retry 2 https://github.com/PostgREST/postgrest/releases/download/v14.5/postgrest-v14.5-linux-static-x86-64.tar.xz -o /tmp/postgrest.tar.xz
+          echo 'ab5cc7e974d4940447991804588cfb8b3f7b2c57b691f0905df04d51ede69470  /tmp/postgrest.tar.xz' | sha256sum --check --strict
+          tar -xJf /tmp/postgrest.tar.xz -C /tmp postgrest
+      - name: Real UI, real API, real public PostgREST, owned PostgreSQL
+        env:
+          TA_ROW_DATABASE_URL: postgres://postgres:synthetic-fixture-only@127.0.0.1:5432/postgres
+          TA_POSTGREST_BIN: /tmp/postgrest
+          TA_V2_POSTGREST_PORT: '55765'
+          TA_V2_VALIDATION_WINDOW: synthetic-owned-fixture
+          TA_V2_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          export TA_V2_SOURCE_COMMIT="$(git rev-parse HEAD)"
+          export TA_V2_SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+          export TA_CONSUMER_EVIDENCE="$RUNNER_TEMP/consumer-pg-evidence"
+          mkdir "$TA_CONSUMER_EVIDENCE"
+          export TA_V2_SOURCE_MANIFEST="$TA_CONSUMER_EVIDENCE/native-source.json"
+          export TA_V2_SOURCE_MANIFEST_SHA256="$(node tests/sql/workspace-rows-durable-v2-source.mjs --manifest "$TA_V2_SOURCE_MANIFEST")"
+          export TA_CONSUMER_SOURCE_MANIFEST="$TA_CONSUMER_EVIDENCE/consumer-source.json"
+          export TA_CONSUMER_SOURCE_MANIFEST_SHA256="$(node tests/sql/consumer-pg-source.mjs --manifest "$TA_CONSUMER_SOURCE_MANIFEST")"
+          node --input-type=module <<'JS'
+          import pg from './tests/sql/node_modules/pg/lib/index.js'
+          const db = new pg.Client({ connectionString: process.env.TA_ROW_DATABASE_URL })
+          await db.connect()
+          await db.query('create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls')
+          await db.end()
+          JS
+          browser_status=0
+          npx playwright test --config=playwright.consumer-pg.config.mts || browser_status=$?
+          result_status=0
+          TA_CONSUMER_BROWSER_EXIT_CODE="$browser_status" node tests/sql/consumer-pg-results.mjs || result_status=$?
+          # Always summarize terminal cases, but never replace a browser failure
+          # with a successful validator result or turn an incomplete run green.
+          if [[ "$browser_status" != 0 ]]; then exit "$browser_status"; fi
+          exit "$result_status"
+      - name: Upload only source identity, sanitized case results and owned cleanup
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: consumer-pg-browser
+          path: |
+            ${{ runner.temp }}/consumer-pg-evidence/native-source.json
+            ${{ runner.temp }}/consumer-pg-evidence/consumer-source.json
+            ${{ runner.temp }}/consumer-pg-evidence/gate-state.json
+            ${{ runner.temp }}/consumer-pg-evidence/*/result.json
+            ${{ runner.temp }}/consumer-pg-evidence/*/cleanup.json
+          if-no-files-found: error
+          retention-days: 7
