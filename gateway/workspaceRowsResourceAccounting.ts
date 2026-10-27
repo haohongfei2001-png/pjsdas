@@ -19,7 +19,7 @@ export interface ResourceAdmission {
   deadlineAt: number
 }
 export type ResourceKind = 'intent-encoded' | 'intent-decoded' | 'document-fragments'
-  | 'effect-wire' | 'effect-jsonb' | 'audit-spool' | 'storage-overhead'
+  | 'effect-wire' | 'effect-jsonb' | 'audit-spool' | 'storage-overhead' | 'retained-control'
 export interface ResourceChunk {
   offset: number; bytes: number; sha256: string; status: 'pending' | 'present'
 }
@@ -27,7 +27,7 @@ export interface ResourceAllocation {
   allocationId: string; kind: ResourceKind; chunks: ResourceChunk[]; removed: boolean
 }
 export type ResourcePhase = 'open' | 'stopped' | 'finalizing' | 'unknown'
-  | 'committed' | 'not-committed' | 'reclaiming' | 'released'
+  | 'committed' | 'not-committed' | 'reclaiming' | 'reclaimed' | 'released'
 /** Trusted adapter evidence, not a client-supplied authorization decision. A
  * reducer cannot establish a DB lock, a durable fence or retained audit bytes. */
 export type ResourceOutcome =
@@ -36,6 +36,11 @@ export type ResourceOutcome =
       auditRetention: 'original-receipt-projection-compensation-retained' }
 export interface ResourceReservation extends ResourceAdmission {
   revision: number
+  /** Immutable R = currentHeldBytes + releasedBytes; residual control stays charged. */
+  currentHeldBytes: number
+  releasedBytes: number
+  retainedControlBytes: number
+  peakOccupiedBytes: number
   phase: ResourcePhase
   allocations: ResourceAllocation[]
   finalizeAttemptId?: string
@@ -73,6 +78,8 @@ export type ResourceAction =
     | { type: 'begin-reclaim'; reclaimId: string; writerFenceId: string; reservationRevision: number }
     | { type: 'confirm-removed'; reclaimId: string; allocationId: string }
     | { type: 'release'; reclaimId: string }
+    | { type: 'retire-to-control'; reclaimId: string; writerFenceId: string; reservationRevision: number;
+        inventory: ResourceInventoryEntry[]; control: ResourceInventoryEntry; observedControl: ResourceInventoryEntry }
   ))
 export interface ResourceTransition {
   state: ResourceLedger
@@ -95,8 +102,8 @@ const uint = (n: unknown): n is number => Number.isSafeInteger(n) && Number(n) >
 const text = (s: unknown): s is string => typeof s === 'string' && s.trim().length > 0
 const hex = (s: unknown): s is string => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s)
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
-const kinds: ResourceKind[] = ['intent-encoded', 'intent-decoded', 'document-fragments', 'effect-wire', 'effect-jsonb', 'audit-spool', 'storage-overhead']
-const phases: ResourcePhase[] = ['open', 'stopped', 'finalizing', 'unknown', 'committed', 'not-committed', 'reclaiming', 'released']
+const kinds: ResourceKind[] = ['intent-encoded', 'intent-decoded', 'document-fragments', 'effect-wire', 'effect-jsonb', 'audit-spool', 'storage-overhead', 'retained-control']
+const phases: ResourcePhase[] = ['open', 'stopped', 'finalizing', 'unknown', 'committed', 'not-committed', 'reclaiming', 'reclaimed', 'released']
 function plus(a: number, b: number) { const n = a + b; requireValue(uint(n), 'BYTE_COUNTER_OVERFLOW'); return n }
 function clone<T>(value: T): T { return structuredClone(value) }
 function freeze<T>(value: T): T {
@@ -137,7 +144,7 @@ const chunkKey = (stageId: string, allocationId: string, offset: number) => JSON
 function chunkBytes(allocation: ResourceAllocation) { return allocation.chunks.reduce((n, part) => plus(n, part.bytes), 0) }
 function usage(reservation: ResourceReservation): ResourceUsage {
   return {
-    heldBytes: reservation.phase === 'released' ? 0 : reservation.reservedBytes,
+    heldBytes: reservation.currentHeldBytes,
     occupiedUpperBoundBytes: reservation.allocations.filter(a => !a.removed).reduce((n, a) => plus(n, chunkBytes(a)), 0),
     confirmedPresentBytes: reservation.allocations.filter(a => !a.removed).reduce((n, a) => a.chunks.filter(c => c.status === 'present').reduce((sum, c) => plus(sum, c.bytes), n), 0),
   }
@@ -179,10 +186,10 @@ export function assertResourceLedger(state: ResourceLedger): void {
     requireValue(r.stopReason === undefined || ['cancelled', 'expired', 'process-crash'].includes(r.stopReason), 'INVALID_STOP_REASON')
     requireValue(r.phase !== 'stopped' || r.stopReason !== undefined, 'STOP_REASON_REQUIRED')
     if (r.resolution !== undefined) checkOutcome(r.resolution)
-    const resolved = ['committed', 'not-committed', 'reclaiming', 'released'].includes(r.phase)
+    const resolved = ['committed', 'not-committed', 'reclaiming', 'reclaimed', 'released'].includes(r.phase)
     requireValue(resolved === (r.resolution !== undefined), 'RESOLUTION_STATE_MISMATCH')
     if (r.phase === 'committed' || r.phase === 'not-committed') requireValue(r.resolution?.outcome === r.phase, 'RESOLUTION_STATE_MISMATCH')
-    const reclaiming = r.phase === 'reclaiming' || r.phase === 'released'
+    const reclaiming = ['reclaiming', 'reclaimed', 'released'].includes(r.phase)
     requireValue(reclaiming ? text(r.reclaimId) && text(r.writerFenceId) : r.reclaimId === undefined && r.writerFenceId === undefined, 'RECLAIM_STATE_MISMATCH')
     const ids = new Set<string>()
     for (const a of r.allocations) {
@@ -194,10 +201,23 @@ export function assertResourceLedger(state: ResourceLedger): void {
           && ['pending', 'present'].includes(c.status), 'INVALID_RESOURCE_CHUNK')
         cursor = plus(cursor, c.bytes)
       }
+      requireValue(a.kind !== 'retained-control' || (!a.removed && ['reclaiming','reclaimed'].includes(r.phase) && a.chunks.length === 1 && a.chunks[0].status === 'present'), 'RETAINED_CONTROL_PERMANENT')
       requireValue(!a.removed || reclaiming, 'UNFENCED_ALLOCATION_REMOVAL')
       requireValue(r.phase !== 'released' || a.removed, 'RELEASE_WITH_LIVE_ALLOCATION')
     }
-    requireValue(r.allocations.reduce((n, a) => plus(n, chunkBytes(a)), 0) <= r.reservedBytes, 'RESERVATION_EXCEEDED')
+    requireValue(['reclaimed','released'].includes(r.phase) || (r.currentHeldBytes === r.reservedBytes && r.releasedBytes === 0), 'UNFENCED_CAPACITY_RELEASE')
+    requireValue(['reclaiming','reclaimed'].includes(r.phase) || r.retainedControlBytes === 0, 'UNFENCED_RETAINED_CONTROL')
+    const historical = r.allocations.reduce((n,a) => plus(n,chunkBytes(a)),0)
+    requireValue(historical <= r.reservedBytes, 'RESERVATION_EXCEEDED')
+    requireValue(r.peakOccupiedBytes >= historical, 'HISTORICAL_PEAK_MISMATCH')
+    requireValue(r.allocations.filter(a => a.kind === 'retained-control').length <= 1, 'RETAINED_CONTROL_PERMANENT')
+    const u = usage(r), control = r.allocations.filter(a => !a.removed && a.kind === 'retained-control').reduce((n,a) => plus(n,chunkBytes(a)),0)
+    requireValue(uint(r.currentHeldBytes) && uint(r.releasedBytes) && uint(r.retainedControlBytes) && uint(r.peakOccupiedBytes)
+      && plus(r.currentHeldBytes,r.releasedBytes) === r.reservedBytes && r.retainedControlBytes === control, 'INVALID_HELD_RELEASE_CONTROL')
+    requireValue(u.confirmedPresentBytes <= u.occupiedUpperBoundBytes && u.occupiedUpperBoundBytes <= r.currentHeldBytes
+      && r.peakOccupiedBytes >= u.occupiedUpperBoundBytes && r.peakOccupiedBytes <= r.reservedBytes, 'RESERVATION_EXCEEDED')
+    requireValue(r.phase !== 'reclaimed' || (control > 0 && u.confirmedPresentBytes === control && u.occupiedUpperBoundBytes === control && r.currentHeldBytes === control), 'INVALID_RECLAIMED_RESIDUAL')
+    requireValue(r.phase !== 'released' || (r.currentHeldBytes === 0 && control === 0), 'RELEASE_WITH_RETAINED_CONTROL')
   }
   const totals = resourceTotals(state)
   if (state.configuration.enabled) {
@@ -270,7 +290,7 @@ export function transitionResourceLedger(state: ResourceLedger, expectedRevision
       requireValue(next.inventoryVerified, 'RESOURCE_RECONCILIATION_REQUIRED')
       requireValue(!next.reservations.some(r => r.binding.userId === b.userId && r.binding.commandId === b.commandId), 'COMMAND_ID_REUSED')
       requireValue(now < admitted.expiresAt && now < admitted.deadlineAt, 'RESOURCE_ADMISSION_EXPIRED')
-      touched = { ...admitted, phase: 'open', revision: 0, allocations: [] }
+      touched = { ...admitted, phase: 'open', revision: 0, currentHeldBytes: admitted.reservedBytes, releasedBytes: 0, retainedControlBytes: 0, peakOccupiedBytes: 0, allocations: [] }
       next.reservations.push(touched); changed = true
     }
   } else {
@@ -289,7 +309,7 @@ export function transitionResourceLedger(state: ResourceLedger, expectedRevision
     switch (action.type) {
       case 'append': {
         writable()
-        requireValue(text(action.allocationId) && kinds.includes(action.kind) && uint(action.offset)
+        requireValue(text(action.allocationId) && kinds.includes(action.kind) && action.kind !== 'retained-control' && uint(action.offset)
           && uint(action.bytes) && action.bytes > 0 && hex(action.sha256), 'INVALID_APPEND')
         let a = r.allocations.find(item => item.allocationId === action.allocationId)
         if (!a) { a = { allocationId: action.allocationId, kind: action.kind, chunks: [], removed: false }; r.allocations.push(a) }
@@ -326,7 +346,7 @@ export function transitionResourceLedger(state: ResourceLedger, expectedRevision
       case 'mark-unknown': {
         requireValue(text(action.attemptId) && action.attemptId === r.finalizeAttemptId, 'FINALIZE_ATTEMPT_REUSED')
         if (r.phase === 'finalizing') { r.phase = 'unknown'; changed = true }
-        else requireValue(['unknown', 'committed', 'not-committed', 'reclaiming', 'released'].includes(r.phase), 'FINALIZE_NOT_DISPATCHED')
+        else requireValue(['unknown', 'committed', 'not-committed', 'reclaiming', 'reclaimed', 'released'].includes(r.phase), 'FINALIZE_NOT_DISPATCHED')
         break
       }
       case 'resolve': {
@@ -350,16 +370,46 @@ export function transitionResourceLedger(state: ResourceLedger, expectedRevision
       }
       case 'confirm-removed': {
         requireValue(text(action.reclaimId) && r.reclaimId === action.reclaimId
-          && ['reclaiming', 'released'].includes(r.phase), 'RECLAIM_FENCE_REQUIRED')
+          && ['reclaiming', 'reclaimed', 'released'].includes(r.phase), 'RECLAIM_FENCE_REQUIRED')
         const a = allocation(action.allocationId)
+        requireValue(a.kind !== 'retained-control', 'RETAINED_CONTROL_PERMANENT')
         if (!a.removed) { a.removed = true; changed = true }
         break
       }
       case 'release': {
         requireValue(text(action.reclaimId) && r.reclaimId === action.reclaimId
-          && ['reclaiming', 'released'].includes(r.phase), 'RECLAIM_FENCE_REQUIRED')
+          && ['reclaiming', 'reclaimed', 'released'].includes(r.phase), 'RECLAIM_FENCE_REQUIRED')
         requireValue(r.allocations.every(a => a.removed), 'PHYSICAL_REMOVAL_NOT_CONFIRMED')
-        if (r.phase !== 'released') { r.phase = 'released'; changed = true }
+        if (r.phase !== 'released') { r.phase = 'released'; r.releasedBytes = r.reservedBytes; r.currentHeldBytes = 0; changed = true }
+        break
+      }
+      case 'retire-to-control': {
+        requireValue(text(action.reclaimId) && text(action.writerFenceId), 'WRITER_FENCE_REQUIRED')
+        const control = action.control
+        requireValue(object(control) && control.stageId === r.binding.stageId && text(control.allocationId) && control.offset === 0
+          && uint(control.bytes) && control.bytes > 0 && hex(control.sha256)
+          && isDeepStrictEqual(control,action.observedControl), 'RETAINED_CONTROL_UNCONFIRMED')
+        if (r.phase === 'reclaimed') {
+          const a = allocation(control.allocationId)
+          requireValue(r.reclaimId === action.reclaimId && r.writerFenceId === action.writerFenceId && a.kind === 'retained-control'
+            && a.chunks[0].bytes === control.bytes && a.chunks[0].sha256 === control.sha256, 'RECLAIM_ID_REUSED')
+          break
+        }
+        requireValue(next.inventoryVerified && (r.phase === 'committed' || r.phase === 'not-committed'), 'ORIGINAL_OUTCOME_UNRESOLVED')
+        requireValue(r.revision === action.reservationRevision, 'STALE_WRITER_FENCE')
+        requireValue(inspectResourceInventory(state,action.inventory,true).length === 0, 'RECLAMATION_INVENTORY_MISMATCH')
+        requireValue(r.allocations.every(a => a.removed || a.chunks.every(c => c.status === 'present')), 'RECLAMATION_INVENTORY_UNCERTAIN')
+        requireValue(!r.allocations.some(a => a.allocationId === control.allocationId), 'ALLOCATION_IDENTITY_REUSED')
+        // Charge the transition copy BEFORE retiring old representations. This
+        // peak remains visible; reclamation cannot rescue an over-budget writer.
+        const peak = plus(usage(r).occupiedUpperBoundBytes,control.bytes)
+        requireValue(peak <= r.currentHeldBytes, 'RESERVATION_EXCEEDED')
+        r.peakOccupiedBytes = Math.max(r.peakOccupiedBytes,peak)
+        for (const a of r.allocations) a.removed = true
+        r.allocations.push({allocationId:control.allocationId,kind:'retained-control',removed:false,
+          chunks:[{offset:0,bytes:control.bytes,sha256:control.sha256,status:'present'}]})
+        r.reclaimId=action.reclaimId; r.writerFenceId=action.writerFenceId; r.phase='reclaimed'
+        r.currentHeldBytes=control.bytes; r.releasedBytes=r.reservedBytes-control.bytes; r.retainedControlBytes=control.bytes; changed=true
         break
       }
       default: throw new ResourceAccountingError('UNKNOWN_RESOURCE_ACTION')
@@ -367,7 +417,7 @@ export function transitionResourceLedger(state: ResourceLedger, expectedRevision
   }
   if (!changed) return { state, disposition: 'replayed', ...(issues ? { inventoryIssues: issues } : {}) }
   next.revision = plus(next.revision, 1)
-  if (touched) touched.revision = next.revision
+  if (touched) { touched.revision = next.revision; touched.peakOccupiedBytes = Math.max(touched.peakOccupiedBytes,usage(touched).occupiedUpperBoundBytes) }
   assertResourceLedger(next)
   return { state: freeze(next), disposition: 'applied', ...(issues ? { inventoryIssues: issues } : {}) }
 }

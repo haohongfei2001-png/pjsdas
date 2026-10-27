@@ -19,7 +19,7 @@ git diff --exit-code HEAD -- .
 git ls-files -z | xargs -0 sha256sum > "$OUT/frozen-source.sha256"
 sha256sum -c "$OUT/frozen-source.sha256" > "$OUT/source-before.log"
 # Ambient product/test credentials and selectors are never inherited as policy.
-while IFS= read -r key;do unset "$key";done < <(compgen -A variable | grep -E '^(PJSDAS_|PGRST_|TA_ROW_|TA_AUDIT_|TA_PAIR_|TA_INTENT_)' || true)
+while IFS= read -r key;do unset "$key";done < <(compgen -A variable | grep -E '^(PJSDAS_|PGRST_|TA_ROW_|TA_AUDIT_|TA_PAIR_|TA_INTENT_|TA_V2_|TA_RECLAIM_)' || true)
 started=0;start_attempted=0;PG="";DATA="$OUT/owned-pg-data";port=55634
 printf '{"event":"start","gate":"%s","run":"%s","sha":"%s","at":"%s"}\n' "$gate" "$run" "$SHA" "$(date -u +%FT%TZ)" >> "$E/command-ledger.jsonl"
 finish(){
@@ -99,6 +99,18 @@ JS
  guard-equivalence) start_pg;node --import tsx tests/sql/workspace-rows-opportunity-guard-equivalence.mjs > "$OUT/output.log" 2>&1;;
  equivalence) start_pg;node --import tsx tests/sql/workspace-rows-finalizer-equivalence.mjs > "$OUT/output.log" 2>&1;;
  finalizer-plan) start_pg;TA_PLAN_REPORT="$OUT/finalizer-plans.json" node --import tsx tests/sql/workspace-rows-finalizer-plan.mjs > "$OUT/output.log" 2>&1;;
+ reclamation-pure) node node_modules/vitest/vitest.mjs run --maxWorkers=1 --no-file-parallelism tests/workspaceRowsResourceAccounting.test.ts tests/workspaceRowsResourceReclamation.test.ts tests/workspaceRowsReclamationRunner.test.ts > "$OUT/output.log" 2>&1;;
+ reclamation-install) port=55776;start_pg;TA_RECLAIM_OWNED_LOCAL=1 node --import tsx tests/sql/workspace-rows-resource-reclamation-install.mjs > "$OUT/output.log" 2>&1;;
+ reclamation-lifecycle)
+  port=55776;start_pg
+  export TA_RECLAIM_SOURCE_SHA="$SHA" TA_RECLAIM_VALIDATION_WINDOW=authorized-by-parent TA_V2_EVIDENCE="$OUT" TA_V2_POSTGREST_PORT=55777
+  node --import tsx tests/sql/reclamation/fixture-lifecycle.mjs > "$OUT/output.log" 2>&1;;
+ reclamation-basic|reclamation-terminal|reclamation-faults|reclamation-locks|reclamation-control|reclamation-historical|reclamation-compat-v1|reclamation-compat-v2)
+  port=55776;start_pg
+  export TA_RECLAIM_SOURCE_SHA="$SHA" TA_RECLAIM_VALIDATION_WINDOW=authorized-by-parent TA_V2_EVIDENCE="$OUT" TA_V2_POSTGREST_PORT=55777
+  export TA_RECLAIM_GROUP=${gate#reclamation-}
+  if [[ $TA_RECLAIM_GROUP == compat-* ]];then export TA_RECLAIM_COMPAT_VERSION=${TA_RECLAIM_GROUP#compat-};export TA_RECLAIM_GROUP=compat;fi
+  node --import tsx tests/sql/reclamation/native-acceptance.mjs > "$OUT/output.log" 2>&1;;
  oldlarge) start_pg;node --import tsx tests/sql/workspace-rows-large-command-prototype.mjs > "$OUT/output.log" 2>&1;;
  oldv3) start_pg;node --import tsx tests/sql/workspace-rows-staged-opportunity-prototype.mjs > "$OUT/output.log" 2>&1;;
  *) echo 'unknown gate';exit 64;;

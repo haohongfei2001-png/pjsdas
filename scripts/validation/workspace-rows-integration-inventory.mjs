@@ -4,7 +4,7 @@ import pg from '../../tests/sql/node_modules/pg/lib/index.js'
 import {readdirSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {fileURLToPath} from 'node:url'
-const [mode,port]=process.argv.slice(2);assert(['init','inventory'].includes(mode));assert(['55634','55439'].includes(port))
+const [mode,port]=process.argv.slice(2);assert(['init','inventory'].includes(mode));assert(['55634','55439','55776'].includes(port))
 const root=fileURLToPath(new URL('../..',import.meta.url)),client=new pg.Client({connectionString:'postgres://postgres@127.0.0.1:'+port+'/postgres'})
 try{
  await client.connect()

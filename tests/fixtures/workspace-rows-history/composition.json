@@ -1520,13 +1520,29 @@
     },
     "src/cloud/authoritativeCommandClient.ts": {
       "originalSha256": "f7d9b1f9d0f3013f95b9898cab892cb5092d7103de3b19614ce926029a566c5d",
-      "acceptedSha256": "b7bc96f9ae210af4ae74cac76e985c8d51235c9ad1faf70ca9f2934c7f3485d9",
-      "reason": "Durable-v2 intentional evolution at 88c369b52ec038df1657a8ed89685fd1083f0eba"
+      "acceptedSha256": "88225e457bdaedaaa968cf3b6d83050339a973b5bfec19de008ffff6831766fb",
+      "sourceCommit": "8482c22f553dc2e9002b2cdb1c126c8f7d565cb4",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published client recovery repair and regressions: receipt-only later-item reconciliation after the first replay failure, preserving original command IDs, dependency overlays and account-generation fences. No GC or historical-source change.",
+      "previousAcceptedEvolution": {
+        "originalSha256": "f7d9b1f9d0f3013f95b9898cab892cb5092d7103de3b19614ce926029a566c5d",
+        "acceptedSha256": "b7bc96f9ae210af4ae74cac76e985c8d51235c9ad1faf70ca9f2934c7f3485d9",
+        "reason": "Durable-v2 intentional evolution at 88c369b52ec038df1657a8ed89685fd1083f0eba"
+      }
     },
     "src/cloud/instantCommandClient.ts": {
       "originalSha256": "90281506f794c1fb2e176973efd1f28338be97040a230176ad63f141581cb131",
-      "acceptedSha256": "e98107ded17e3b2d84956056f5c18d9e53de25a6d26fbcac6458ccd959f5a294",
-      "reason": "Durable-v2 intentional evolution at 88c369b52ec038df1657a8ed89685fd1083f0eba"
+      "acceptedSha256": "22dbf7240a734871a7e66bf8bc4a8b0e9de3a730cdf49ec09efe7f5fe43e5d37",
+      "sourceCommit": "8482c22f553dc2e9002b2cdb1c126c8f7d565cb4",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published client recovery repair and regressions: receipt-only later-item reconciliation after the first replay failure, preserving original command IDs, dependency overlays and account-generation fences. No GC or historical-source change.",
+      "previousAcceptedEvolution": {
+        "originalSha256": "90281506f794c1fb2e176973efd1f28338be97040a230176ad63f141581cb131",
+        "acceptedSha256": "e98107ded17e3b2d84956056f5c18d9e53de25a6d26fbcac6458ccd959f5a294",
+        "reason": "Durable-v2 intentional evolution at 88c369b52ec038df1657a8ed89685fd1083f0eba"
+      }
     },
     "tests/sql/workspace-rows-rollback-builds-stage-a.mjs": {
       "originalSha256": "0c94ce452dd67da2753a010ec25320f76d2ce6910dd98e70588c620083fdc500",
@@ -1542,6 +1558,142 @@
       "originalSha256": "449c0bafb639f324eae32f264c8d3e214224fe0eb6f2106b9c6da24d94ec335e",
       "acceptedSha256": "be0458fe9a5cd587170e389824844109c046050f5e137a75dbcdaba4b4a8abbf",
       "reason": "Publication-only documentation cleanup: replace a private metadata-verification claim with general execution prerequisites; no runtime, SQL, authority, or historical source change."
+    },
+    ".github/workflows/instant-recovery-draft.yml": {
+      "originalSha256": "efa92d10cee1b3b144d594f5c81d71d07e1516dcd73542daa85189a440ef13d9",
+      "acceptedSha256": "8ccbb70af383c06de289ed26a522d2d7d31a50e838686ffc2abb94255e171819",
+      "sourceCommit": "078de1e7130da00f8a714d4f370677b98095efe7",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published real IndexedDB durable journal browser assertions and workflow selection; original strict interaction budget remains unchanged and this metadata does not upgrade synthetic-HTTP evidence to real PG."
+    },
+    ".github/workflows/workspace-rows-stage-a.yml": {
+      "originalSha256": "7d1f350f3e885bb493b09520efa255a0ae3630bfdda9f535b850f7522de2bfc2",
+      "acceptedSha256": "067252da08eb02e35ffee834a363bc8e2b2530e19687baf39eb5d6e0fe535486",
+      "sourceCommit": "f30c6422e21467d98ae1ceacd937a6e5e7c32e7f",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published native recovery gate source transfer and isolated loopback CI wiring; freezes same-checkout source before runtime imports, with no host-network/capability expansion."
+    },
+    "e2e/instantInteraction.e2e.ts": {
+      "originalSha256": "5c65a937cab23351d6af12dc9e23fecbc0e3fec101df5d881c63b1bcaecaf298",
+      "acceptedSha256": "c8e4822947f7ef7b72ccf8943c6a5a6a02405428c2807cdb8c6187d1983879ec",
+      "sourceCommit": "078de1e7130da00f8a714d4f370677b98095efe7",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published real IndexedDB durable journal browser assertions and workflow selection; original strict interaction budget remains unchanged and this metadata does not upgrade synthetic-HTTP evidence to real PG."
+    },
+    "tests/authoritativeCommandClient.test.ts": {
+      "originalSha256": "472a67e24539b96f86fcdf3bc500e5e557c5038b2bc193725fa446e1289f4f60",
+      "acceptedSha256": "d7d99e71556c5e6b737a4147d41707a0718ca1bbf402b0ed8a1df482dfa2535f",
+      "sourceCommit": "8482c22f553dc2e9002b2cdb1c126c8f7d565cb4",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published client recovery repair and regressions: receipt-only later-item reconciliation after the first replay failure, preserving original command IDs, dependency overlays and account-generation fences. No GC or historical-source change."
+    },
+    "tests/instantCommandMetadata.test.ts": {
+      "originalSha256": "f6f49c061bfab5651f5573044e5f147be21c7f95dd5b569ecd820ded9f9bcf5c",
+      "acceptedSha256": "df8fffa1efe6d1fdfc8bdbcf0df9a1da8d016e1a899eac10508fe9ad647f060c",
+      "sourceCommit": "8482c22f553dc2e9002b2cdb1c126c8f7d565cb4",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published client recovery repair and regressions: receipt-only later-item reconciliation after the first replay failure, preserving original command IDs, dependency overlays and account-generation fences. No GC or historical-source change."
+    },
+    "tests/sql/business-management-raw-gateway.mjs": {
+      "originalSha256": "c22a23bcb7d891b4b57afa9dc6b1a9de2e79493d42cd5366eee8f34169707ed2",
+      "acceptedSha256": "11fd4098e5487ad9921afa823a4fec3877611c2872751229c9d5297100cd2c98",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/consumer-business-flow.mjs": {
+      "originalSha256": "9dbbf0a572eeef81f2ab61088a51b3656a7ee97043ab3cd6d3f07a1f8d8b8559",
+      "acceptedSha256": "6d88edaa510be9205660ee406132699b4e95e5b7e5bba6ac25f1c03cb79fcdef",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/consumer-business-raw-gateway.mjs": {
+      "originalSha256": "0e96ed9d5838f1363920910c76de7bb53943fd9d36835171a6504a56bfc88090",
+      "acceptedSha256": "773655c0c2c9f62721b3ab2907f152cb93e2da6992953cc73c8b469b4da85c5f",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/consumer-onboarding-flow.mjs": {
+      "originalSha256": "acb9d5994638aea31b046b70e943b273bdca3de5021bbe9c833e4086d3d2d870",
+      "acceptedSha256": "54c4b74857a4f286b513ecfa4e46b189a071212cf5193dfe82182e72bfa4b683",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/discovery-checkpoint-raw-check.mjs": {
+      "originalSha256": "da0ba16d627e0e53e22686561c55bd76d936a3575c6b7544a3ee30a841f01c8c",
+      "acceptedSha256": "fc69a1e039dad6b3727ce9901db90228780cff86b4837dd94828075c89c1f024",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/discovery-profile-management-gateway.mjs": {
+      "originalSha256": "439dd0bacaebe94580bd9b527cfcbf9723c6c09bac9e5eb4796ac99b5b7dd545",
+      "acceptedSha256": "839d2e0410b2ac59360c08125b67e997733c486bf9bc10d13d69e03aa2e2a7e6",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/gmail-empty-checkpoint-gateway.mjs": {
+      "originalSha256": "f27d25bb9b98dccf4b603af6c3d0d6fef9b9c7253578403fddf74c0e008ecf2c",
+      "acceptedSha256": "2600459e974a1407330c1abc82df8dc5485ac9bd7c344ced8b3a352bd9e1a541",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/gmail-empty-checkpoint-http.mjs": {
+      "originalSha256": "82e9c6950d48a892cb4ca1cc3f2e751932a16612ef1b5ca9cedff87f09b7c948",
+      "acceptedSha256": "c35a8a726adea7ef9981517a62568effaca8283c840ad05fb11cb8eb476ee74e",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/opportunity-raw-boundary-gateway.mjs": {
+      "originalSha256": "c4bc2b7be9425fd570e2e14993dbe4ace1160ffe90ab85ddc6310da5ef339c66",
+      "acceptedSha256": "274ba6713b987bcd7b4f6080f6279e7c5aa8a2ec83f2f3535cba6ef259ced65b",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/planning-management-gateway.mjs": {
+      "originalSha256": "3e94d426d18876d6d511894225cb1152602948e75014d7373316deeb5185804a",
+      "acceptedSha256": "1abba3b9e99f4d1e4f80b0195ea0bd699b549c477f72470a89829e2e4c40250c",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/private-reminder-management-gateway.mjs": {
+      "originalSha256": "178db495d77724eb4f67fb39176f6ee281de001b79ffc510862a97d11797cf7b",
+      "acceptedSha256": "638608c6dbb68667b58ee4596f1ca7239427db9968f97a41f3443dab92ec57e0",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/workspace-rows-legacy-read-fence-fixture.mjs": {
+      "originalSha256": "2ccfe430bbf0d1874542918cfc224ed9893207b21d1d029a87f56b647c2d4204",
+      "acceptedSha256": "1a47e2336c1a64a713b6e97195c6f58068cf5cbac106f55953ac808d807033b5",
+      "sourceCommit": "b241a476ab9f969859bb0587ff61395525cefab3",
+      "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
+      "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
+      "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
     }
   },
   "resourceImports": {
@@ -1663,12 +1815,109 @@
     "tests/sql/candidates/workspace-rows-staged-opportunity-prototype.sql": "e0eda0c08ac17f3ef885d267e661fd617c389af85b7f83e712409152bee80447"
   },
   "acceptedAdditionalCatalog": {
-    "tests/sql/candidates/workspace-rows-durable-attempts-v2.sql": "f923eb5ee6cff82d078f7b2d53c78bff713344d4776aebb2b33625a104c4f5ee"
+    "tests/sql/candidates/workspace-rows-durable-attempts-v2.sql": "f923eb5ee6cff82d078f7b2d53c78bff713344d4776aebb2b33625a104c4f5ee",
+    "tests/sql/candidates/workspace-rows-resource-reclamation.sql": "f314e666281df44c6096fcad3c78dd25ee6061868c0f67be1cd002b97215656f"
   },
   "preservedPairSources": {
     "tests/sql/integrated-pair-harness.mjs": "25b2315fd05ddc82cd09e2b2e69b2618a3007abeb16c00e2eb2baf58d02bd605",
     "tests/sql/integrated-pair-scenarios.mjs": "a54a840a13eb2eaaca6cd11616f7b29bd573f9e9f1e75ddcfe759fc8cbfb879e",
     "tests/sql/integrated-pair-historical.mjs": "20325cb794124e25b39aa66a25b7fab4d27dc1b7455ce79f876d0951ced2db12",
     "tests/sql/integrated-pair-cold-worker.mjs": "a656e81a750005ad74a2d321dcd7fc362f3484f6c130040b2547600689e76160"
+  },
+  "acceptedResourceEvolutions": {
+    "gateway/workspaceRowsResourceAccounting.ts": {
+      "originalSha256": "33ba72f332b9a8e397b3c6c0e7899036a1a8215a55efb3c225158a2a91eb1b87",
+      "acceptedSha256": "c62d3f9bad9dbd49b577c7cd00ec7ce86983e87f0e936a01f1984172d8f3c612",
+      "sourceCommit": "9796fd71bf2f5439e760f0db4508d45479232db0",
+      "reason": "Exact independently reviewed reclamation source: retain immutable R, H+L=R and surviving retained-control charge; no changes to the upstream implementation."
+    },
+    "tests/workspaceRowsResourceAccounting.test.ts": {
+      "originalSha256": "f91b7b2d8e66d0898997ae88e3458a9893fe4c8af27c849984640737b24edcb5",
+      "acceptedSha256": "af270612298879a40f525c23005007e4c9769ef31f323666e78f67b08ea581ac",
+      "sourceCommit": "9796fd71bf2f5439e760f0db4508d45479232db0",
+      "reason": "Exact independently reviewed reclamation source: retain immutable R, H+L=R and surviving retained-control charge; no changes to the upstream implementation."
+    }
+  },
+  "reclamationIntegration": {
+    "sourceCommit": "9796fd71bf2f5439e760f0db4508d45479232db0",
+    "sourceTree": "3733f0ebb21cc216705d6cb139f80de038dc0cf5",
+    "baseCommit": "88c369b52ec038df1657a8ed89685fd1083f0eba",
+    "historicalClosureIntersections": {
+      "r0p": [],
+      "historical103": [],
+      "reader": [],
+      "serial": []
+    },
+    "files": {
+      "gateway/workspaceRowsResourceAccounting.ts": {
+        "originalSha256": "c62d3f9bad9dbd49b577c7cd00ec7ce86983e87f0e936a01f1984172d8f3c612",
+        "acceptedSha256": "c62d3f9bad9dbd49b577c7cd00ec7ce86983e87f0e936a01f1984172d8f3c612",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/candidates/workspace-rows-resource-reclamation.sql": {
+        "originalSha256": "f314e666281df44c6096fcad3c78dd25ee6061868c0f67be1cd002b97215656f",
+        "acceptedSha256": "f314e666281df44c6096fcad3c78dd25ee6061868c0f67be1cd002b97215656f",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/reclamation/CONTRACT.md": {
+        "originalSha256": "87c3852d9f44b054010ec3fa2040cdfd677acdeb17c6862516983409fe2af9c5",
+        "acceptedSha256": "87c3852d9f44b054010ec3fa2040cdfd677acdeb17c6862516983409fe2af9c5",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/reclamation/cold-worker.mjs": {
+        "originalSha256": "390f44ff1742827103e3b465dd02011551564bef8ef9b45f93aa77af13536aa5",
+        "acceptedSha256": "390f44ff1742827103e3b465dd02011551564bef8ef9b45f93aa77af13536aa5",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/reclamation/control-math.mjs": {
+        "originalSha256": "f944dd2ab65f0bf6d07611b7b1bf881ca1b96998d44cbae3bb546b8f3d28f347",
+        "acceptedSha256": "f944dd2ab65f0bf6d07611b7b1bf881ca1b96998d44cbae3bb546b8f3d28f347",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/reclamation/native-acceptance.mjs": {
+        "originalSha256": "8f4f1b9e8b6939189542b849da26e7c0e983d79c6e0f918f6396bdb13fc432df",
+        "acceptedSha256": "93b41db9d760c1c96af47b2cba9c240a4e6289496202daa53a72dd127436c5ea",
+        "reason": "Runner-only portability: retain the pinned historical resolver and every original product scenario/assertion; finalize cleanup and source checks before recording PASS, preserving primary and finalizer errors."
+      },
+      "tests/sql/reclamation/native-fixture.mjs": {
+        "originalSha256": "7b9fa4e651008f6f0a47f71b4f960952d535d29b3e060188dc31d94c1d54b807",
+        "acceptedSha256": "656546c7d273456176d4334278b94e1469605a9d11e8f8f8f8aa2744c958ea71",
+        "reason": "Runner-only portability: preserve same-checkout dependencies and original synthetic trust-loopback transport/budgets; verify source before product imports, track direct owned RPCs, release owned observer locks before draining, handle PostgREST spawn failure and independently verify/record terminal cleanup. Original product fixtures and GC assertions unchanged."
+      },
+      "tests/sql/reclamation/source.mjs": {
+        "originalSha256": "b8015a7468e974e6beb2a348f1f7adef1bd3814edc0d2c310f5b2e6ca36ce66a",
+        "acceptedSha256": "b8015a7468e974e6beb2a348f1f7adef1bd3814edc0d2c310f5b2e6ca36ce66a",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/sql/workspace-rows-resource-reclamation-install.mjs": {
+        "originalSha256": "d5ff06fdcd2ddf3af51f1a83d0380260c6536242ecf6b85429161bf5c0ba3b91",
+        "acceptedSha256": "d5ff06fdcd2ddf3af51f1a83d0380260c6536242ecf6b85429161bf5c0ba3b91",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/workspaceRowsResourceAccounting.test.ts": {
+        "originalSha256": "af270612298879a40f525c23005007e4c9769ef31f323666e78f67b08ea581ac",
+        "acceptedSha256": "af270612298879a40f525c23005007e4c9769ef31f323666e78f67b08ea581ac",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      },
+      "tests/workspaceRowsResourceReclamation.test.ts": {
+        "originalSha256": "bcbe01bb32e0a304cee1060c5f5042d7f8c5c90d6750899986dca73b75903279",
+        "acceptedSha256": "bcbe01bb32e0a304cee1060c5f5042d7f8c5c90d6750899986dca73b75903279",
+        "reason": "Exact source bytes from the reviewed reclamation commit."
+      }
+    },
+    "runnerAdditions": {
+      "tests/sql/reclamation/finish-run.mjs": {
+        "sha256": "52ee108869cdc7c1a7d7c4b52fd1a74cca470cef0eb3d9b5306b3da283083143",
+        "reason": "New local runner lifecycle/evidence regression only, not upstream GC product implementation or additional production acceptance."
+      },
+      "tests/sql/reclamation/fixture-lifecycle.mjs": {
+        "sha256": "8e89a7701d202a7207e40e9dd53dcee183a89869e09075ce704acdadd187ce78",
+        "reason": "New local runner lifecycle/evidence regression only, not upstream GC product implementation or additional production acceptance."
+      },
+      "tests/workspaceRowsReclamationRunner.test.ts": {
+        "sha256": "f5064ba0d89bcf26715ec51396668db49a74c824b11a93af332d425ab1d30cc6",
+        "reason": "New local runner lifecycle/evidence regression only, not upstream GC product implementation or additional production acceptance."
+      }
+    }
   }
 }

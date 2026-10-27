@@ -326,7 +326,8 @@ describe('serial model concurrency and differential accounting (not a DB concurr
         ...total.commands.map(c => [s.reservations.filter(r => r.binding.userId === c.userId && r.binding.commandId === c.commandId), c.usage])] as const) {
         let held = 0n, occupied = 0n, present = 0n
         for (const r of records as ResourceLedger['reservations']) {
-          if (r.phase !== 'released') held += BigInt(r.reservedBytes)
+          held += BigInt(r.currentHeldBytes)
+          expect(BigInt(r.currentHeldBytes) + BigInt(r.releasedBytes)).toBe(BigInt(r.reservedBytes))
           for (const a of r.allocations) if (!a.removed) for (const c of a.chunks) { occupied += BigInt(c.bytes); if (c.status === 'present') present += BigInt(c.bytes) }
         }
         expect(actual).toEqual({ heldBytes: Number(held), occupiedUpperBoundBytes: Number(occupied), confirmedPresentBytes: Number(present) })
