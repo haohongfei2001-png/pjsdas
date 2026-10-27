@@ -2,7 +2,8 @@ import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { BACKEND, seedSession } from './fixtures/todayWorkspace.js'
+import { AUTH_KEY, BACKEND, session } from './fixtures/todayWorkspace.js'
+import { installConsumerBrowserBootstrap } from '../tests/fixtures/consumerBrowserBootstrap.js'
 import { guardMockApplicationRequests } from './support/mockApplicationRequests.js'
 import type { consumerHttpFixture } from '../tests/sql/consumer-pg-http-fixture.mjs'
 import { consumerCases, verifyConsumerSource } from '../tests/sql/consumer-pg-source.mjs'
@@ -23,13 +24,10 @@ async function state(page: Page, account: string) {
 async function bridge(context: BrowserContext, h: Harness) {
   const guard = await guardMockApplicationRequests(context)
   expect(BACKEND).toBe('https://todayaction-backend.invalid')
-  await seedSession(context, h.account, h.accessToken)
-  // A saved local refresh preference only: no workspace, checkpoint, pending
-  // operation, command ID, journal or receipt is injected into the browser.
-  await context.addInitScript(() => {
-    const key = 'pjsdas-google-drive-sync-state-v2'
-    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ version: 2,
-      deviceId: crypto.randomUUID(), autoSync: false, accounts: {} }))
+  // Synthetic login and one saved refresh preference, only at the app origin.
+  // No workspace, checkpoint, pending operation, command ID or journal seed.
+  await context.addInitScript(installConsumerBrowserBootstrap, {
+    origin: browserOrigin, authKey: AUTH_KEY, session: session(h.account, h.accessToken),
   })
   await context.route(`${BACKEND}/**`, async route => {
     const request = route.request(), url = new URL(request.url())
@@ -100,9 +98,16 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
   await writeFile(join(directory, 'result.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' })
   let h: Harness | undefined, currentPage = page, primaryError: unknown
   const phase = (value: string) => { report.phase = value }
-  const pageErrors: string[] = []
-  context.on('page', next => next.on('pageerror', error => pageErrors.push(error.name)))
-  page.on('pageerror', error => pageErrors.push(error.name))
+  const pageErrors: Array<{ name: string; observedPageDocument: string }> = []
+  const observePageErrors = (owned: Page) => owned.on('pageerror', error => {
+    // Delivery-time page URL only, not attribution of the error's source URL.
+    const url = owned.url()
+    const observedPageDocument = url === 'about:blank' ? 'initial-blank'
+      : url.startsWith(browserOrigin + '/') ? 'consumer-origin' : 'other-origin'
+    pageErrors.push({ name: ['SecurityError', 'Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError'].includes(error.name) ? error.name : 'OtherError', observedPageDocument })
+  })
+  context.on('page', observePageErrors)
+  observePageErrors(page)
   try {
     phase('fixture-setup')
     const { consumerHttpFixture } = await import('../tests/sql/consumer-pg-http-fixture.mjs')
@@ -187,6 +192,7 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
     }
     if (failures.length) { report.status = 'FAIL'; report.cleanupErrors = failures.map(safeError) }
     if (h) { report.transport = h.safeRequests(); report.transportErrors = h.errors }
+    report.pageErrors = pageErrors
     await writeFile(join(directory, 'result.json'), JSON.stringify(report, null, 2) + '\n')
     if (failures.length) throw new AggregateError([...(primaryError ? [primaryError] : []), ...failures], 'Consumer case/cleanup/source verification failed')
   }

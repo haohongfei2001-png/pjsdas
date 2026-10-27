@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { consumerCases, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
 import { consumerAuthClaims, consumerPostgresWorkspace } from './fixtures/consumerPostgresWorkspace.js'
+import { installConsumerBrowserBootstrap } from './fixtures/consumerBrowserBootstrap.js'
 import { verifyConsumerResults, verifyConsumerRun } from './sql/consumer-pg-results.mjs'
 import { canMountMockAccountCache, markVerifiedMockCache, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
 import { captureAccountCacheLease, setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
@@ -12,7 +13,7 @@ import { MOCK_AUTH_STORAGE_KEY } from '../src/cloud/runtimeCloudMode.js'
 import { selectTodayWeb } from '../src/today/todayWebSelector.js'
 
 const owned: string[] = []
-afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }); vi.unstubAllEnvs(); setAccountCacheSession(undefined) })
+afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }); vi.unstubAllEnvs(); vi.unstubAllGlobals(); setAccountCacheSession(undefined) })
 function source() {
   const base = mkdtempSync(join(tmpdir(), 'consumer-source-test-')); owned.push(base)
   for (const path of extraPaths) { mkdirSync(dirname(join(base, path)), { recursive: true }); writeFileSync(join(base, path), `synthetic:${path}`) }
@@ -95,6 +96,39 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(settled.indexOf('lease.isAccountCacheSessionResolved()')).toBeLessThan(settled.indexOf('await state(page, h.account)'))
     expect(settled).not.toMatch(/catch\s*(?:\(|\{)|\.catch\(/)
     expect(settled).not.toMatch(/setAccountCacheSession|replayAccountPendingOperations|recoverInstantInteraction/)
+  })
+  it.each(['null', 'https://unapproved.invalid'])('does not touch storage or crypto while bootstrap runs at %s', origin => {
+    const storage = vi.fn(() => { throw new DOMException('Opaque document', 'SecurityError') })
+    const crypto = vi.fn(() => { throw new Error('Unexpected crypto access') })
+    vi.stubGlobal('window', Object.defineProperties({ location: { origin } }, {
+      localStorage: { get: storage }, crypto: { get: crypto },
+    }))
+    installConsumerBrowserBootstrap({ origin: 'http://127.0.0.1:4176', authKey: 'synthetic-auth', session: { access_token: 'synthetic-token' } })
+    expect(storage).not.toHaveBeenCalled(); expect(crypto).not.toHaveBeenCalled()
+  })
+  it('writes only the original synthetic login and initial preference at the approved origin, preserving reload state', () => {
+    const values = new Map<string, string>(), origin = 'http://127.0.0.1:4176'
+    const localStorage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) }
+    const randomUUID = vi.fn(() => 'synthetic-device')
+    vi.stubGlobal('window', { location: { origin }, localStorage, crypto: { randomUUID } })
+    const input = { origin, authKey: 'synthetic-auth', session: { access_token: 'synthetic-token' } }
+    installConsumerBrowserBootstrap(input)
+    expect([...values.keys()]).toEqual(['synthetic-auth', 'pjsdas-google-drive-sync-state-v2'])
+    expect(JSON.parse(values.get('synthetic-auth')!)).toEqual(input.session)
+    expect(JSON.parse(values.get('pjsdas-google-drive-sync-state-v2')!)).toEqual({ version: 2, deviceId: 'synthetic-device', autoSync: false, accounts: {} })
+    const existing = JSON.stringify({ version: 2, deviceId: 'existing-device', accounts: { 'synthetic-owner': { lastSyncedVersion: 'txn:2' } } })
+    values.set('pjsdas-google-drive-sync-state-v2', existing)
+    installConsumerBrowserBootstrap(input)
+    expect(values.get('pjsdas-google-drive-sync-state-v2')).toBe(existing)
+    expect(randomUUID).toHaveBeenCalledTimes(1)
+  })
+  it('does not suppress storage SecurityError at the approved origin or relax pageerror acceptance', () => {
+    const origin = 'http://127.0.0.1:4176', failure = new DOMException('Storage denied', 'SecurityError')
+    vi.stubGlobal('window', Object.defineProperty({ location: { origin } }, 'localStorage', { get: () => { throw failure } }))
+    expect(() => installConsumerBrowserBootstrap({ origin, authKey: 'synthetic-auth', session: {} })).toThrow(failure)
+    const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.consumer-pg.ts', import.meta.url), 'utf8')
+    expect(code).toContain('expect(pageErrors).toEqual([])')
+    expect(code).not.toMatch(/pageErrors\.filter|seedSession\(/)
   })
   it('fails closed on incomplete, stale, unsafe or misattributed browser acceptance results', () => {
     const directory = mkdtempSync(join(tmpdir(), 'consumer-result-test-')); owned.push(directory)
