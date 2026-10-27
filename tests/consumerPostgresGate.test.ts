@@ -1,13 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHmac } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { consumerCases, createConsumerManifest, extraPaths, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
-import { consumerPostgresWorkspace } from './fixtures/consumerPostgresWorkspace.js'
+import { consumerCases, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
+import { consumerAuthClaims, consumerPostgresWorkspace } from './fixtures/consumerPostgresWorkspace.js'
 import { verifyConsumerResults, verifyConsumerRun } from './sql/consumer-pg-results.mjs'
+import { canMountMockAccountCache, markVerifiedMockCache, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
+import { captureAccountCacheLease, setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
+import { MOCK_AUTH_STORAGE_KEY } from '../src/cloud/runtimeCloudMode.js'
+import { selectTodayWeb } from '../src/today/todayWebSelector.js'
 
 const owned: string[] = []
-afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }) })
+afterEach(() => { for (const path of owned.splice(0)) rmSync(path, { recursive: true, force: true }); vi.unstubAllEnvs(); setAccountCacheSession(undefined) })
 function source() {
   const base = mkdtempSync(join(tmpdir(), 'consumer-source-test-')); owned.push(base)
   for (const path of extraPaths) { mkdirSync(dirname(join(base, path)), { recursive: true }); writeFileSync(join(base, path), `synthetic:${path}`) }
@@ -21,6 +26,7 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(fixture.data.actions.map(action => action.status)).toEqual(['todo', 'todo'])
     expect(fixture.data.timeline).toEqual([])
     expect(fixture.data.actions.every(action => action.plannedDate === '2030-01-01')).toBe(true)
+    expect(selectTodayWeb(fixture, { availableMinutes: 60 }, { now: new Date('2030-01-01T12:00:00Z'), timezone: 'UTC' }).visibleActions.map(action => action.actionId)).toEqual(['consumer-task', 'unrelated-task'])
   })
   it('pins actual browser/config/HTML/health inputs to the original native manifest digest', () => {
     const base = source(), digest = 'a'.repeat(64), manifest = createConsumerManifest(digest, { base })
@@ -38,7 +44,7 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(() => createConsumerManifest(digest, { base })).toThrow()
   })
   it('does not call recovery/replay/command APIs or install a fake browser clock in its UI journeys', () => {
-    const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.e2e.ts', import.meta.url), 'utf8')
+    const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.consumer-pg.ts', import.meta.url), 'utf8')
     expect(code).not.toMatch(/\.(?:recoverInstantInteraction|replayAccountPendingOperations|beginInstantCommand|beginInstantUndo|queueConnectedBusinessCommand)\s*\(/)
     expect(code).not.toMatch(/\.clock\.|dispatchEvent\s*\(/)
     expect(code).toContain("context.setOffline(true)")
@@ -48,6 +54,39 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     const config = readFileSync(new URL('../playwright.consumer-pg.config.mts', import.meta.url), 'utf8')
     expect(config).toContain("retries: 0")
     expect(config).toContain("trace: 'off', video: 'off', screenshot: 'off'")
+    expect(config).toContain('consumerPostgresRecovery.consumer-pg.ts')
+    const ordinary = readFileSync(new URL('../playwright.config.mts', import.meta.url), 'utf8')
+    expect(ordinary).toContain("testMatch: '**/*.e2e.ts'")
+    expect(code).toContain('import type { consumerHttpFixture }')
+  })
+  it('accepts only the fixture JWT with the correct mock issuer for actual cache provenance', async () => {
+    vi.stubEnv('VITE_PJSDAS_CLOUD_MODE', 'mock')
+    const account = 'consumer-synthetic-owner'
+    setAccountCacheSession(account)
+    const claims = consumerAuthClaims(account)
+    expect(claims).toEqual({ role: 'authenticated', sub: account, iss: 'https://todayaction-auth.invalid/auth/v1' })
+    for (const issuer of [undefined, claims.iss, 'https://not-mock.invalid/auth/v1']) {
+      const values = new Map<string, string>(), storage = { getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) }
+      const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+      const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ ...claims, iss: issuer, exp: 4102444800 })}`
+      const token = `${unsigned}.${createHmac('sha256', 'synthetic-unit-key').update(unsigned).digest('base64url')}`
+      storage.setItem(MOCK_AUTH_STORAGE_KEY, JSON.stringify({ access_token: token, expires_at: 4102444800, user: { id: account } }))
+      const state = { version: 2 as const, deviceId: 'synthetic-device', autoSync: false, workspaceOwnerUserId: account,
+        accounts: { [account]: { lastSyncedFingerprint: 'f'.repeat(64), lastSyncedVersion: 'txn:0' } } }
+      await markVerifiedMockCache(storage, () => state, account, captureAccountCacheLease(account).assertCurrent)
+      expect(Boolean(storage.getItem(MOCK_CACHE_PROVENANCE_KEY))).toBe(issuer === claims.iss)
+      expect(await canMountMockAccountCache(storage, () => state)).toBe(issuer === claims.iss)
+    }
+  })
+  it('keeps transport diagnostics allowlisted and credential/body/query free', () => {
+    const canary = 'synthetic-secret-do-not-serialize'
+    const summary = safeConsumerRequests([{ path: '/api/workspace', method: 'POST', action: 'read', status: 200,
+      authorizationMatched: true, originMatched: true, headers: { authorization: canary }, rawBody: canary, commandId: canary },
+      { path: '/unexpected?' + canary, method: canary, action: canary }])
+    expect(summary).toEqual([{ path: '/api/workspace', method: 'POST', action: 'read', status: 200,
+      authorizationMatched: true, originMatched: true }, { path: 'unapproved', method: 'other', action: 'other' }])
+    expect(JSON.stringify(summary)).not.toContain(canary)
   })
   it('fails closed on incomplete, stale, unsafe or misattributed browser acceptance results', () => {
     const directory = mkdtempSync(join(tmpdir(), 'consumer-result-test-')); owned.push(directory)

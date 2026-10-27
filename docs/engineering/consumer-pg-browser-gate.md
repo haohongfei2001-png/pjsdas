@@ -12,6 +12,12 @@ request runs the original workspace/health handler in a cold process, which can
 contact only the owned fixture's public PostgREST. PostgreSQL is genuine, with an
 independent database and a temporary NOINHERIT, non-superuser authenticator. No
 real OAuth, provider, email, external source or production account is contacted.
+The globally mounted AI-access provider also performs its ordinary automation
+status read. That read reaches the original API with the same JWT/Origin/body;
+the native fixture's unchanged Google-binding ACL returns actual
+`401/AUTH_INVALID`, which this gate explicitly records. No synthetic success,
+Google connection, or broader fixture ACL/RLS is supplied. This is not an
+automation-settings/Gmail health acceptance test.
 
 Three separate cases require all assertions, with no retries or fake clocks:
 
@@ -43,3 +49,5 @@ button or certify browser-originated v2 commands, hosted fallback, production
 activation, ACL retirement, physical storage or prior deadline/long-task issues.
 Gate implementation is not itself browser execution evidence. Read each exact
 CI checkout/PR-head mapping and all three terminal case/cleanup results.
+The dedicated `.consumer-pg.ts` journey is intentionally outside ordinary
+`*.e2e.ts` discovery, and its PG fixture loads only inside its test body.

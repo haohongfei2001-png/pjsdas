@@ -1,5 +1,10 @@
 import { createSnapshot } from '../../src/snapshot.js'
 
+/** A signed synthetic identity must also identify the isolated mock issuer. */
+export function consumerAuthClaims(accountKey: string) {
+  return { role: 'authenticated', sub: accountKey, iss: 'https://todayaction-auth.invalid/auth/v1' }
+}
+
 /** Initial business data only. Commands, journals and receipts are never seeded. */
 export function consumerPostgresWorkspace(now = new Date()) {
   const at = now.toISOString(), day = at.slice(0, 10)

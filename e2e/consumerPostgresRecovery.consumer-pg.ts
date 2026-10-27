@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { BACKEND, seedSession } from './fixtures/todayWorkspace.js'
 import { guardMockApplicationRequests } from './support/mockApplicationRequests.js'
-import { consumerHttpFixture } from '../tests/sql/consumer-pg-http-fixture.mjs'
+import type { consumerHttpFixture } from '../tests/sql/consumer-pg-http-fixture.mjs'
 import { consumerCases, verifyConsumerSource } from '../tests/sql/consumer-pg-source.mjs'
 import { sha, safeError } from '../tests/sql/workspace-rows-durable-v2-source.mjs'
 
@@ -44,10 +44,14 @@ async function bridge(context: BrowserContext, h: Harness) {
   })
   return guard
 }
-async function mount(page: Page, h: Harness) {
+async function mount(page: Page, h: Harness, phase: (value: string) => void) {
+  phase('mount-navigation')
   await page.goto('/pjsdas/today')
+  phase('mount-task-button')
   await expect(page.locator('[data-action-id="consumer-task"] .tsui-done-action')).toBeEnabled()
+  phase('mount-native-indexeddb')
   await expect.poll(async () => (await state(page, h.account)).nativeIDB).toBe('[object IDBFactory]')
+  phase('mount-cache-origin-proof')
   await expect.poll(() => page.evaluate(async () => {
     const proof = await import('/pjsdas/src/cloud/mockCacheBoundary.ts')
     const sync = await import('/pjsdas/src/cloud/syncState.ts')
@@ -87,20 +91,24 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
     durableV2Admission: false, uiCreatedCommands: false, mountedConsumer: false,
     clockMocked: false, explicitRecoveryCalls: 0, automaticIntervalCertified: false }
   await writeFile(join(directory, 'result.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' })
-  let h: Harness | undefined, currentPage = page
+  let h: Harness | undefined, currentPage = page, primaryError: unknown
+  const phase = (value: string) => { report.phase = value }
   const pageErrors: string[] = []
   context.on('page', next => next.on('pageerror', error => pageErrors.push(error.name)))
   page.on('pageerror', error => pageErrors.push(error.name))
   try {
+    phase('fixture-setup')
+    const { consumerHttpFixture } = await import('../tests/sql/consumer-pg-http-fixture.mjs')
     h = await consumerHttpFixture(directory, browserOrigin)
     const guard = await bridge(context, h)
-    await mount(page, h)
+    await mount(page, h, phase)
     const beforeClicks = await state(page, h.account)
     expect(beforeClicks.pending).toEqual([])
     expect(beforeClicks.records).toEqual([])
     expect(await h.ledger()).toEqual([])
     report.mountedConsumer = true
     if (label === 'offline-ui-done-undo-new-page-auto-recovery') {
+      phase('offline-ui-completion-and-undo')
       await context.setOffline(true)
       expect((await state(page, h.account)).online).toBe(false)
       await page.locator('[data-action-id="consumer-task"] .tsui-done-action').click()
@@ -116,9 +124,11 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
       report.uiCreatedCommands = true
       report.commandIdHashes = [sha(done.commandId), sha(undo.commandId)]
       currentPage = await freshPage(context, page)
+      phase('new-page-command-and-undo-recovery')
       await assertSettled(h, currentPage, [done.commandId, undo.commandId], 'todo')
       report.newPageAutomaticRecovery = true
     } else {
+      phase('lost-committed-ack')
       // Let the genuine initial 700 ms outbox timer finish while the queue is
       // empty. We never install a clock or call a recovery module function.
       await page.waitForTimeout(1500)
@@ -138,11 +148,13 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
       report.uiCreatedCommands = true; report.commandIdHashes = [sha(originalId)]
       report.commitProvenBeforeAckLoss = h.lostAck.confirmedBeforeDisconnect
       if (label === 'lost-ack-new-page-auto-receipt') {
+        phase('new-page-receipt-recovery')
         await page.close(); h.restoreReceiptTransport()
         currentPage = await context.newPage(); await currentPage.goto('/pjsdas/today')
         await assertSettled(h, currentPage, [originalId], 'done')
         report.newPageAutomaticRecovery = true
       } else {
+        phase('real-interval-receipt-recovery')
         h.restoreReceiptTransport()
         await expect.poll(async () => (await state(page, h!.account)).pending.length, { timeout: 90_000 }).toBe(0)
         const elapsed = performance.now() - h.lostAck.at
@@ -153,8 +165,13 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
       }
     }
     guard.assertNoUnexpectedRequests(); expect(pageErrors).toEqual([])
+    await expect.poll(() => {
+      const ancillary = h!.safeRequests().filter(request => request.path === '/api/automation-settings' && request.method === 'POST')
+      return ancillary.length > 0 && ancillary.every(request => request.status === 401 && request.expectedAncillaryDenial)
+    }).toBe(true)
+    report.ancillaryAutomationRead = 'actual-api-auth-invalid-no-fixture-acl-expansion'
     expect(h.errors).toEqual([]); report.status = 'PASS'
-  } catch (error) { report.status = 'FAIL'; report.error = safeError(error); throw error }
+  } catch (error) { primaryError = error; report.status = 'FAIL'; report.error = safeError(error); throw error }
   finally {
     const failures: unknown[] = []
     for (const close of [...context.pages().map(owned => async () => { await owned.close() }),
@@ -162,7 +179,8 @@ for (const label of consumerCases) test(label, async ({ page, context, browserNa
       try { await close() } catch (error) { failures.push(error) }
     }
     if (failures.length) { report.status = 'FAIL'; report.cleanupErrors = failures.map(safeError) }
+    if (h) { report.transport = h.safeRequests(); report.transportErrors = h.errors }
     await writeFile(join(directory, 'result.json'), JSON.stringify(report, null, 2) + '\n')
-    if (failures.length) throw new AggregateError(failures, 'Consumer cleanup/source verification failed')
+    if (failures.length) throw new AggregateError([...(primaryError ? [primaryError] : []), ...failures], 'Consumer case/cleanup/source verification failed')
   }
 })

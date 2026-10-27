@@ -15,6 +15,10 @@ try{
  const send=body=>fetch(h.origin+'/api/workspace',{method:'POST',headers,body:JSON.stringify(body)})
  const health=await fetch(h.origin+'/api/health',{headers:{origin:headers.origin}})
  assert.equal(health.status,200);assert.equal((await health.json()).workspaceAuthority,'transactional')
+ const claims=JSON.parse(Buffer.from(h.accessToken.split('.')[1],'base64url'))
+ assert.equal(claims.iss,'https://todayaction-auth.invalid/auth/v1')
+ const ancillary=await fetch(h.origin+'/api/automation-settings',{method:'POST',headers,body:JSON.stringify({action:'read'})})
+ assert.equal(ancillary.status,401);assert((await ancillary.json()).code==='AUTH_INVALID')
  const initial=await send({action:'read'});assert.equal(initial.status,200);assert.equal((await initial.json()).revision,0)
  const id='node-smoke-'+randomUUID(),input={action:'command',projection:'delta-v1',commandId:id,baseRevision:0,
   command:{type:'domain',value:{commandId:id,kind:'set_action_status',actionId:'consumer-task',status:'done'}}}
@@ -31,6 +35,7 @@ try{
  assert.equal((await h.current()).snapshot.data.actions.find(action=>action.id==='consumer-task').status,'todo')
  await h.assertNoLargeIntent()
  report.status='PASS';report.originalRequestHashMatched=true;report.committedBeforeAckLoss=true;report.ledgerEntries=2
+ report.ancillaryAutomationRead='actual-api-auth-invalid-no-fixture-acl-expansion'
 }catch(error){failure=error;report.status='FAIL';report.error=safeError(error)}
 finally{
  try{if(h)await h.close();verifyConsumerSource()}catch(error){failure??=error;report.status='FAIL';report.cleanupError=safeError(error)}

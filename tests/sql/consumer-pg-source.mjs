@@ -6,13 +6,24 @@ import {fileURLToPath,pathToFileURL} from 'node:url'
 import {root,sha,verifySource} from './workspace-rows-durable-v2-source.mjs'
 
 export const extraPaths=Object.freeze([
- 'api/health.ts','index.html','vite.config.ts','playwright.consumer-pg.config.mts',
- 'e2e/consumerPostgresRecovery.e2e.ts','e2e/fixtures/todayWorkspace.ts',
+ 'api/health.ts','api/automation-settings.ts','index.html','vite.config.ts','playwright.consumer-pg.config.mts',
+ 'e2e/consumerPostgresRecovery.consumer-pg.ts','e2e/fixtures/todayWorkspace.ts',
  'e2e/support/mockCloudTargets.ts','e2e/support/mockCloudIsolation.mts',
  'e2e/support/mockCloudProxySetup.mjs','e2e/support/mockApplicationRequests.ts',
  '.github/workflows/consumer-pg-browser.yml','scripts/verify-installed-runtime-lock.mjs',
 ])
 export const consumerCases=Object.freeze(['offline-ui-done-undo-new-page-auto-recovery','lost-ack-new-page-auto-receipt','lost-ack-real-60s-automatic-receipt'])
+export const consumerApiPaths=Object.freeze(['/api/health','/api/workspace','/api/automation-settings'])
+/** Fixed metadata only: never serialize headers, tokens, bodies or query text. */
+export function safeConsumerRequests(requests){
+ return requests.map(request=>({path:consumerApiPaths.includes(request.path)?request.path:'unapproved',
+  method:['GET','POST','OPTIONS'].includes(request.method)?request.method:'other',
+  action:['read','command','receipt','undo'].includes(request.action)?request.action:'other',
+  ...(Number.isSafeInteger(request.status)?{status:request.status}:{}),
+  ...(typeof request.authorizationMatched==='boolean'?{authorizationMatched:request.authorizationMatched}:{}),
+  ...(typeof request.expectedAncillaryDenial==='boolean'?{expectedAncillaryDenial:request.expectedAncillaryDenial}:{}),
+  ...(typeof request.originMatched==='boolean'?{originMatched:request.originMatched}:{})}))
+}
 function extra(path,base=root){
  assert(extraPaths.includes(path),'Unlisted consumer source')
  let current=base

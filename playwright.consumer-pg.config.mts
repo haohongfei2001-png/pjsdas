@@ -3,7 +3,7 @@ import { mockCloudGlobalSetup, mockCloudTestUse } from './e2e/support/mockCloudI
 
 export default defineConfig({
   globalSetup: mockCloudGlobalSetup,
-  testDir: './e2e', testMatch: '**/consumerPostgresRecovery.e2e.ts',
+  testDir: './e2e', testMatch: '**/consumerPostgresRecovery.consumer-pg.ts',
   fullyParallel: false, workers: 1, retries: 0, timeout: 120_000,
   expect: { timeout: 15_000 }, reporter: [['list']],
   outputDir: 'test-results/consumer-pg',

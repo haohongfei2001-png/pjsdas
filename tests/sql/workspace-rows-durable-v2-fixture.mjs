@@ -156,9 +156,10 @@ export async function fixture(evidence){
  return{db,scalar,rpc,make,reserve,cold,invoke,current,ledger,intent,reservation,decoded,observer,close,calls,children,faults,drain,snapshots,
   async consumer(snapshot){
    assert(snapshot.data.actions.length>0&&snapshot.data.actions.length<=20,'Small synthetic consumer workspace only')
+   const {consumerAuthClaims}=await sourceImport('tests/fixtures/consumerPostgresWorkspace.ts')
    const ids=await seed(snapshot,{enroll:false})
    // Only synthetic identity setup; UI must create every command/Undo ID.
-   return{ids,accessToken:jwt({role:'authenticated',sub:ids.userId})}
+   return{ids,accessToken:jwt(consumerAuthClaims(ids.userId))}
   },
   setDrop(rule){assert.equal(drop,undefined);drop=rule},assertNoDrop(){assert.equal(drop,undefined)},setOffline(value){offline=value},isOffline:()=>offline,
   identity:t=>({identity:t.identity,target_user_id:t.ids.userId}),env,
