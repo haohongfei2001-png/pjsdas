@@ -648,45 +648,79 @@ export async function replayAccountPendingOperations(accountKey: string) {
   // account-bound command intact until a real reconnect triggers recovery.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return []
   const results: ConnectedCommandResponse[] = []
+  const lease = captureAccountCacheLease(accountKey)
+  let failed = false
+  let firstFailure: unknown
   for (const pending of readPending(accountKey)) {
-    if (pending.status === 'conflict') continue
-    if (pending.interaction) {
-      await (await import('./instantCommandClient.js')).recoverInstantInteraction(accountKey, pending.commandId)
-      continue
-    }
-    const current = readPending(accountKey).find(item => item.commandId === pending.commandId)
-    if (!current) continue
-    if (current.status === 'projection_pending') {
-      if (current.confirmedFact) {
-        const read = await request(accountKey, { action: 'read', projection: 'snapshot' })
-        if (read.response.ok) {
-          const recovered = await projectConfirmedResult(accountKey, current.commandId, { ...read.payload, outcome: current.confirmedFact } as ConnectedCommandResponse, { expectedLocal: read.local, assertCurrent: read.lease.assertCurrent })
-          if (recovered.localProjection === 'applied') removePending(accountKey, current.commandId)
-          results.push(recovered); notifyRecoveredCommand(current.commandId, recovered)
+    lease.assertCurrent()
+    try {
+      if (pending.status === 'conflict') continue
+      if (pending.interaction) {
+        const client = await import('./instantCommandClient.js')
+        lease.assertCurrent()
+        await client.recoverInstantInteraction(accountKey, pending.commandId, { receiptOnly: failed })
+        continue
+      }
+      const current = readPending(accountKey).find(item => item.commandId === pending.commandId)
+      if (!current) continue
+      if (current.status === 'projection_pending') {
+        if (current.confirmedFact) {
+          const read = await request(accountKey, { action: 'read', projection: 'snapshot' })
+          lease.assertCurrent()
+          if (read.response.ok) {
+            const recovered = await projectConfirmedResult(accountKey, current.commandId, { ...read.payload, outcome: current.confirmedFact } as ConnectedCommandResponse, { expectedLocal: read.local, assertCurrent: read.lease.assertCurrent })
+            lease.assertCurrent()
+            if (recovered.localProjection === 'applied') removePending(accountKey, current.commandId)
+            results.push(recovered); notifyRecoveredCommand(current.commandId, recovered)
+          }
+          continue
+        }
+        const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
+        lease.assertCurrent()
+        if (recovered) {
+          if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
+          clearRecoveredSemanticDraft(accountKey, pending, recovered)
+          results.push(recovered)
+          notifyRecoveredCommand(pending.commandId, recovered)
         }
         continue
       }
-      const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
-      if (recovered) {
-        if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
-        clearRecoveredSemanticDraft(accountKey, pending, recovered)
-        results.push(recovered)
-        notifyRecoveredCommand(pending.commandId, recovered)
+      if (failed) {
+        const recovered = await lookupConnectedCommandReceipt(accountKey, current.commandId)
+        lease.assertCurrent()
+        if (recovered) {
+          if (recovered.localProjection === 'applied') removePending(accountKey, current.commandId)
+          clearRecoveredSemanticDraft(accountKey, current, recovered)
+          results.push(recovered)
+          notifyRecoveredCommand(current.commandId, recovered)
+        }
+        continue
       }
-      continue
+      const result = await oneCommandFlight(accountKey, pending.commandId, async () => {
+        const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
+        lease.assertCurrent()
+        if (recovered) {
+          if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
+          return recovered
+        }
+        return submitPending(accountKey, current)
+      })
+      lease.assertCurrent()
+      clearRecoveredSemanticDraft(accountKey, pending, result)
+      results.push(result)
+      notifyRecoveredCommand(pending.commandId, result)
+    } catch (caught) {
+      // Identity changes are global, not one bad queue item. Never continue
+      // the old account's sweep (including after an A -> B -> A transition).
+      lease.assertCurrent()
+      if (caught instanceof AccountCacheChangedError) throw caught
+      if (!failed) { firstFailure = caught; failed = true }
+      // Keep the first error visible to the scheduler/UI, but still resolve
+      // later committed facts. Later unknown operations remain unsent.
     }
-    const result = await oneCommandFlight(accountKey, pending.commandId, async () => {
-      const recovered = await lookupConnectedCommandReceipt(accountKey, pending.commandId)
-      if (recovered) {
-        if (recovered.localProjection === 'applied') removePending(accountKey, pending.commandId)
-        return recovered
-      }
-      return submitPending(accountKey, current)
-    })
-    clearRecoveredSemanticDraft(accountKey, pending, result)
-    results.push(result)
-    notifyRecoveredCommand(pending.commandId, result)
   }
+  lease.assertCurrent()
+  if (failed) throw firstFailure
   return results
 }
 

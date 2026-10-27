@@ -39,9 +39,9 @@ vi.mock('../src/cloud/cloudClient.js', () => ({ getAccountAccessToken: async () 
 vi.mock('../src/backendEndpoints.js', () => ({ fetchBackend: vi.fn() }))
 import { fetchBackend } from '../src/backendEndpoints.js'
 import { beginInstantCommand, beginInstantUndo, recoverInstantInteraction } from '../src/cloud/instantCommandClient.js'
-import { setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
+import { AccountCacheChangedError, setAccountCacheSession } from '../src/cloud/accountCacheLease.js'
 import { bindLocalWorkspaceToUser, getAccountCheckpoint, patchAccountCheckpoint } from '../src/cloud/syncState.js'
-import { listAccountPendingOperations } from '../src/cloud/authoritativeCommandClient.js'
+import { listAccountPendingOperations, replayAccountPendingOperations } from '../src/cloud/authoritativeCommandClient.js'
 import { applyUserDomainCommand } from '../src/domainCommands.js'
 import { diffWorkspaceDelta } from '../src/workspaceDelta.js'
 import { instantDenseWorkspace, INSTANT_NOW } from './fixtures/instantDenseWorkspace.js'
@@ -63,6 +63,64 @@ describe('confirmed interaction metadata recovery', () => {
     bindLocalWorkspaceToUser('metadata-owner')
     patchAccountCheckpoint('metadata-owner', { lastSyncedVersion: 'txn:1204', lastSyncedFingerprint: 'synthetic-baseline' })
     vi.mocked(fetchBackend).mockReset()
+  })
+  it('stops an old sweep before the instant-module import resumes after A -> B -> A', async () => {
+    await beginInstantCommand('metadata-owner', state.snapshot, { commandId: 'stale-import', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const original = structuredClone(listAccountPendingOperations('metadata-owner'))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    vi.mocked(fetchBackend).mockResolvedValue(response({ found: false }))
+    const recovery = replayAccountPendingOperations('metadata-owner')
+    await Promise.resolve()
+    setAccountCacheSession('other-account'); setAccountCacheSession('metadata-owner')
+    await expect(recovery).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(fetchBackend).not.toHaveBeenCalled()
+    expect(listAccountPendingOperations('metadata-owner')).toEqual(original)
+    expect(state.records.get('stale-import')?.state).toBe('active')
+  })
+  it('stops an old serial-dispatch tail before it acquires the returning account generation', async () => {
+    for (const [commandId, actionId] of [['stale-tail-head', 'dense-action-0'], ['stale-tail-next', 'dense-action-1']]) {
+      await beginInstantCommand('metadata-owner', state.snapshot, { commandId, kind: 'set_action_status', actionId, status: 'done' })
+    }
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const original = structuredClone(listAccountPendingOperations('metadata-owner'))
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const barrier = new Promise<void>(resolve => { release = resolve })
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body)); requests.push(`${body.action}:${body.commandId}`)
+      entered(); await barrier
+      return response({ found: false })
+    })
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    const head = recoverInstantInteraction('metadata-owner', 'stale-tail-head')
+    await started
+    const next = recoverInstantInteraction('metadata-owner', 'stale-tail-next')
+    // Drain its journal/terminal checks until it is waiting behind the head.
+    for (let index = 0; index < 8; index++) await Promise.resolve()
+    setAccountCacheSession('other-account'); setAccountCacheSession('metadata-owner')
+    const outcomes = Promise.allSettled([head, next])
+    release()
+    expect((await outcomes).every(item => item.status === 'rejected' && item.reason instanceof AccountCacheChangedError)).toBe(true)
+    expect(requests).toEqual(['receipt:stale-tail-head'])
+    expect(listAccountPendingOperations('metadata-owner')).toEqual(original)
+  })
+  it('keeps a prepared timer failure inside its promise boundary after sign-out', async () => {
+    const queued: Array<() => void> = []
+    const timer = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => { queued.push(callback); return 1 as any })
+    try {
+      await beginInstantCommand('metadata-owner', state.snapshot, { commandId: 'signed-out-timer', kind: 'set_action_status', actionId: 'dense-action-0', status: 'done' })
+      const original = structuredClone(listAccountPendingOperations('metadata-owner'))
+      setAccountCacheSession(undefined)
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+      expect(queued).toHaveLength(1)
+      expect(() => queued[0]()).not.toThrow()
+      await Promise.resolve(); await Promise.resolve()
+      expect(fetchBackend).not.toHaveBeenCalled()
+      expect(listAccountPendingOperations('metadata-owner')).toEqual(original)
+      expect(state.records.get('signed-out-timer')?.state).toBe('active')
+    } finally { timer.mockRestore() }
   })
   it('joins a blocked recovery flight and requires a fresh recovery after local equivalence returns', async () => {
     const command = { commandId: 'blocked-flight', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
@@ -151,6 +209,60 @@ describe('confirmed interaction metadata recovery', () => {
       await recoverInstantInteraction('metadata-owner', command.commandId)
       expect(fetchBackend).toHaveBeenCalledTimes(1)
     } finally { timer.mockRestore() }
+  })
+  it.each(['active', 'missing-journal', 'paused-dispatch'] as const)('receipt-only recovery leaves an absent-receipt %s unsent and intact', async mode => {
+    const queued: Array<() => void> = []
+    const timer = mode === 'paused-dispatch' ? vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => { queued.push(callback); return 1 as any }) : undefined
+    try {
+      const command = { commandId: `receipt-only-${mode}`, kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+      await beginInstantCommand('metadata-owner', state.snapshot, command)
+      if (!timer) await new Promise(resolve => setTimeout(resolve, 0))
+      if (mode === 'missing-journal') state.records.delete(command.commandId)
+      const originalRecords = structuredClone([...state.records]), originalSnapshot = structuredClone(state.snapshot)
+      const originalMirrors = structuredClone(listAccountPendingOperations('metadata-owner'))
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+      vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ action: 'receipt', commandId: command.commandId })
+        return response({ found: false })
+      })
+      await recoverInstantInteraction('metadata-owner', command.commandId, { receiptOnly: true })
+      for (const callback of queued) callback()
+      expect(fetchBackend).toHaveBeenCalledTimes(1)
+      expect([...state.records]).toEqual(originalRecords)
+      expect(state.snapshot).toEqual(originalSnapshot)
+      expect(listAccountPendingOperations('metadata-owner')).toEqual(originalMirrors)
+    } finally { timer?.mockRestore() }
+  })
+  it('a failed ordinary queue head still lets a later instant receipt converge, without resending either later command', async () => {
+    // A crashed ordinary operation precedes a committed instant command and
+    // an independent unknown instant command in the durable account outbox.
+    const queueKey = 'pjsdas-cgr01-pending:metadata-owner'
+    window.localStorage.setItem(queueKey, JSON.stringify([{ commandId: 'ordinary-head', action: 'command',
+      command: { type: 'job_viewed', value: { opportunityId: 'dense-opp-0' } }, baseRevision: 1204,
+      status: 'unknown', createdAt: INSTANT_NOW.toISOString(), updatedAt: INSTANT_NOW.toISOString() }]))
+    const before = structuredClone(state.snapshot)
+    const command = { commandId: 'instant-committed-tail', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
+    await beginInstantCommand('metadata-owner', state.snapshot, command)
+    await beginInstantCommand('metadata-owner', state.snapshot, { ...command, commandId: 'instant-unknown-tail', actionId: 'dense-action-1' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const evaluated = applyUserDomainCommand(before, command, INSTANT_NOW)
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options!.body)); requests.push(`${body.action}:${body.commandId}`)
+      expect(body.action).toBe('receipt')
+      if (body.commandId === 'ordinary-head') throw new Error('queue head receipt unavailable')
+      if (body.commandId === 'instant-unknown-tail') return response({ found: false })
+      return response({ found: true, revision: 1205, workspaceVersion: 'txn:1205',
+        delta: diffWorkspaceDelta(before, evaluated.snapshot, 1204),
+        receipt: { commandId: command.commandId, revision: 1205, undoCompensation: evaluated.compensation } })
+    })
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    await expect(replayAccountPendingOperations('metadata-owner')).rejects.toThrow('queue head receipt unavailable')
+    expect(state.records.get(command.commandId)?.state).toBe('confirmed')
+    expect(state.records.get('instant-unknown-tail')?.state).toBe('active')
+    expect(listAccountPendingOperations('metadata-owner').map(item => item.commandId)).toEqual(['ordinary-head', 'instant-unknown-tail'])
+    expect(state.snapshot.data.actions.find(item => item.id === 'dense-action-1')?.status).toBe('done')
+    expect(requests).toEqual(['receipt:ordinary-head', 'receipt:instant-committed-tail', 'receipt:instant-unknown-tail'])
   })
   it('does not mistake a live Undo preparation for a crash before its journal transaction', async () => {
     const command = { commandId: 'live-preparation-parent', kind: 'set_action_status' as const, actionId: 'dense-action-0', status: 'done' as const }
