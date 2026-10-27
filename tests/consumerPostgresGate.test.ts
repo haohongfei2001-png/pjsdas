@@ -88,6 +88,14 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
       authorizationMatched: true, originMatched: true }, { path: 'unapproved', method: 'other', action: 'other' }])
     expect(JSON.stringify(summary)).not.toContain(canary)
   })
+  it('waits for actual new-page account adoption before observing scoped journals without swallowing lease errors', () => {
+    const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.consumer-pg.ts', import.meta.url), 'utf8')
+    const settled = code.slice(code.indexOf('async function assertSettled('), code.indexOf('\nfor (const label'))
+    expect(settled).toContain('lease.isAccountCacheSessionResolved() && lease.currentAccountCacheSession() === account')
+    expect(settled.indexOf('lease.isAccountCacheSessionResolved()')).toBeLessThan(settled.indexOf('await state(page, h.account)'))
+    expect(settled).not.toMatch(/catch\s*(?:\(|\{)|\.catch\(/)
+    expect(settled).not.toMatch(/setAccountCacheSession|replayAccountPendingOperations|recoverInstantInteraction/)
+  })
   it('fails closed on incomplete, stale, unsafe or misattributed browser acceptance results', () => {
     const directory = mkdtempSync(join(tmpdir(), 'consumer-result-test-')); owned.push(directory)
     const identity = { commit: 'a'.repeat(40), tree: 'b'.repeat(40), prHeadSha: 'c'.repeat(40) }

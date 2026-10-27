@@ -67,6 +67,13 @@ async function freshPage(context: BrowserContext, old: Page) {
 }
 const commandRequests = (h: Harness) => h.requests.filter(request => ['command', 'undo'].includes(request.action))
 async function assertSettled(h: Harness, page: Page, ids: string[], targetStatus: string) {
+  // Navigation completion is not Auth/account adoption completion. Observe the
+  // real page's resolved lease before any account-scoped journal reads; never
+  // catch a lease error or invoke recovery to make the observation succeed.
+  await expect.poll(() => page.evaluate(async account => {
+    const lease = await import('/pjsdas/src/cloud/accountCacheLease.ts')
+    return lease.isAccountCacheSessionResolved() && lease.currentAccountCacheSession() === account
+  }, h.account)).toBe(true)
   await expect.poll(async () => (await state(page, h.account)).pending.length).toBe(0)
   const local = await state(page, h.account), rows = await h.ledger(), current = await h.current()
   expect(local.records.filter(record => ids.includes(record.commandId)).map(record => record.state)).toEqual(ids.map(() => 'confirmed'))
