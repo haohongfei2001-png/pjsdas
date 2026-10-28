@@ -52,6 +52,7 @@ declare
  before_row jsonb; after_row jsonb; current_row jsonb; proposed_row jsonb;
  kind text; collection text; row_index integer; selected_collection text;
  old_ids text[]; new_ids text[]; change_ids text[]; expected_ids text[]; insertion_index integer; kind_changes jsonb;
+ dense_slots integer[]; dense_slot integer; dense_old_count integer;
  affected text[] := array['opportunities','processes','processEvents','actions','scheduleNodes','reminderIntents'];
 begin
  if req->>'principal' is distinct from 'delegated_mcp' or nullif(trim(target_client_id),'') is null
@@ -198,6 +199,41 @@ begin
         end if;
       end if;
       if target_operation='undo_command' then
+        -- Only the ordinary, identity-preserving integer-index subset uses
+        -- scalar slots. Everything else retains the exact original loop below:
+        -- numeric scale, SQL NULL propagation, malformed identities, tied
+        -- indices, first-match collation behavior and error ordering included.
+        if not exists(select 1 from jsonb_array_elements(kind_changes) c where
+          jsonb_typeof(c->'id') is distinct from 'string'
+          or jsonb_typeof(c->'before') is distinct from 'object'
+          or c#>'{before,id}' is distinct from c->'id'
+          or jsonb_typeof(c->'beforeIndex') is distinct from 'number'
+          or not coalesce((c->>'beforeIndex') collate "C" ~ '^(0|[1-9][0-9]{0,8})$',false))
+          and (select count(*) from jsonb_array_elements(kind_changes))=
+              (select count(distinct c->'beforeIndex') from jsonb_array_elements(kind_changes) c) then
+          dense_old_count:=jsonb_array_length(old_rows); expected_ids:=old_ids;
+          select coalesce(array_agg(n order by n),array[]::integer[]) into dense_slots from generate_series(1,dense_old_count) n;
+          for change,dense_slot in select c.value,dense_old_count+c.n::integer
+            from jsonb_array_elements(kind_changes) with ordinality c(value,n)
+            order by (c.value->>'beforeIndex')::numeric loop
+            row_index:=array_position(expected_ids,change->>'id');
+            if row_index is not null then
+              dense_slots[row_index]:=dense_slot; expected_ids[row_index]:=change#>>'{before,id}';
+            else
+              insertion_index:=least(cardinality(dense_slots)::numeric,(change->>'beforeIndex')::numeric)::integer;
+              dense_slots:=dense_slots[1:insertion_index] || array[dense_slot] || dense_slots[insertion_index+1:cardinality(dense_slots)];
+              expected_ids:=expected_ids[1:insertion_index] || array[change->>'id'] || expected_ids[insertion_index+1:cardinality(expected_ids)];
+            end if;
+          end loop;
+          -- Materialize JSONB once; slot arithmetic never parses or rewrites
+          -- row values, including unknown fields and arbitrary numeric values.
+          with source_rows as (
+            select r.n::integer slot,r.value from jsonb_array_elements(old_rows) with ordinality r(value,n)
+            union all
+            select dense_old_count+c.n::integer,c.value->'before' from jsonb_array_elements(kind_changes) with ordinality c(value,n)
+          ) select coalesce(jsonb_agg(r.value order by p.n),'[]'::jsonb) into expected_rows
+            from unnest(dense_slots) with ordinality p(slot,n) join source_rows r on r.slot=p.slot;
+        else
         expected_rows:=old_rows; expected_ids:=old_ids;
         for change in select c from jsonb_array_elements(changes) c where c->>'type'=kind order by (c->>'beforeIndex')::numeric loop
           if jsonb_typeof(change->'beforeIndex') is distinct from 'number' or (change->>'beforeIndex')::numeric<0 or trunc((change->>'beforeIndex')::numeric)<>(change->>'beforeIndex')::numeric then
@@ -222,6 +258,7 @@ begin
             end if;
           end if;
         end loop;
+        end if;
         if expected_rows is distinct from new_rows then
           raise exception 'Opportunity restore must preserve exact retained row ordering.' using errcode='42501';
         end if;

@@ -1694,6 +1694,24 @@
       "publishedSnapshotHead": "fc86423646f520fd6d486ca97177ffde87800352",
       "publishedSnapshotTree": "c39d908377cb8bb2921af2d841a8d628a750c136",
       "reason": "Previously published isolated historical fixture adaptation to the legacy-reader RPC; preserve owner/role checks and fail closed for a present active row epoch. No product SQL, production ACL or historical closure bytes changed."
+    },
+    "tests/sql/candidates/workspace-rows-opportunity-stage-a.sql": {
+      "originalSha256": "e6dbad808cbbece78a21c8801f7248f55f91264a0ac5398967eeba726d6ad3cd",
+      "acceptedSha256": "0eec4330dccf1f7aec6b5f83c3666759f951966294851fdee9ce4ca00dcbad5c",
+      "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
+      "reason": "Conservative dense Undo: exact identity/integer-index subset uses scalar slots, all remaining inputs retain the original loop; outer authority, epoch, grant, receipt, deadline and resource contracts are byte-identical."
+    },
+    "tests/sql/candidates/workspace-rows-staged-opportunity-prototype.sql": {
+      "originalSha256": "e0eda0c08ac17f3ef885d267e661fd617c389af85b7f83e712409152bee80447",
+      "acceptedSha256": "8f76f11e08fb916c40815efa4c6de20611f1cb68a4d17e151e9ce44098207e78",
+      "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
+      "reason": "Conservative dense Undo: exact identity/integer-index subset uses scalar slots, all remaining inputs retain the original loop; outer authority, epoch, grant, receipt, deadline and resource contracts are byte-identical."
+    },
+    "tests/sql/workspace-rows-opportunity-guard-equivalence.mjs": {
+      "originalSha256": "84dfc8455eeab5f425736615cd85de508a42cb8a35fdba7424a650a2cb922195",
+      "acceptedSha256": "9599455de6b72409386d5237c47985d2ebd380b6db7e1ef57ec218f03b1fca8d",
+      "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
+      "reason": "Exact server JSONB text comparison and source-derived dense-loop coverage; original oracle hash, original cases and expected errors remain unchanged."
     }
   },
   "resourceImports": {
@@ -1918,6 +1936,20 @@
         "sha256": "f5064ba0d89bcf26715ec51396668db49a74c824b11a93af332d425ab1d30cc6",
         "reason": "New local runner lifecycle/evidence regression only, not upstream GC product implementation or additional production acceptance."
       }
+    }
+  },
+  "acceptedUndoDenseSqlEvolutions": {
+    "tests/sql/candidates/workspace-rows-opportunity-stage-a.sql": {
+      "originalSha256": "e6dbad808cbbece78a21c8801f7248f55f91264a0ac5398967eeba726d6ad3cd",
+      "acceptedSha256": "0eec4330dccf1f7aec6b5f83c3666759f951966294851fdee9ce4ca00dcbad5c",
+      "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
+      "reason": "Conservative dense Undo: exact identity/integer-index subset uses scalar slots, all remaining inputs retain the original loop; outer authority, epoch, grant, receipt, deadline and resource contracts are byte-identical."
+    },
+    "tests/sql/candidates/workspace-rows-staged-opportunity-prototype.sql": {
+      "originalSha256": "e0eda0c08ac17f3ef885d267e661fd617c389af85b7f83e712409152bee80447",
+      "acceptedSha256": "8f76f11e08fb916c40815efa4c6de20611f1cb68a4d17e151e9ce44098207e78",
+      "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
+      "reason": "Conservative dense Undo: exact identity/integer-index subset uses scalar slots, all remaining inputs retain the original loop; outer authority, epoch, grant, receipt, deadline and resource contracts are byte-identical."
     }
   }
 }

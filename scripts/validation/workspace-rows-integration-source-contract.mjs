@@ -9,6 +9,21 @@ const root=fileURLToPath(new URL('../..',import.meta.url)),read=path=>readFileSy
 const sha256=path=>createHash('sha256').update(readFileSync(resolve(root,path))).digest('hex')
 const contract=JSON.parse(read('tests/fixtures/workspace-rows-history/composition.json'))
 assert.equal(contract.format,'ta-source-composition-v1')
+// Only these two fixture guards may evolve for the dense Undo experiment.
+// Original SQL/catalog hashes remain immutable provenance, not a skip list.
+const undoDenseSql=contract.acceptedUndoDenseSqlEvolutions??{}
+assert.deepEqual(Object.keys(undoDenseSql).sort(),[
+ 'tests/sql/candidates/workspace-rows-opportunity-stage-a.sql',
+ 'tests/sql/candidates/workspace-rows-staged-opportunity-prototype.sql',
+].sort(),'exact reviewed dense Undo SQL paths')
+for(const[path,evolution]of Object.entries(undoDenseSql)){
+ assert.equal(evolution.originalSha256,contract.baselineFiles[path],'dense Undo baseline preimage')
+ assert.equal(evolution.originalSha256,contract.originalSql[path],'dense Undo SQL preimage')
+ assert.equal(evolution.originalSha256,contract.resourceCatalog[path],'dense Undo catalog preimage')
+ assert.deepEqual(evolution,contract.acceptedBaselineEvolutions[path],'dense Undo evolution must agree at both boundaries')
+ assert.match(evolution.sourceCommit,/^[a-f0-9]{40}$/)
+ assert(evolution.reason.startsWith('Conservative dense Undo:'),'explicit algorithm evolution, not portability')
+}
 const check=(path,expected,label)=>assert.equal(sha256(path),expected,label+': '+path+'; unexpected change requires explicit source-contract review, not a blanket exemption')
 for(const[path,original]of Object.entries(contract.baselineFiles)){
  const evolution=contract.acceptedBaselineEvolutions[path]
@@ -46,11 +61,11 @@ if(runnerAdditions){
 }
 for(const[path,expected]of Object.entries(contract.originalSql)){
  assert.equal(contract.baselineFiles[path],expected,'original SQL preimage mismatch')
- check(path,expected,'unchanged original SQL')
+ check(path,undoDenseSql[path]?.acceptedSha256??expected,undoDenseSql[path]?'explicit dense Undo SQL evolution':'unchanged original SQL')
 }
 const catalog={...contract.resourceCatalog,...contract.acceptedAdditionalCatalog}
 assert.deepEqual(readdirSync(resolve(root,'tests/sql/candidates')).sort(),Object.keys(catalog).map(path=>path.slice('tests/sql/candidates/'.length)).sort(),'new/removed catalog input requires review')
-for(const[path,expected]of Object.entries(catalog))check(path,expected,'catalog patch input')
+for(const[path,expected]of Object.entries(catalog))check(path,undoDenseSql[path]?.acceptedSha256??expected,'catalog patch input')
 for(const[path,expected]of Object.entries(contract.preservedPairSources))check(path,expected,'unchanged original full-pair assertions')
 const copied=read('tests/sql/workspace-rows-resource-rpc-native.mjs')
 const normalized=copied.replace(/^\/\*\* Exact baseline harness[\s\S]*?\*\/\n/,'')
@@ -60,7 +75,7 @@ assert.equal(normalized,read('tests/sql/workspace-rows-staged-documents-prototyp
 assert(copied.includes("'cold recovery cannot admit a replacement intent'"))
 assert(read('tests/sql/workspace-rows-audit-page-proof.mjs').includes("assert(!calls.slice(beforeResume).some(call=>call.path.endsWith('large_intent_admit')))"))
 const historicalSources=historicalSourceIds.map(id=>{const{manifest,manifestSha256}=verifyHistoricalInputs(id);return{id,sourceCommit:manifest.provenance.sourceCommit,manifestSha256,files:Object.keys(manifest.files).length}})
-const report={status:'PASS_STATIC_COMPOSITION_ONLY',provenance:contract.provenance,baselineFiles:Object.keys(contract.baselineFiles).length,explicitEvolutions:contract.acceptedBaselineEvolutions,importedFiles:entries,unchangedOriginalSqlFiles:Object.keys(contract.originalSql).length,originalHarnessNormalization:'PASS_EXACT',reclamationIntegration:contract.reclamationIntegration??null,historicalSources,runtimeTested:false,productionMigration:false,
+const report={status:'PASS_STATIC_COMPOSITION_ONLY',provenance:contract.provenance,baselineFiles:Object.keys(contract.baselineFiles).length,explicitEvolutions:contract.acceptedBaselineEvolutions,importedFiles:entries,unchangedOriginalSqlFiles:Object.keys(contract.originalSql).filter(path=>!undoDenseSql[path]).length,explicitUndoDenseSqlEvolutions:undoDenseSql,originalHarnessNormalization:'PASS_EXACT',reclamationIntegration:contract.reclamationIntegration??null,historicalSources,runtimeTested:false,productionMigration:false,
  limitations:['Runtime and clean-checkout database/HTTP gates are NOT_RUN by this command','Original deadline, fixture sizes and earlier failing observations remain separate','Historical source closures are not full Git commits or deployed release evidence','No production ACL/preimages, physical capacity, filesystem lifecycle, or hosted rollout proof']}
 if(process.argv[2])writeFileSync(process.argv[2],JSON.stringify(report,null,2)+'\n',{flag:'wx'})
 console.log(JSON.stringify(report,null,2))

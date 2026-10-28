@@ -18,17 +18,19 @@ const start="    if (target_snapshot - array['data','version','exportedAt'])",en
 const optimized=source.slice(source.indexOf(start),source.indexOf(end))
 const declarations=`evidence jsonb; changes jsonb; archives jsonb; old_history jsonb; new_history jsonb; old_rows jsonb; new_rows jsonb;
 retained_old jsonb; retained_new jsonb; expected_rows jsonb; change jsonb; before_row jsonb; after_row jsonb; current_row jsonb; proposed_row jsonb;
-kind text; collection text; row_index integer; old_ids text[]; new_ids text[]; change_ids text[]; expected_ids text[]; insertion_index integer; kind_changes jsonb;`
+kind text; collection text; row_index integer; old_ids text[]; new_ids text[]; change_ids text[]; expected_ids text[]; insertion_index integer; kind_changes jsonb; dense_slots integer[]; dense_slot integer; dense_old_count integer;`
 const wire=x=>JSON.stringify(x).replaceAll('"@1.0@"','1.0').replaceAll('"@huge@"','1e100')
-const outcome=async(fn,args)=>{try{return{value:(await db.query(`select ${fn}(${args.map((_,i)=>'$'+(i+1)).join(',')}) value`,args.map(x=>typeof x==='string'&&['opportunity_management','undo_command'].includes(x)?x:wire(x)))).rows[0].value}}catch(e){return{code:e.code,message:e.message}}}
-async function compare(label,mode,args){const old=await outcome('guard_'+mode+'_original',args),now=await outcome('guard_'+mode+'_optimized',args);assert.deepEqual(now,old,label);count++;if(mode==='full')fullGuardCases++;return old}
+const exactJsonb=new WeakMap()
+const outcome=async(fn,args)=>{try{const raw=(await db.query(`select ${fn}(${args.map((_,i)=>'$'+(i+1)).join(',')})::text value`,args.map(x=>typeof x==='string'&&['opportunity_management','undo_command'].includes(x)?x:wire(x)))).rows[0].value;const result={value:JSON.parse(raw)};exactJsonb.set(result,raw);return result}catch(e){return{code:e.code,message:e.message}}}
+async function compare(label,mode,args){const old=await outcome('guard_'+mode+'_original',args),now=await outcome('guard_'+mode+'_optimized',args);assert.deepEqual(now,old,label);assert.equal(exactJsonb.get(now),exactJsonb.get(old),label+'/exact-server-jsonb-text');count++;if(mode==='full')fullGuardCases++;return old}
 try{
  await admin.connect();await admin.query('create database '+name);created=true;await db.connect();await install(db);await db.query(await migration(checkpointMigration))
  for(const [label,body] of [['original',original],['optimized',optimized]]){
   await db.query(`create function guard_full_${label}(old_snapshot jsonb,target_snapshot jsonb,prior_evidence jsonb,target_operation text) returns jsonb language plpgsql as $$ declare ${declarations} begin ${body} return jsonb_build_object('accepted',true); end $$`)
-  const a=body.indexOf('        expected_rows:=old_rows;'),b=body.indexOf('        if expected_rows is distinct from new_rows',a);assert(a>0&&b>a)
-  await db.query(`create function guard_loop_${label}(old_rows jsonb,changes jsonb) returns jsonb language plpgsql as $$ declare expected_rows jsonb; change jsonb; row_index integer; kind text:='opportunity'; old_ids text[]; expected_ids text[]; insertion_index integer; begin
+  const fast=body.indexOf('        -- Only the ordinary, identity-preserving integer-index subset uses');const a=fast<0?body.indexOf('        expected_rows:=old_rows;'):fast,b=body.indexOf('        if expected_rows is distinct from new_rows',a);assert(a>0&&b>a)
+  await db.query(`create function guard_loop_${label}(old_rows jsonb,changes jsonb) returns jsonb language plpgsql as $$ declare expected_rows jsonb; change jsonb; row_index integer; kind text:='opportunity'; old_ids text[]; expected_ids text[]; insertion_index integer; kind_changes jsonb; dense_slots integer[]; dense_slot integer; dense_old_count integer; begin
    select coalesce(array_agg(r.value->>'id' order by r.n),array[]::text[]) into old_ids from jsonb_array_elements(old_rows) with ordinality r(value,n);
+   select coalesce(jsonb_agg(c.value order by c.n),'[]'::jsonb) into kind_changes from jsonb_array_elements(changes) with ordinality c(value,n) where c.value->>'type'=kind;
    ${body.slice(a,b)} return jsonb_build_object('value',expected_rows,'sqlNull',expected_rows is null); end $$`)
  }
  const f=await stagedOpportunityFixture(6,{compactIds:true}),e=structuredClone(f.result.compensation)
@@ -53,5 +55,5 @@ try{
  // ordinals, interleaved replacements/appends, SQL NULL propagation and errors.
  let seed=0x5eed;const pick=n=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed%n}
  for(let i=0;i<240;i++){const changes=Array.from({length:1+pick(6)},()=>{const id=['a','b','x','未知',null][pick(5)],before=[{id},null,{id:'b'},{},4,{id:'未知',unknown:[null,'x']}][pick(6)];return change(id,[0,1,2,3,99,-1,.5,'@1.0@'][pick(8)],before)});await compare('generated/'+i,'loop',[i%7===0?[...rows,{id:'a',second:true}]:rows,changes])}
- console.log('PASS OPPORTUNITY_GUARD_EQUIVALENCE',JSON.stringify({cases:count,fullGuardCases,preimageSha256:createHash('sha256').update(original).digest('hex'),exactOutputSqlstateMessage:true,originalErrorsPreserved:true}))
+ console.log('PASS OPPORTUNITY_GUARD_EQUIVALENCE',JSON.stringify({cases:count,fullGuardCases,preimageSha256:createHash('sha256').update(original).digest('hex'),exactServerJsonbText:true,exactOutputSqlstateMessage:true,originalErrorsPreserved:true}))
 }finally{await db.end().catch(()=>{});if(created)await admin.query('drop database '+name+' with(force)');await admin.end();console.log('OPPORTUNITY_GUARD_EQUIVALENCE_CLEANUP owned synthetic database removed')}
