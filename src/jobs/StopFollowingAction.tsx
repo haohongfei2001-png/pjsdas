@@ -5,6 +5,7 @@ import { captureWorkspaceWriteLease } from '../cloud/workspaceWriteLease.js'
 import { connectedWorkspaceAuthorityEnabled } from '../cloud/connectedWorkspaceRepository.js'
 import type { LocalSemanticUndoToken } from '../webSemanticIntake.js'
 import type { StopFollowingState } from './stopFollowingCommand.js'
+import { isStopFollowingReadTimestampOnly } from './stopFollowingStorage.js'
 
 interface Props {
   opportunity: Opportunity
@@ -51,9 +52,15 @@ export default function StopFollowingAction({ opportunity, applicationGroup, acc
     refresh()
     // No event payload supplies account authority. Re-read this account's locator
     // and original receipt; a notification never creates or re-sends a command.
+    const refreshFromStorage = (event: StorageEvent) => {
+      // Receipt projection stamps its read time. Peer tabs must not turn that
+      // timestamp alone into another receipt lookup and reciprocal timestamp.
+      try { if (isStopFollowingReadTimestampOnly(event, accountKey, window.localStorage)) return } catch { /* Storage access uncertainty retains refresh. */ }
+      refresh()
+    }
     window.addEventListener('pjsdas:command-recovered', refresh)
-    window.addEventListener('storage', refresh)
-    return () => { active = false; mounted.current = false; window.removeEventListener('pjsdas:command-recovered', refresh); window.removeEventListener('storage', refresh) }
+    window.addEventListener('storage', refreshFromStorage)
+    return () => { active = false; mounted.current = false; window.removeEventListener('pjsdas:command-recovered', refresh); window.removeEventListener('storage', refreshFromStorage) }
   }, [accountKey, opportunity.id, connected, blocked])
 
   async function run(undo = false) {
