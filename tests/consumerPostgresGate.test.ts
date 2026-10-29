@@ -4,8 +4,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { consumerCases, consumerStopFollowingCase, consumerProjectionEvidence, observeConsumerProjection, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
-import { consumerAuthClaims, consumerPostgresWorkspace, consumerStopFollowingWorkspace } from './fixtures/consumerPostgresWorkspace.js'
+import { consumerAuthClaims, consumerPostgresWorkspace, consumerStopFollowingWorkspace, initializeConsumerStopTimeline } from './fixtures/consumerPostgresWorkspace.js'
 import { isUnreadJob } from '../src/jobReadState.js'
+import { buildTimelineBackfill, TIMELINE_BACKFILL_MARKER_ID } from '../src/timeline.js'
 import { installConsumerBrowserBootstrap } from './fixtures/consumerBrowserBootstrap.js'
 import { verifyConsumerResults, verifyConsumerRun } from './sql/consumer-pg-results.mjs'
 import { canMountMockAccountCache, markVerifiedMockCache, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
@@ -45,7 +46,9 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(snapshot.data.actions).toHaveLength(5)
     expect(snapshot.data.actions.filter(action => action.opportunityId === 'consumer-stop-job').map(action => action.status)).toEqual(['todo', 'doing', 'done'])
     expect(snapshot.data.processes).toHaveLength(1); expect(snapshot.data.processEvents).toHaveLength(1)
-    expect(snapshot.data.timeline).toHaveLength(1)
+    const canonical = buildTimelineBackfill({ processEvents: snapshot.data.processEvents, actions: snapshot.data.actions, now: snapshot.exportedAt })
+    expect(snapshot.data.timeline).toEqual([expect.objectContaining({ id: 'consumer-retained-history' }), ...canonical])
+    expect(snapshot.data.timeline).toHaveLength(4)
     expect(snapshot.data.timeline?.every(record => !record.commandId)).toBe(true)
     expect(snapshot.data.semanticReceipts ?? []).toEqual([])
     expect(selectTodayWeb(snapshot, { availableMinutes: 60 }, { now: new Date('2030-01-01T12:00:00Z'), timezone: 'UTC' }).visibleActions.some(action => action.actionId === 'consumer-task')).toBe(true)
@@ -58,6 +61,33 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(code).toContain("page.locator('.tsui-job-open[data-opportunity-id=\"consumer-stop-job\"]').click()")
     expect(code).toContain("name: '不再跟进'"); expect(code).toContain("name: '撤销不再跟进'")
     expect(code).not.toMatch(/\.(?:stopFollowing|undoStopFollowing|inspectStopFollowing)\s*\(/)
+  })
+  it('initializes canonical timeline idempotently without overwriting history or seeding operations', () => {
+    const at = '2030-01-01T00:00:00.000Z', initialized = consumerStopFollowingWorkspace(new Date(at))
+    const pristine = structuredClone(initialized)
+    expect(initializeConsumerStopTimeline(initialized)).toBe(initialized)
+    expect(initializeConsumerStopTimeline(initializeConsumerStopTimeline(initialized))).toEqual(pristine)
+    expect(initialized).toEqual(pristine)
+    // A missing marker is not silently accepted. Reinitialization supplements
+    // only missing canonical IDs, never duplicates or replaces existing rows.
+    const missingMarker = structuredClone(initialized)
+    missingMarker.data.timeline = missingMarker.data.timeline!.filter(record => record.id !== TIMELINE_BACKFILL_MARKER_ID)
+    const before = structuredClone(missingMarker)
+    expect(missingMarker.data.timeline).not.toEqual(initialized.data.timeline)
+    const repaired = initializeConsumerStopTimeline(missingMarker)
+    expect(repaired).toEqual(initialized); expect(missingMarker).toEqual(before)
+    expect(repaired.data.timeline?.filter(record => record.id === TIMELINE_BACKFILL_MARKER_ID)).toHaveLength(1)
+    expect(repaired.data.timeline?.find(record => record.id === TIMELINE_BACKFILL_MARKER_ID)).toMatchObject({
+      kind: 'baseline_backfill', source: 'system', occurredAt: at, recordedAt: at,
+    })
+    const retained = before.data.timeline!.find(record => record.id === 'consumer-retained-history')!
+    expect(repaired.data.timeline?.find(record => record.id === retained.id)).toEqual(retained)
+    const changedHistory = structuredClone(before)
+    changedHistory.data.timeline![0].title = 'Synthetic prior history must not be overwritten'
+    expect(initializeConsumerStopTimeline(changedHistory).data.timeline?.[0]).toEqual(changedHistory.data.timeline![0])
+    expect(repaired.data.timeline?.every(record => !record.commandId && !record.commandOperation)).toBe(true)
+    expect(repaired.data.semanticReceipts ?? []).toEqual([])
+    for (const key of ['commands', 'pending', 'commandInteractions', 'projectionDeltas', 'locator']) expect(Object.hasOwn(repaired.data, key)).toBe(false)
   })
   it('observes actual delta metadata without leaking bodies/unknown strings or breaking OPTIONS 204', () => {
     expect(observeConsumerProjection('OPTIONS', undefined, '')).toBeUndefined()
