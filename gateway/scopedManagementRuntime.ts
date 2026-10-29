@@ -23,7 +23,7 @@ export function createOwnerScopedManagementRuntime(options: TransactionalWorkspa
     && consumerTestClientAllowed(options.identity.userId, options.identity.oauthClientId, options.consumerCohort)
   if ((!ownerAllowed && !consumerAllowed) || !options.transactional || !options.identity.oauthClientId || !options.audience.allowed) return undefined
   const principal = Object.freeze({ kind: 'delegated_mcp' as const, userId: options.identity.userId, clientId: options.identity.oauthClientId })
-  const storeOptions = { supabaseUrl: options.supabaseUrl, serviceRoleKey: options.serviceRoleKey, fetchImpl: options.fetchImpl }
+  const storeOptions = { supabaseUrl: options.supabaseUrl, serviceRoleKey: options.serviceRoleKey, fetchImpl: options.fetchImpl, signal: options.signal }
   return Object.freeze({
     business: consumerAllowed ? createConsumerBusinessManagementRuntime({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('business', storeOptions) }) : undefined,
     opportunity: ownerAllowed ? createOpportunityManagementTools({ principal, storeOptions, resolveGrant: createScopedManagementGrantReader('opportunity', storeOptions) }) : undefined,

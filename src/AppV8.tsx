@@ -708,6 +708,12 @@ export default function AppV8() {
     writeLease.assertCurrent()
     return result
   }
+  async function refreshAfterStopFollowing() {
+    const lease = captureWorkspaceWriteLease(cloud.session?.user.id)
+    const next = await exportLocalSnapshot()
+    lease.assertCurrent()
+    setSnapshot(next)
+  }
   async function undoJobAction(token: LocalSemanticUndoToken) {
     const writeLease = captureWorkspaceWriteLease(token.accountKey)
     await undoWebSemanticChange(token)
@@ -1082,6 +1088,7 @@ export default function AppV8() {
             onCapture={openCapture} onNavigate={navigateFromDetail}
             onOpenDecision={(id) => navigate('/decisions/' + encodeURIComponent(id) + '?from=' + encodeURIComponent(selectedOpportunity.id))}
             onJobAction={recordJobAction} onUndoJobAction={undoJobAction}
+            accountKey={cloud.session?.user.id} onStopFollowingChanged={refreshAfterStopFollowing}
             onMarkAction={markAction} readOnly={CGR02_TODAY_READ_ONLY} writeBlocked={jobWriteBlocked}
           />
         ) : null}

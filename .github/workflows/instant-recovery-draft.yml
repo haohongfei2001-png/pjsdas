@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'src/cloud/instantCommandClient.ts'
+      - 'src/cloud/authoritativeCommandClient.ts'
       - 'src/cloud/interactionProjection.ts'
       - 'src/db.ts'
       - 'src/workspaceDelta.ts'
@@ -53,7 +54,7 @@ jobs:
           npx playwright test --config=playwright.instant.config.mts
           --project=chromium --project=webkit
           --max-failures=1
-          --grep 'confirmed command remains undoable|standalone process reference|mirror cleanup failure|repeated complete and Undo|three optimistic edits|a genuine local field edit|account boundary quarantines|retained dependency chain|pre-projection'
+          --grep 'confirmed command remains undoable|standalone process reference|mirror cleanup failure|repeated complete and Undo|three optimistic edits|a genuine local field edit|account boundary quarantines|retained dependency chain|pre-projection|durable v2 journal'
       - name: Preserve strict built-artifact instant budgets
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/instant-performance

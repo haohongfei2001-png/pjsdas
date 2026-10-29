@@ -94,7 +94,7 @@ function harness(initial = snapshot(), managementOptions: Pick<AuthoritativeComm
 
   const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input))
-    if (url.pathname === '/rest/v1/pjsdas_workspaces') {
+    if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
       return json([{ id: 'ws-1', user_id: 'user-a', snapshot: current, revision, schema_version: current.version }])
     }
     if (url.pathname === '/rest/v1/pjsdas_ai_capture_previews') return json(captureRows.filter(row => row.user_id === url.searchParams.get('user_id')?.slice(3) && row.request_id === url.searchParams.get('request_id')?.slice(3)))

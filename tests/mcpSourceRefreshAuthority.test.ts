@@ -106,7 +106,7 @@ describe('CGR-05 signed source refresh authority', () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
       if (url.origin === 'https://www.liepin.com') return recruitingPagesFixture([{ company: 'Example', role: 'Designer', sourceUrl: 'https://www.liepin.com/job/9413.shtml?utm_source=new' }])(input, init)
-      if (url.pathname === '/rest/v1/pjsdas_workspaces') {
+      if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
         return Response.json([{ id: 'ws-1', user_id: 'account-a', snapshot: current, revision, schema_version: current.version }])
       }
       if (url.pathname === '/rest/v1/pjsdas_command_ledger') return Response.json([])

@@ -14,10 +14,10 @@ async function fixture(version:2|7,receiptVersion:2|7,undo=false,regrantDuringRe
  const target={...row,command_id:targetCommandId,operation:'business_management',receipt:{managementAuthorization:{consentVersion:version}},compensation:{operation:'business_management_restore',payload:{changes:[]}}}
  const posts=vi.fn(),snapshot=unknownDeadlineWorkspace(0),consumerHash=await scopedManagementConsentHash('business')
  const fetchImpl=vi.fn<typeof fetch>(async(input,init)=>{
-  const u=new URL(String(input));expect(u.searchParams.get('user_id')).toBe(`eq.${owner}`)
+  const u=new URL(String(input));expect(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? u.searchParams.get('target_user_id') : u.searchParams.get('user_id')).toBe(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? owner : `eq.${owner}`)
   if(init?.method==='POST'){posts();throw new Error('Replay must never write')}
   if(u.pathname.endsWith('pjsdas_business_management_grants'))return Response.json([{id:'00000000-0000-4000-8000-000000000003',user_id:owner,client_id:client,revision,consent_version:version,capability:version===7?'workspace.business.manage':'workspace.manage',consent_text_hash:consumerHash,granted_at:'2026-10-01T00:00:00Z',revoked_at:null}])
-  if(u.pathname.endsWith('pjsdas_workspaces'))return Response.json([{id:'synthetic-workspace',user_id:owner,revision:1,schema_version:4,snapshot}])
+  if(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1'))return Response.json([{id:'synthetic-workspace',user_id:owner,revision:1,schema_version:4,snapshot}])
   if(u.pathname.endsWith('pjsdas_command_ledger')){if(regrantDuringRead)revision=2;return Response.json([u.searchParams.get('command_id')===`eq.${targetCommandId}`?target:row])}
   throw new Error('Unexpected synthetic request')
  })

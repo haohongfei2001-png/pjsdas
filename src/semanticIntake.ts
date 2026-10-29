@@ -1,3 +1,4 @@
+import { applicationGroupGoverned } from './applicationGovernance.js'
 import { contextualCompletionsMatch } from './semanticCompletionContext.js'
 import { isPreparationCandidate, PreparationRetiredError, PREPARATION_RETIRED_MESSAGE } from './preparationRetirement.js'
 import { boundInterviewRescheduleMatches } from './boundInterviewReschedule.js'
@@ -701,13 +702,6 @@ function retagCommandTimeline(snapshot: PJSDASSnapshot, commandId: string, obser
   if (!record) return
   record.source = sourceTimelineKind(observation.source.kind)
   record.sourceRef = sourceEvidence(observation)
-}
-
-function applicationGroupGoverned(snapshot: PJSDASSnapshot, opportunity: Opportunity) {
-  if (!opportunity.applicationGroupId) return false
-  const group = snapshot.data.applicationGroups.find((item) => item.id === opportunity.applicationGroupId)
-  if (!group) return false
-  return Boolean(group.locked || group.total !== undefined || group.remaining !== undefined || group.rule?.trim())
 }
 
 function applyCandidate(

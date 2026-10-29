@@ -21,7 +21,8 @@ describe('truthful managed discovery readiness', () => {
   const [url] = f.fetchImpl.mock.calls[0] as unknown as [string]
   const query = new URL(url).searchParams
   expect(query.get('select')).toBe('user_id,profile:snapshot->data->discoveryProfile')
-  expect(query.get('user_id')).toBe('eq.owner-a')
+  expect(query.get('target_user_id')).toBe('owner-a')
+  expect(query.has('user_id')).toBe(false)
  })
  it('a configured profile is still not an approved budget', async () => {
   const f = reader([{ user_id: 'owner-a', profile: { ...createDefaultDiscoveryProfile(), targetRoleQueries: ['Synthetic role'], searchScopeVersion: 1 } }])

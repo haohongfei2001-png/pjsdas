@@ -1,0 +1,42 @@
+import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
+import { createWorkspaceRowsStoreBridge } from './workspaceRowsStoreBridge.js'
+import { createWorkspaceRowsStagedBridge } from './workspaceRowsStagedBridge.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+
+/** Dormant shared backend wiring. Flags are not an activation/migration API:
+ * per-owner layout markers still gate all row operations in SQL and the store.
+ * Never cache a fetch closure: controlled workers supply a deadline-bound one.
+ * An activated layout requires a row-compatible release and reads kept enabled. */
+export function withWorkspaceRowsRuntime<T extends TransactionalWorkspaceStoreOptions>(options: T,
+  env: { PJSDAS_WORKSPACE_ROWS_READS?: string; PJSDAS_WORKSPACE_ROWS_WRITES?: string; PJSDAS_WORKSPACE_ROWS_READ_CONCURRENCY?: string; PJSDAS_WORKSPACE_ROWS_STAGED_DOCUMENTS?: string; PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT?: string; PJSDAS_WORKSPACE_ROWS_AUDIT_BYTES?: string; PJSDAS_WORKSPACE_ROWS_AUDIT_PAGES?: string } = process.env): T {
+  // Explicit server/test injections are one complete adapter, not composable
+  // with unrelated ambient writers or credentials.
+  if (options.rowLayoutReader || options.rowLayoutWriter) return options
+  const reads = env.PJSDAS_WORKSPACE_ROWS_READS === '1'
+  const writes = env.PJSDAS_WORKSPACE_ROWS_WRITES === '1'
+  const staged = env.PJSDAS_WORKSPACE_ROWS_STAGED_DOCUMENTS === '1'
+  const auditPagesEnabled = env.PJSDAS_WORKSPACE_ROWS_AUDIT_PAGES === '1'
+  const auditReadsEnabled = env.PJSDAS_WORKSPACE_ROWS_AUDIT_BYTES === '1'
+  if (auditPagesEnabled && !auditReadsEnabled) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Audit pages require complete audit byte reads.', false)
+  if (auditReadsEnabled && !reads) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Audit byte reads require compatible row reads.', false)
+  const durableIntent = env.PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT === '1'
+  if (durableIntent && !staged) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Durable intent requires the original staged document capability.', false)
+  if (staged && (!reads || !writes)) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Staged documents require compatible row reads and writes.', false)
+  if (writes && !reads) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Row writers require row-compatible reads.', false)
+  if (!reads) return options
+  const concurrency = env.PJSDAS_WORKSPACE_ROWS_READ_CONCURRENCY ?? '1'
+  if (!/^[1-4]$/.test(concurrency)) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Invalid bounded row read concurrency.', false)
+  // Server-only and default-off. Requires prior SQL/read-fence capability and
+  // durable reservation provisioning. No browser body or writer fallback can
+  // select this mode. Missing prerequisites fail closed; no quota is invented.
+  // Caller cancellation must NOT replace the candidate's existing per-request
+  // timeout with an unbounded Request.signal. Combine at transport instead.
+  const callerBoundFetch: typeof fetch | undefined = options.signal ? (input, init) => (options.fetchImpl ?? fetch)(input,
+    { ...init, signal: init?.signal ? AbortSignal.any([init.signal, options.signal!]) : options.signal }) : options.fetchImpl
+  const bridge = (staged ? createWorkspaceRowsStagedBridge : createWorkspaceRowsStoreBridge)({ supabaseUrl: options.supabaseUrl,
+    serviceRoleKey: options.serviceRoleKey, fetchImpl: staged ? options.fetchImpl : callerBoundFetch,
+    ...(staged ? { signal: options.signal, durableIntent } : {}),
+    readsEnabled: true, writesEnabled: writes, auditReadsEnabled, auditPagesEnabled, auditReadAuthorization: options.auditReadAuthorization, rpcTransport: 'public-v1', readConcurrency: Number(concurrency) })
+  return { ...options, rowLayoutReader: bridge.rowLayoutReader,
+    ...(writes ? { rowLayoutWriter: bridge.rowLayoutWriter } : {}) }
+}

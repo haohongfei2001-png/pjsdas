@@ -308,6 +308,108 @@ describe('CGR-01 account-scoped connected command client', () => {
     expect(listAccountPendingOperations('account-a')).toEqual([])
   })
 
+  it('recovers later committed receipts after a queue-head denial without sending later unconfirmed commands', async () => {
+    const ids = ['denied-head', 'already-committed', 'still-unconfirmed']
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: await fingerprintWorkspace(snapshot()) })
+    saveAccountDraft('account-a', 'tell-pjsdas', 'original draft')
+    for (const commandId of ids) await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'set_action_status', actionId: commandId, status: 'done',
+    } })
+    const original = structuredClone(listAccountPendingOperations('account-a'))
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body)); requests.push(`${body.action}:${body.commandId}`)
+      if (body.action === 'receipt') return body.commandId === ids[1]
+        ? response({ found: true, revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4,
+          snapshot: snapshot(), receipt: { commandId: body.commandId, status: 'COMMITTED' } })
+        : response({ found: false })
+      expect(body.commandId).toBe(ids[0])
+      return response({ code: 'AUTH_FORBIDDEN' }, 403)
+    })
+    await expect(replayAccountPendingOperations('account-a')).rejects.toBeInstanceOf(PreExecutionCommandError)
+    expect(requests).toEqual(['receipt:denied-head', 'command:denied-head', 'receipt:already-committed', 'receipt:still-unconfirmed'])
+    const pending = listAccountPendingOperations('account-a')
+    expect(pending.map(item => item.commandId)).toEqual([ids[0], ids[2]])
+    expect(pending[0]).toMatchObject({ command: original[0].command, baseRevision: 7, status: 'pending' })
+    expect(pending[1]).toEqual(original[2])
+    expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe('original draft')
+  })
+
+  it.each(['transport', 'permission'] as const)('does not let a %s receipt failure hide later receipts or replace the first error', async failure => {
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: await fingerprintWorkspace(snapshot()) })
+    for (const commandId of ['read-failed-head', 'read-failed-middle', 'read-committed-tail']) {
+      await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+        commandId, kind: 'set_action_status', actionId: commandId, status: 'done',
+      } })
+    }
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body)); requests.push(`${body.action}:${body.commandId}`)
+      expect(body.action).toBe('receipt')
+      if (body.commandId === 'read-failed-head') {
+        if (failure === 'transport') throw new Error('original receipt transport failure')
+        return response({ code: 'AUTH_FORBIDDEN', message: 'original receipt permission failure' }, 403)
+      }
+      if (body.commandId === 'read-failed-middle') throw new Error('secondary receipt failure')
+      return response({ found: true, revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4,
+        snapshot: snapshot(), receipt: { commandId: body.commandId, status: 'COMMITTED' } })
+    })
+    await expect(replayAccountPendingOperations('account-a')).rejects.toThrow(`original receipt ${failure} failure`)
+    expect(requests).toEqual(['receipt:read-failed-head', 'receipt:read-failed-middle', 'receipt:read-committed-tail'])
+    expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual(['read-failed-head', 'read-failed-middle'])
+  })
+
+  it.each(['different-account', 'same-account-new-generation', 'unresolved-auth'] as const)('stops recovery immediately on %s, including after a prior item failure', async transition => {
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: await fingerprintWorkspace(snapshot()) })
+    for (const commandId of ['failed-head', 'switch-middle', 'untouched-tail']) await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'set_action_status', actionId: commandId, status: 'done',
+    } })
+    const original = structuredClone(listAccountPendingOperations('account-a'))
+    const requests: string[] = []
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body)); requests.push(body.commandId)
+      expect(body.action).toBe('receipt')
+      if (body.commandId === 'failed-head') throw new Error('original temporary failure')
+      if (transition === 'unresolved-auth') beginAccountCacheSessionResolution()
+      else { setAccountCacheSession('account-b'); if (transition === 'same-account-new-generation') setAccountCacheSession('account-a') }
+      return response({ found: false })
+    })
+    await expect(replayAccountPendingOperations('account-a')).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(requests).toEqual(['failed-head', 'switch-middle'])
+    expect(listAccountPendingOperations('account-a')).toEqual(original)
+    expect(listAccountPendingOperations('account-b')).toEqual([])
+    expect(replaceLocalSnapshotFromCloud).not.toHaveBeenCalled()
+  })
+
+  it.each(['pending', 'projection_pending', 'confirmed-fact'] as const)('does not publish a stale recovered event when %s projection detects an account transition', async mode => {
+    patchAccountCheckpoint('account-a', { lastSyncedVersion: 'txn:7', lastSyncedFingerprint: await fingerprintWorkspace(snapshot()) })
+    for (const commandId of ['projection-switch', 'untouched-after-projection']) await queueConnectedBusinessCommand('account-a', { type: 'domain', value: {
+      commandId, kind: 'set_action_status', actionId: commandId, status: 'done',
+    } })
+    if (mode !== 'pending') {
+      const items = listAccountPendingOperations('account-a')
+      items[0].status = 'projection_pending'
+      if (mode === 'confirmed-fact') items[0].confirmedFact = 'ALREADY_APPLIED'
+      window.localStorage.setItem('pjsdas-cgr01-pending:account-a', JSON.stringify(items))
+    }
+    saveAccountDraft('account-a', 'tell-pjsdas', 'preserved original draft')
+    vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {
+      const body = JSON.parse(String(init?.body))
+      expect(body.action).toBe(mode === 'confirmed-fact' ? 'read' : 'receipt')
+      return response({ found: true, revision: 8, workspaceVersion: 'txn:8', schemaVersion: 4,
+        snapshot: snapshot(), receipt: { commandId: 'projection-switch', status: 'COMMITTED' } })
+    })
+    vi.mocked(replaceLocalSnapshotFromCloud).mockImplementation(async () => {
+      setAccountCacheSession('account-b')
+      throw new AccountCacheChangedError()
+    })
+    await expect(replayAccountPendingOperations('account-a')).rejects.toBeInstanceOf(AccountCacheChangedError)
+    expect(fetchBackend).toHaveBeenCalledTimes(1)
+    expect(window.dispatchEvent).not.toHaveBeenCalled()
+    expect(listAccountPendingOperations('account-a').map(item => item.commandId)).toEqual(['projection-switch', 'untouched-after-projection'])
+    expect(readAccountDraft('account-a', 'tell-pjsdas')).toBe('preserved original draft')
+  })
+
   it('recovers a lost response by receipt identity without sending a duplicate command', async () => {
     let calls = 0
     vi.mocked(fetchBackend).mockImplementation(async (_path, init) => {

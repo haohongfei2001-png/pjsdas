@@ -34,7 +34,7 @@ describe('v2 exact raw preservation regression',()=>{
     return Response.json([{outcome:'COMMITTED',workspace_id:'synthetic-workspace',revision,receipt}])
    }
    if(u.pathname.endsWith('pjsdas_business_management_grants'))return Response.json(active?[{id:grantId,user_id:owner,client_id:client,capability:'workspace.manage',consent_version:2,revision:grantRevision,granted_at:'2026-10-01T00:00:00Z',revoked_at:null}]:[])
-   if(u.pathname.endsWith('pjsdas_workspaces')){if(mode==='revoke')active=false;if(mode==='replacement')grantRevision=2;return Response.json([{id:'synthetic-workspace',user_id:owner,snapshot,revision,schema_version:4}])}
+   if(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1')){if(mode==='revoke')active=false;if(mode==='replacement')grantRevision=2;return Response.json([{id:'synthetic-workspace',user_id:owner,snapshot,revision,schema_version:4}])}
    if(u.pathname.endsWith('pjsdas_command_ledger')){const id=u.searchParams.get('command_id'),after=u.searchParams.get('resulting_revision');return Response.json(ledger.filter(row=>(!id||id===`eq.${row.command_id}`)&&(!after||row.resulting_revision>Number(after.slice(3)))))}
    throw new Error('Unexpected synthetic request')
   })

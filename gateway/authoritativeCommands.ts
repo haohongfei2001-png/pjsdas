@@ -1,3 +1,4 @@
+import { applicationGroupGoverned } from '../src/applicationGovernance.js'
 import { createAiCaptureLedger } from './aiCaptureLedger.js'
 import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { observationFromVerifiedOpportunity } from '../src/verifiedOpportunityCommand.js'
@@ -62,6 +63,8 @@ import { hashMutationPayload, type MutationPrincipal } from './mutationKernel.js
 import {
   createTransactionalWorkspaceStore,
   type ConnectedCommandRecord,
+  type ConnectedWorkspaceRecord,
+  type PreparedCommandIdentity,
   type TransactionalWorkspaceStoreOptions,
 } from './transactionalWorkspaceStore.js'
 import { WorkspaceSourceError } from './workspaceSource.js'
@@ -467,6 +470,27 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
     }
   }
 
+  async function resumePrepared(principal: MutationPrincipal, current: ConnectedWorkspaceRecord, identity: PreparedCommandIdentity) {
+    try {
+      const result = await store.resumePreparedForUser(current, identity)
+      if (result?.outcome === 'ALREADY_APPLIED' && identity.managementAuthorization) await authorizeManagement(principal, { id: identity.managementAuthorization.grantId, revision: identity.managementAuthorization.grantRevision }, 'opportunity_management')
+      return result
+    } catch (error) {
+      if (!(error instanceof WorkspaceSourceError) || !['WORKSPACE_CONFLICT', 'WORKSPACE_UNAVAILABLE'].includes(error.code)) throw error
+      // Another process can finalize between the initial ledger read and intent
+      // lookup/upload. Only the original authorized immutable receipt resolves
+      // this race: never retry the reducer, admission or upload here.
+      const existing = await store.readCommandForUser(identity.userId, identity.commandId)
+      if (!existing) throw error
+      if (existing.payloadHash !== identity.payloadHash || existing.operation !== identity.operation) throw new WorkspaceSourceError('COMMAND_ID_REUSED', 'Prepared command identity was reused.', false)
+      if (identity.managementAuthorization) await authorizeManagement(principal, { id: identity.managementAuthorization.grantId, revision: identity.managementAuthorization.grantRevision }, 'opportunity_management')
+      const latest = await store.readForUser(identity.userId, { preserveRawData: Boolean(identity.managementAuthorization) })
+      if (!latest || latest.workspaceId !== current.workspaceId || latest.rowEpoch !== current.rowEpoch || latest.revision < existing.resultingRevision) throw error
+      if (identity.managementAuthorization) await authorizeManagement(principal, { id: identity.managementAuthorization.grantId, revision: identity.managementAuthorization.grantRevision }, 'opportunity_management')
+      return { outcome: 'ALREADY_APPLIED' as const, workspaceId: latest.workspaceId, revision: latest.revision, snapshot: latest.snapshot, receipt: existing.receipt }
+    }
+  }
+
   async function execute(principal: MutationPrincipal, raw: unknown): Promise<AuthoritativeCommandExecution> {
     assertNoScoringInput(raw)
     const parsed = authoritativeBusinessCommandSchema.parse(raw) as AuthoritativeBusinessCommand
@@ -537,6 +561,12 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         }
       }
 
+      const resumed = await resumePrepared(principal, current, { userId: principal.userId, commandId: parsed.commandId,
+        operation, payloadHash, principalKind: principal.kind, clientId: principal.clientId,
+        managementAuthorization: admittedManagementGrant ? { grantId: admittedManagementGrant.id, grantRevision: admittedManagementGrant.revision, consentVersion: admittedManagementGrant.consentVersion } : undefined })
+      if (resumed) return { outcome: resumed.outcome, revision: resumed.revision, snapshot: resumed.snapshot, receipt: resumed.receipt,
+        result: resumed.receipt.result as Record<string, unknown> | undefined }
+
       let captureObservation: SemanticIntakeObservation | undefined
       if (parsed.command.type === 'ai_capture_confirm') {
         if (!(options.aiCaptureConfirmationEnabled ?? (process.env.PJSDAS_AI_CAPTURE === 'enabled' && process.env.PJSDAS_AI_CAPTURE_FUNDING === 'verified-free-only-no-overage'))) throw new WorkspaceSourceError('AI_CAPTURE_NOT_ENABLED', 'AI capture confirmation is disabled.', false)
@@ -592,6 +622,15 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       } else if (parsed.command.type === 'business_management') {
         evaluated = applyBusinessManagement(current.snapshot, parsed.command.value, parsed.commandId, now)
       } else if (parsed.command.type === 'domain') {
+        // Fresh admission only: original receipts and immutable prepared intents
+        // have already been resolved above. Re-evaluate on every CAS retry.
+        const domainCommand = parsed.command.value
+        const target = domainCommand.kind === 'abandon_opportunity'
+          ? current.snapshot.data.opportunities.find(item => item.id === domainCommand.opportunityId) : undefined
+        if (principal.kind === 'first_party_web' && target && applicationGroupGoverned(current.snapshot, target)) {
+          throw new WorkspaceSourceError('SHARED_GOVERNANCE_REQUIRED',
+            'This job requires a shared-governance decision. No change was saved. Use Tell TodayAction to review and confirm it.', false)
+        }
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
       } else if (parsed.command.type === 'discovery_status') {
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)
@@ -723,6 +762,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       // Carry the freshly read identity/revision into the transaction-locked RPC.
       const managementGrant = isManagement ? await authorizeManagement(principal, admittedManagementGrant, parsed.command.type) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        rowPreimage: current,
         ...(parsed.command.type === 'ai_capture_confirm' ? { aiCaptureAuthorization: { requestId: parsed.command.value.requestId, observation: captureObservation! } } : {}),
         managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 7 ? { consentVersion: 7 as const } : managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
         userId: principal.userId,
@@ -755,7 +795,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         revision: committed.revision,
         snapshot: committed.snapshot,
         receipt: committed.receipt,
-        result,
+        result: typeof committed.receipt.result === 'object' && committed.receipt.result !== null ? committed.receipt.result as Record<string, unknown> : result,
       }
     }
 
@@ -832,6 +872,12 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
         }
       }
 
+      const resumed = await resumePrepared(principal, current, { userId: principal.userId, commandId: parsed.commandId,
+        operation, payloadHash, principalKind: principal.kind, clientId: principal.clientId,
+        managementAuthorization: admittedManagementGrant ? { grantId: admittedManagementGrant.id, grantRevision: admittedManagementGrant.revision, consentVersion: admittedManagementGrant.consentVersion } : undefined })
+      if (resumed) return { outcome: resumed.outcome, revision: resumed.revision, snapshot: resumed.snapshot, receipt: resumed.receipt,
+        result: resumed.receipt.result as Record<string, unknown> | undefined }
+
       const dependencies = receiptObjects(target, current.snapshot)
       const later = await store.readCommandsAfterRevision(principal.userId, target.resultingRevision)
       if (!dependencies && later.length) {
@@ -893,6 +939,7 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       const affectedObjects = diffCommandObjects(current.snapshot, next)
       const managementGrant = target.operation === 'business_management' || target.operation === 'opportunity_management' || target.operation === 'planning_management' || target.operation === 'discovery_profile_management' || target.operation === 'private_reminder_management' ? await authorizeManagement(principal, admittedManagementGrant, target.operation) : undefined
       const committed = await store.commitAuthoritativeForUser({
+        rowPreimage: current,
         managementAuthorization: managementGrant ? { grantId: managementGrant.id, grantRevision: managementGrant.revision, ...(managementGrant.consentVersion === 7 ? { consentVersion: 7 as const } : managementGrant.consentVersion === 6 ? { consentVersion: 6 as const } : managementGrant.consentVersion === 5 ? { consentVersion: 5 as const } : managementGrant.consentVersion === 4 ? { consentVersion: 4 as const } : managementGrant.consentVersion === 3 ? { consentVersion: 3 as const } : {}) } : undefined,
         userId: principal.userId,
         commandId: parsed.commandId,

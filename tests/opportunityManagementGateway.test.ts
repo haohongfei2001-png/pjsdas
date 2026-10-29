@@ -15,7 +15,7 @@ function storeFixture(initial = fixture()) {
   const records: Record<string, any>[] = []
   const posts: any[] = []
   const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
-    const url = new URL(String(input)); const user = url.searchParams.get('user_id')
+    const url = new URL(String(input)); const user = url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? url.searchParams.get('target_user_id') : url.searchParams.get('user_id')
     if ((init?.method ?? 'GET') === 'POST') {
       const body = JSON.parse(String(init?.body)); posts.push({ path: url.pathname, body })
       snapshot = body.target_snapshot; revision++
@@ -23,8 +23,8 @@ function storeFixture(initial = fixture()) {
       records.push({ command_id: body.target_command_id, operation: body.target_operation, payload_hash: body.target_payload_hash, resulting_revision: revision, receipt, compensation: body.target_compensation, user_id: owner, status: 'COMMITTED' })
       return Response.json([{ outcome: 'COMMITTED', workspace_id: 'fixture-workspace', revision, snapshot, receipt }])
     }
-    expect(user).toBe(`eq.${owner}`)
-    if (url.pathname.endsWith('pjsdas_workspaces')) return Response.json([{ id: 'fixture-workspace', user_id: owner, snapshot, revision, schema_version: 4 }])
+    expect(user).toBe(url.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? owner : `eq.${owner}`)
+    if (url.pathname.endsWith('pjsdas_read_legacy_workspace_v1')) return Response.json([{ id: 'fixture-workspace', user_id: owner, snapshot, revision, schema_version: 4 }])
     if (url.pathname.endsWith('pjsdas_command_ledger')) {
       const selector = url.searchParams.get('command_id')
       const after = url.searchParams.get('resulting_revision')

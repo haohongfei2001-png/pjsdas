@@ -55,7 +55,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
         owned = true
         const run = await runGmailAutomationForBinding({ binding, refreshLifecycle: { ...automationGoogleRefreshLifecycle(config.tokenEncryptionKey, binding, store, executionToken), signal: controller.signal }, tokenEncryptionKey: config.tokenEncryptionKey,
           googleClientId: config.googleClientId, googleClientSecret: config.googleClientSecret,
-          fetchImpl: budgetFetch, now: config.now,
+          fetchImpl: budgetFetch, now: config.now, rowLayoutFactory: config.rowLayoutFactory,
           execution: { observer: diagnostics.observer,
             ...(process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINTS === '1' ? { checkpointEmptyPoll: async (input: {
               commandId: string; expectedRevision: number; checkedAt: string; historyId: string
@@ -63,6 +63,7 @@ export async function runControlledGmailExecutions(config: GmailAutomationHandle
               ensureBudget()
               return createTransactionalWorkspaceStore({ supabaseUrl: config.supabaseUrl,
                 serviceRoleKey: config.supabaseServiceRoleKey ?? '', fetchImpl: budgetFetch,
+                ...config.rowLayoutFactory?.(budgetFetch),
               }).checkpointEmptyGmailPollForUser({ ...input, userId: binding.userId, executionToken,
                 payloadHash: await hashMutationPayload('gmail_semantic_intake', { sourceId: 'gmail:primary', recordIds: [] }),
                 observation: EMPTY_GMAIL_OBSERVATION })
@@ -213,6 +214,7 @@ export async function runControlledGmailReconciliations(
           googleClientId: config.googleClientId,
           googleClientSecret: config.googleClientSecret,
           fetchImpl: budgetFetch,
+          rowLayoutFactory: config.rowLayoutFactory,
           now: config.now,
           forceStart,
           execution: {

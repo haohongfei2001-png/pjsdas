@@ -97,6 +97,7 @@ export function createMutationKernel(options: TransactionalWorkspaceStoreOptions
       validateSnapshot(next)
 
       return store.commitForUser({
+        rowPreimage: current,
         userId: principal.userId,
         commandId: command.commandId,
         operation: command.operation,

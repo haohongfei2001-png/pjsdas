@@ -1,3 +1,6 @@
+import { withWorkspaceRowsRuntime } from './workspaceRowsRuntime.js'
+import { isDeepStrictEqual } from 'node:util'
+import type { WorkspaceRowsHistoryQuery, WorkspaceRowsCaptureAdmission } from './workspaceRowsCandidate.js'
 import { Buffer } from 'node:buffer'
 import { commitFailureClass, emitCommitFailure, type WorkspaceCommitFailureDiagnostic, type WorkspaceCommitFailureSink } from './workspaceCommitFailureDiagnostic.js'
 import { upgradeSnapshotToLatest, validateSnapshot, type PJSDASSnapshot } from '../src/snapshot.js'
@@ -14,6 +17,8 @@ export interface ConnectedWorkspaceRecord {
   revision: number
   schemaVersion: number
   storedSchemaVersion?: number
+  /** Server-only layout capability; never accepted from a browser body. */
+  rowEpoch?: string
 }
 
 export interface ConnectedCommitInput {
@@ -29,7 +34,11 @@ export interface ConnectedCommitInput {
   provenance?: Record<string, unknown>
   compensation?: Record<string, unknown>
   effectiveTime?: string
+  /** Server-owned read preimage; never populated from an API request body. */
+  rowPreimage?: ConnectedWorkspaceRecord
 }
+
+export type PreparedCommandIdentity = Pick<ConnectedAuthoritativeCommitInput, 'userId' | 'commandId' | 'payloadHash' | 'operation' | 'principalKind' | 'clientId' | 'managementAuthorization'>
 
 export interface ConnectedCommandRecord {
   commandId: string
@@ -58,6 +67,26 @@ export interface ConnectedCommitResult {
 export interface TransactionalWorkspaceStoreOptions {
   supabaseUrl: string
   serviceRoleKey: string
+  /** Original caller cancellation/deadline, never extended by staged pages. */
+  signal?: AbortSignal
+  /** Only constructed after the original entry has authenticated/authorized. */
+  auditReadAuthorization?: import('./workspaceRowsAuditSpool.js').WorkspaceRowsAuditAuthorization
+  /** Server-owned adapter; dormant runtime flags and per-owner SQL generation gate its use. */
+  rowLayoutReader?: {
+    read(userId: string): Promise<{ workspaceId: string; userId: string; epoch: string; revision: number; snapshot: PJSDASSnapshot } | null>
+    readIdentity(userId: string): Promise<{ workspaceId: string; userId: string; epoch: string; revision: number; schemaVersion: number } | null>
+    authorizeExistingBootstrap?(userId: string, epoch: string, input: { snapshot: PJSDASSnapshot; schemaVersion: number; migratedFrom?: string; consumerAudienceMode?: 'allowlist' | 'legacy' }): Promise<{ workspaceId: string; userId: string; epoch: string; revision: number }>
+    readDiscoveryProfile?(userId: string, signal?: AbortSignal): Promise<{ workspaceId: string; userId: string; epoch: string; revision: number; profile: unknown } | null>
+    readHistory?(userId: string, epoch: string, query: WorkspaceRowsHistoryQuery): Promise<{ workspaceId: string; userId: string; epoch: string; revision: number; rows: Record<string, unknown>[] }>
+  }
+  rowLayoutWriter?: {
+    resumePrepared?(before: ConnectedWorkspaceRecord, identity: PreparedCommandIdentity): Promise<ConnectedCommitResult | null>
+    admitCapture?(userId: string, epoch: string, expectedRevision: number, admission: WorkspaceRowsCaptureAdmission): Promise<void>
+    commit(before: ConnectedWorkspaceRecord, input: ConnectedAuthoritativeCommitInput): Promise<
+      | { outcome: 'COMMITTED' | 'ALREADY_APPLIED'; resultingRevision: number; receipt: Record<string, unknown>; snapshot?: PJSDASSnapshot }
+      | { outcome: 'CONFLICT' }
+    >
+  }
   fetchImpl?: typeof fetch
   /** Enable only after the metadata-only RPC migration and ACL review. */
   metadataOnlyCommits?: boolean
@@ -106,11 +135,13 @@ function parseWorkspaceRow(row: Record<string, unknown>, userId: string, preserv
 }
 
 export function createTransactionalWorkspaceStore(options: TransactionalWorkspaceStoreOptions) {
+  options = withWorkspaceRowsRuntime(options)
   const baseUrl = options.supabaseUrl.replace(/\/+$/, '')
   const serviceRoleKey = requireServiceRoleKey(options.serviceRoleKey)
   const fetchImpl = options.fetchImpl ?? fetch
   const metadataOnlyCommits = options.metadataOnlyCommits ?? process.env.PJSDAS_WORKSPACE_COMMIT_METADATA_ONLY === '1'
   const rawJsonCommits = metadataOnlyCommits && (options.rawJsonCommits ?? process.env.PJSDAS_WORKSPACE_COMMIT_RAW_JSON === '1')
+  if (options.rowLayoutWriter && !options.rowLayoutReader) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Row writers require compatible readers.', false)
   const emptyGmailCheckpoints = options.emptyGmailCheckpoints ?? process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINTS === '1'
   const emptyGmailCheckpointReads = options.emptyGmailCheckpointReads ?? process.env.PJSDAS_GMAIL_EMPTY_CHECKPOINT_READS === '1'
   if (emptyGmailCheckpoints && !emptyGmailCheckpointReads) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Empty-poll writers require deployed overlay readers.', false)
@@ -122,6 +153,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       for (const [name, value] of Object.entries(authHeaders(serviceRoleKey))) headers.set(name, value)
       response = await fetchImpl(`${baseUrl}${path}`, {
         ...init,
+        signal: init.signal && options.signal ? AbortSignal.any([init.signal, options.signal]) : init.signal ?? options.signal,
         headers,
       })
     } catch {
@@ -130,10 +162,90 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     return response
   }
 
+  // Metadata-first routing must never interpret a failed/missing-schema lookup as
+  // a legacy layout. The optional injection leaves all existing deployments alone.
+  async function layoutForUser(userId: string, signal?: AbortSignal) {
+    const params = new URLSearchParams({ select: 'id,user_id,row_candidate_epoch', user_id: `eq.${userId}`, limit: '1' })
+    const response = await request(`/rest/v1/pjsdas_workspaces?${params}`, { method: 'GET', signal })
+    if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'Workspace layout metadata is unavailable.', response.status >= 500 || response.status === 429)
+    const rows: unknown = await response.json().catch(() => undefined)
+    if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid workspace layout metadata.', false)
+    if (!rows.length) return null
+    const row = rows[0]
+    if (!row || typeof row.id !== 'string' || row.user_id !== userId || !(row.row_candidate_epoch === null || typeof row.row_candidate_epoch === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row.row_candidate_epoch))) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid workspace layout generation.', false)
+    return { workspaceId: row.id as string, epoch: row.row_candidate_epoch as string | null }
+  }
+  async function requireLegacyLayout(userId: string, signal?: AbortSignal) {
+    if (options.rowLayoutReader && (await layoutForUser(userId, signal))?.epoch) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'This operation requires the row-compatible route; legacy fallback is forbidden.', false)
+  }
+  async function legacyRequest(userId: string, path: string, init: RequestInit = {}) {
+    await requireLegacyLayout(userId, init.signal ?? undefined)
+    const response = await request(path, init)
+    // A read admitted before activation must not return a stale raw projection.
+    // A write raced here is additionally protected by the database layout fence.
+    await requireLegacyLayout(userId, init.signal ?? undefined)
+    return response
+  }
+  // A′/B′ require the additive service-only legacy reader RPC before release.
+  // This is intentionally not a switchable/raw-fallback route: after the read
+  // fence is installed, old raw snapshot SELECT is no longer an allowed API.
+  // userId comes from the existing server-verified principal/source constructor.
+  async function legacyWorkspaceRead(userId: string, select: string, signal?: AbortSignal) {
+    const params = new URLSearchParams({ target_user_id: userId, select, limit: '1' })
+    return legacyRequest(userId, `/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?${params}`, { method: 'GET', signal })
+  }
+  async function historyRequest(userId: string, params: URLSearchParams, query: WorkspaceRowsHistoryQuery) {
+    if (options.rowLayoutReader) {
+      const layout = await layoutForUser(userId)
+      if (layout?.epoch) {
+        const reader = options.rowLayoutReader.readHistory
+        if (!reader) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'The active layout requires a compatible command-history reader.', false)
+        const value = await rowRead(userId, layout, () => reader(userId, layout.epoch!, query))
+        return new Response(JSON.stringify(value.rows), { status: 200 })
+      }
+    }
+    return legacyRequest(userId, `/rest/v1/pjsdas_command_ledger?${params}`, { method: 'GET' })
+  }
+  async function rowRead<T extends { workspaceId: string; userId: string; epoch: string; revision: number }>(userId: string, layout: { workspaceId: string; epoch: string | null }, read: () => Promise<T | null>, signal?: AbortSignal): Promise<T> {
+    let value: T | null
+    try { value = await read() } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+      const retryable = code === 'CONFLICT' || code === undefined || code === 'UNAVAILABLE' && 'retryable' in (error as object) && (error as { retryable: unknown }).retryable === true
+      throw new WorkspaceSourceError(code === 'CONFLICT' ? 'WORKSPACE_CONFLICT' : code === 'INVALID' ? 'WORKSPACE_INVALID' : code === 'FORBIDDEN' ? 'AUTH_FORBIDDEN' : 'WORKSPACE_UNAVAILABLE', 'Row workspace read could not be completed.', retryable)
+    }
+    const latest = await layoutForUser(userId, signal)
+    if (!value || value.userId !== userId || value.workspaceId !== layout.workspaceId || value.epoch !== layout.epoch || !validRevision(value.revision) || latest?.workspaceId !== layout.workspaceId || latest.epoch !== layout.epoch) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Workspace layout changed during the read.', true)
+    return value
+  }
+
   return {
+    /** Header-only readiness projection, with one caller-owned total deadline. */
+    async readDiscoveryProfileForUser(userId: string, signal?: AbortSignal): Promise<{ profile: unknown } | null> {
+      if (options.rowLayoutReader) {
+        const layout = await layoutForUser(userId, signal)
+        if (layout?.epoch) {
+          const reader = options.rowLayoutReader.readDiscoveryProfile
+          if (!reader) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'A compatible readiness reader is required.', false)
+          const value = await rowRead(userId, layout, () => reader(userId, signal), signal)
+          return { profile: value.profile }
+        }
+      }
+      const response = await legacyWorkspaceRead(userId, 'user_id,profile:snapshot->data->discoveryProfile', signal)
+      if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'Workspace readiness projection is unavailable.', response.status >= 500)
+      const rows: unknown = await response.json().catch(() => undefined)
+      if (!Array.isArray(rows) || rows.length > 1 || rows.length === 1 && rows[0]?.user_id !== userId) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid readiness projection.', false)
+      return rows.length ? { profile: rows[0].profile } : null
+    },
     async readIdentityForUser(userId: string): Promise<Omit<ConnectedWorkspaceRecord, 'snapshot' | 'storedSchemaVersion'> | null> {
-      const params = new URLSearchParams({ select: 'id,user_id,revision,schema_version', user_id: `eq.${userId}`, limit: '1' })
-      const response = await request(`/rest/v1/pjsdas_workspaces?${params}`, { method: 'GET' })
+      if (options.rowLayoutReader) {
+        const layout = await layoutForUser(userId)
+        if (layout?.epoch) {
+          const value = await rowRead(userId, layout, () => options.rowLayoutReader!.readIdentity(userId))
+          if (!validRevision(value.schemaVersion) || value.schemaVersion === 0) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid row workspace schema.', false)
+          return { workspaceId: value.workspaceId, userId, revision: value.revision, schemaVersion: value.schemaVersion, rowEpoch: value.epoch }
+        }
+      }
+      const response = await legacyWorkspaceRead(userId, 'id,user_id,revision,schema_version')
       if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction workspace identity read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       const rows: unknown = await response.json().catch(() => undefined)
       if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Workspace identity response is invalid.', false)
@@ -144,17 +256,22 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     },
 
     async readForUser(userId: string, readOptions?: { preserveRawData?: boolean; includeStoredSchema?: boolean }): Promise<ConnectedWorkspaceRecord | null> {
-      const params = new URLSearchParams({
-        select: `id,user_id,snapshot,revision,schema_version${emptyGmailCheckpointReads ? ',materialized_revision' : ''}`,
-        user_id: `eq.${userId}`,
-        limit: '1',
-      })
-      const response = await request(`/rest/v1/pjsdas_workspaces?${params.toString()}`, { method: 'GET' })
+      if (options.rowLayoutReader) {
+        const layout = await layoutForUser(userId)
+        if (layout?.epoch) {
+          const value = await rowRead(userId, layout, () => options.rowLayoutReader!.read(userId))
+          const parsed = parseWorkspaceRow({ id: value.workspaceId, user_id: userId, revision: value.revision, schema_version: value.snapshot.version, snapshot: value.snapshot }, userId, readOptions?.preserveRawData, readOptions?.includeStoredSchema)
+          if (!readOptions?.preserveRawData && !isDeepStrictEqual(JSON.parse(JSON.stringify(parsed.snapshot)), value.snapshot)) throw new WorkspaceSourceError('WORKSPACE_MIGRATION_REQUIRED', 'The row layout must be normalized before activation; a projected snapshot is not a write preimage.', false)
+          return { ...parsed, rowEpoch: value.epoch }
+        }
+      }
+      const response = await legacyWorkspaceRead(userId,
+        `id,user_id,snapshot,revision,schema_version${emptyGmailCheckpointReads ? ',materialized_revision' : ''}`)
       if (!response.ok) {
         throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction workspace read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
       const rows = await response.json().catch(() => undefined) as Record<string, unknown>[] | undefined
-      if (!rows) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid JSON.', false)
+      if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'TodayAction workspace read returned invalid rows.', false)
       if (emptyGmailCheckpointReads && rows[0]) {
         const row = rows[0], marker = row.materialized_revision
         if (row.user_id !== userId || typeof row.id !== 'string' || !validRevision(row.revision)
@@ -170,7 +287,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
             and: `(resulting_revision.gt.${marker},resulting_revision.lte.${row.revision})`,
             order: 'resulting_revision.asc', limit: '257',
           })
-          const audit = await request(`/rest/v1/pjsdas_command_ledger?${query}`, { method: 'GET' })
+          const audit = await legacyRequest(userId, `/rest/v1/pjsdas_command_ledger?${query}`, { method: 'GET' })
           if (!audit.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', 'Pending empty-poll evidence could not be read.', audit.status >= 500 || audit.status === 429)
           pending = await audit.json().catch(() => undefined)
         }
@@ -186,11 +303,14 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       workspaceId?: string; revision?: number; receipt?: Record<string, unknown>
     }> {
       if (!emptyGmailCheckpoints || !eligibleEmptyGmailObservation(input.observation)) return { outcome: 'NOT_ELIGIBLE' }
+      // Active rows use the existing normal semantic path, not the old blob-overlay
+      // checkpoint. No cursor/lease/state is changed by declining this optimization.
+      if (options.rowLayoutReader && (await layoutForUser(input.userId))?.epoch) return { outcome: 'NOT_ELIGIBLE' }
       const canonicalRun = emptyGmailRun(input.commandId, input.checkedAt, input.historyId)
       if (!input.userId || !input.executionToken || !validRevision(input.expectedRevision) || !/^[a-f0-9]{64}$/.test(input.payloadHash)) {
         throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Incomplete empty-poll checkpoint.', false)
       }
-      const response = await request('/rest/v1/rpc/pjsdas_checkpoint_empty_gmail_poll_v1', { method: 'POST',
+      const response = await legacyRequest(input.userId, '/rest/v1/rpc/pjsdas_checkpoint_empty_gmail_poll_v1', { method: 'POST',
         body: JSON.stringify({ target_user_id: input.userId, target_execution_token: input.executionToken,
           target_command_id: input.commandId, target_payload_hash: input.payloadHash,
           target_expected_revision: input.expectedRevision, target_checked_at: input.checkedAt,
@@ -237,7 +357,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         status: 'eq.COMMITTED',
         limit: '1',
       })
-      const response = await request(`/rest/v1/pjsdas_command_ledger?${params.toString()}`, { method: 'GET' })
+      const response = await historyRequest(userId, params, { mode: 'command', commandId })
       if (!response.ok) {
         throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction command receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
@@ -270,7 +390,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         'provenance->>sourceId': `eq.${sourceId}`, 'provenance->>scopeFingerprint': `eq.${scopeFingerprint}`,
         'provenance->>producer': 'eq.server_scheduler', order: 'created_at.desc,resulting_revision.desc', limit: '1',
       })
-      const response = await request(`/rest/v1/pjsdas_command_ledger?${params}`, { method: 'GET' })
+      const response = await historyRequest(userId, params, { mode: 'latest_discovery', sourceId, scopeFingerprint })
       if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `Discovery freshness receipt read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       const rows: unknown = await response.json().catch(() => undefined)
       if (!Array.isArray(rows) || rows.length > 1) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Discovery freshness receipt response is invalid.', false)
@@ -301,7 +421,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         }),
         order: 'created_at.desc,resulting_revision.desc', limit: cycleId ? '161' : '1',
       })
-      const response = await request(`/rest/v1/pjsdas_command_ledger?${params}`, { method: 'GET' })
+      const response = await historyRequest(userId, params, { mode: 'discovery_scope', sourceId, scopeFingerprint, planFingerprint, ...(cycleId ? { cycleId } : {}) })
       if (!response.ok) throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `Search progress read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       const rows: unknown = await response.json().catch(() => undefined)
       if (!Array.isArray(rows) || rows.length > (cycleId ? 160 : 1)) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Search progress exceeded its bounded ledger query.', false)
@@ -332,7 +452,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
         resulting_revision: `gt.${revision}`,
         order: 'resulting_revision.asc',
       })
-      const response = await request(`/rest/v1/pjsdas_command_ledger?${params.toString()}`, { method: 'GET' })
+      const response = await historyRequest(userId, params, { mode: 'after', afterRevision: revision })
       if (!response.ok) {
         throw new WorkspaceSourceError('WORKSPACE_UNAVAILABLE', `TodayAction command history read failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 429)
       }
@@ -368,7 +488,18 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     }): Promise<ConnectedWorkspaceRecord> {
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
-      const response = await request(input.consumerAudienceMode ? '/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1' : '/rest/v1/rpc/pjsdas_bootstrap_workspace', {
+      if (options.rowLayoutReader) {
+        const layout = await layoutForUser(input.userId)
+        if (layout?.epoch) {
+          const authorize = options.rowLayoutReader.authorizeExistingBootstrap
+          if (!authorize) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Existing row bootstrap requires its compatible authorization route.', false)
+          await rowRead(input.userId, layout, () => authorize(input.userId, layout.epoch!, { ...input, snapshot }))
+          const current = await this.readForUser(input.userId)
+          if (!current || current.workspaceId !== layout.workspaceId || current.rowEpoch !== layout.epoch) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Bootstrap generation changed.', true)
+          return current
+        }
+      }
+      const response = await legacyRequest(input.userId, input.consumerAudienceMode ? '/rest/v1/rpc/pjsdas_bootstrap_consumer_workspace_v1' : '/rest/v1/rpc/pjsdas_bootstrap_workspace', {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,
@@ -397,6 +528,15 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       }
     },
 
+    async resumePreparedForUser(before: ConnectedWorkspaceRecord, identity: PreparedCommandIdentity): Promise<ConnectedCommitResult | null> {
+      if (!before.rowEpoch || !options.rowLayoutWriter?.resumePrepared) return null
+      const result = await options.rowLayoutWriter.resumePrepared(before, identity)
+      if (result?.outcome !== 'ALREADY_APPLIED') return result
+      const current = await this.readForUser(identity.userId, { preserveRawData: Boolean(identity.managementAuthorization) })
+      if (!current || current.workspaceId !== before.workspaceId || current.rowEpoch !== before.rowEpoch || current.revision < result.revision) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Workspace changed while resolving original prepared receipt.', true)
+      return { ...result, snapshot: current.snapshot, revision: current.revision }
+    },
+
     async commitAuthoritativeForUser(input: ConnectedAuthoritativeCommitInput): Promise<ConnectedCommitResult> {
       validateSnapshot(input.snapshot)
       const capture = input.aiCaptureAuthorization
@@ -423,6 +563,25 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       if (authorization && (input.principalKind !== 'delegated_mcp' || !input.clientId || !authorization.grantId || !Number.isSafeInteger(authorization.grantRevision) || authorization.grantRevision < 1)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management transaction authorization is invalid.', false)
       if ((input.operation === 'private_reminder_management' && authorization?.consentVersion !== 6) || (input.operation === 'discovery_profile_management' && authorization?.consentVersion !== 5) || (input.operation === 'planning_management' && authorization?.consentVersion !== 4) || (input.operation === 'opportunity_management' && authorization?.consentVersion !== 3) || (input.operation === 'business_management' && authorization?.consentVersion !== undefined && ![2, 7].includes(authorization.consentVersion))) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Management grant version does not match this operation.', false)
       if (authorization?.consentVersion !== undefined && ![2, 3, 4, 5, 6, 7].includes(authorization.consentVersion)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Unsupported management consent version.', false)
+      if (options.rowLayoutReader) {
+        const layout = await layoutForUser(input.userId)
+        if (layout?.epoch) {
+          const before = input.rowPreimage
+          if (!options.rowLayoutWriter || !before || before.userId !== input.userId || before.workspaceId !== layout.workspaceId || before.rowEpoch !== layout.epoch || !validRevision(input.expectedRevision) || before.revision < input.expectedRevision) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'A compatible writer and original server-read preimage are required.', false)
+          const result = await options.rowLayoutWriter.commit(before, { ...input, snapshot })
+          if (result.outcome !== 'CONFLICT' && (!validRevision(result.resultingRevision) || result.receipt.commandId !== input.commandId || result.receipt.status !== 'COMMITTED' || result.receipt.revision !== result.resultingRevision)) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Row command receipt identity is invalid.', false)
+          if (result.outcome === 'COMMITTED') {
+            if (result.resultingRevision !== input.expectedRevision + 1 || result.receipt.commandId !== input.commandId || result.receipt.revision !== result.resultingRevision) throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Row commit metadata does not match its command.', false)
+            return { outcome: 'COMMITTED', workspaceId: before.workspaceId, revision: result.resultingRevision, snapshot: result.snapshot ?? snapshot, receipt: result.receipt }
+          }
+          // Replay returns the original immutable receipt but the current logical
+          // snapshot/revision, just like the original authoritative v2 contract.
+          const current = await this.readForUser(input.userId, { preserveRawData: Boolean(authorization) || checkpoint })
+          if (!current || current.workspaceId !== before.workspaceId || current.rowEpoch !== before.rowEpoch || result.outcome === 'ALREADY_APPLIED' && current.revision < result.resultingRevision) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'Workspace generation changed while resolving the commit.', true)
+          return { outcome: result.outcome, workspaceId: current.workspaceId, revision: current.revision, snapshot: current.snapshot, receipt: result.outcome === 'ALREADY_APPLIED' ? result.receipt : {} }
+        }
+        if (input.rowPreimage?.rowEpoch) throw new WorkspaceSourceError('WORKSPACE_CONFLICT', 'An observed row layout cannot fall back to a legacy write.', false)
+      }
       const rpc = capture ? 'pjsdas_commit_ai_capture' : discovery ? 'pjsdas_commit_discovery_workspace_v1' : authorization?.consentVersion === 7 ? 'pjsdas_commit_consumer_business_workspace_v1' : authorization?.consentVersion === 6 ? 'pjsdas_commit_private_reminder_workspace_v1' : authorization?.consentVersion === 5 ? 'pjsdas_commit_discovery_profile_workspace_v1' : authorization?.consentVersion === 4 ? 'pjsdas_commit_planning_workspace_v1' : authorization?.consentVersion === 3 ? 'pjsdas_commit_opportunity_workspace_v1' : authorization ? 'pjsdas_commit_management_workspace_v1' : rawJsonCommits ? 'pjsdas_commit_workspace_v4' : metadataOnlyCommits ? 'pjsdas_commit_workspace_v3' : 'pjsdas_commit_workspace_v2'
       const requestBody = JSON.stringify({
         target_user_id: input.userId,
@@ -461,7 +620,7 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
       const requireReturnedSnapshot = emptyGmailCheckpointReads && rpcVersion !== 'v3' && rpcVersion !== 'v4'
       let response: Response
       try {
-        response = await request(`/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt${requireReturnedSnapshot ? ',snapshot' : ''}`, { method: 'POST', body: requestBody })
+        response = await legacyRequest(input.userId, `/rest/v1/rpc/${rpc}?select=outcome,workspace_id,revision,receipt${requireReturnedSnapshot ? ',snapshot' : ''}`, { method: 'POST', body: requestBody })
       } catch (error) {
         logFailure(null, 'network_error')
         throw error
@@ -515,10 +674,11 @@ export function createTransactionalWorkspaceStore(options: TransactionalWorkspac
     },
 
     async commitForUser(input: ConnectedCommitInput): Promise<ConnectedCommitResult> {
+      if (options.rowLayoutReader && (await layoutForUser(input.userId))?.epoch) return this.commitAuthoritativeForUser({ ...input, receiptContext: {} })
       if (['ingest_verified_discovery', 'checkpoint_discovery_search'].includes(input.operation)) throw new WorkspaceSourceError('AUTH_FORBIDDEN', 'Discovery cannot use the legacy unguarded commit route.', false)
       validateSnapshot(input.snapshot)
       const snapshot = upgradeSnapshotToLatest(input.snapshot)
-      const response = await request('/rest/v1/rpc/pjsdas_commit_workspace', {
+      const response = await legacyRequest(input.userId, '/rest/v1/rpc/pjsdas_commit_workspace', {
         method: 'POST',
         body: JSON.stringify({
           target_user_id: input.userId,

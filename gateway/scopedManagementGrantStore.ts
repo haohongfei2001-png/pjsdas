@@ -25,7 +25,7 @@ export function createScopedManagementGrantReader<K extends ScopedManagementDoma
     const query = new URLSearchParams({ select: 'id,user_id,client_id,capability,consent_version,consent_text_hash,revision,granted_at,revoked_at', user_id: `eq.${principal.userId}`, client_id: `eq.${principal.clientId}`, capability: `eq.${descriptor.capability}`, consent_version: `eq.${descriptor.version}`, revoked_at: 'is.null', limit: '2' })
     let response: Response
     try {
-      response = await fetchImpl(`${options.supabaseUrl.replace(/\/+$/, '')}/rest/v1/pjsdas_business_management_grants?${query}`, { headers: { authorization: `Bearer ${options.serviceRoleKey}`, apikey: options.serviceRoleKey } })
+      response = await fetchImpl(`${options.supabaseUrl.replace(/\/+$/, '')}/rest/v1/pjsdas_business_management_grants?${query}`, { signal: options.signal, headers: { authorization: `Bearer ${options.serviceRoleKey}`, apikey: options.serviceRoleKey } })
     } catch { throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'Management authorization lookup is temporarily unavailable.', true) }
     if (!response.ok) throw new WorkspaceSourceError('AUTH_UNAVAILABLE', 'Management authorization lookup failed.', response.status >= 500 || response.status === 429)
     const rows: unknown = await response.json().catch(() => undefined)

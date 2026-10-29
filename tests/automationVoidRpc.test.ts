@@ -37,7 +37,7 @@ describe('background discovery finalizes through the generation-fenced wrapper',
   const fetchImpl=vi.fn<typeof fetch>(async(input,init)=>{
    const url=String(input)
    if(url.includes('pjsdas_claim_enabled_discovery_automation_bindings'))return Response.json([{user_id:owner,google_subject:'synthetic-subject',refresh_token_ciphertext:'synthetic-unused',granted_scopes:[]}])
-   if(url.includes('/pjsdas_workspaces?'))return Response.json([{id:'synthetic-workspace',user_id:owner,snapshot,revision:0,schema_version:4}])
+   if(url.includes('/rpc/pjsdas_read_legacy_workspace_v1?'))return Response.json([{id:'synthetic-workspace',user_id:owner,snapshot,revision:0,schema_version:4}])
    if(url.includes('pjsdas_update_google_automation_state')){const body=JSON.parse(String(init?.body));expect(body.expected_ciphertext).toBe('synthetic-unused');expect(body.state_operation).toBe('pjsdas_update_discovery_automation_state');updates.push(body.state_patch);return Response.json(true)}
    throw new Error('Unexpected fixture request')
   })

@@ -38,11 +38,15 @@ function emit(record: CommandInteractionRecord, delta?: WorkspaceDelta, message?
 }
 const recordId = (accountKey: string, commandId: string) => `${accountKey}:${commandId}`
 const version = (accountKey: string) => Number(/^txn:(\d+)$/.exec(getAccountCheckpoint(accountKey).lastSyncedVersion ?? '')?.[1])
-function dispatch(record: CommandInteractionRecord, recovery = false) {
+async function dispatch(record: CommandInteractionRecord, recovery = false, receiptOnly = false) {
   const active = flights.get(record.id)
   if (active) return active
+  const lease = captureAccountCacheLease(record.accountKey)
   preparedDispatches.delete(record.id)
-  const flight = (tails.get(record.accountKey) ?? Promise.resolve()).catch(() => undefined).then(() => send(record, recovery))
+  const flight = (tails.get(record.accountKey) ?? Promise.resolve()).catch(() => undefined).then(() => {
+    lease.assertCurrent()
+    return send(record, recovery, receiptOnly, lease.assertCurrent)
+  })
   flights.set(record.id, flight)
   tails.set(record.accountKey, flight)
   void flight.finally(() => { flights.delete(record.id); if (tails.get(record.accountKey) === flight) tails.delete(record.accountKey) }).catch(() => undefined)
@@ -178,7 +182,8 @@ export async function beginInstantUndo(accountKey: string, targetCommandId: stri
   finally { schedulePreparedDispatch(record) }
   return commandId
 }
-async function network(accountKey: string, body: Record<string, unknown>) {
+async function network(accountKey: string, body: Record<string, unknown>, assertCurrent?: () => void) {
+  assertCurrent?.()
   const lease = captureAccountCacheLease(accountKey)
   const token = await getAccountAccessToken(accountKey)
   lease.assertCurrent()
@@ -477,48 +482,56 @@ async function reconcile(record: CommandInteractionRecord, payload: any, assertC
     emit({ ...record, state: 'projection_pending' }, undefined, '服务器已确认，本机状态待安全刷新。')
   }
 }
-async function send(record: CommandInteractionRecord, recovery: boolean) {
+async function send(record: CommandInteractionRecord, recovery: boolean, receiptOnly: boolean, assertCurrent: () => void) {
+  assertCurrent()
   if (!navigator.onLine || listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && ['conflict', 'rollback_pending'].includes(item.status))) return
-  if (!recovery && listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && item.status === 'unknown')) return send(record, true)
+  if (!recovery && listAccountPendingOperations(record.accountKey).some(item => item.commandId === record.commandId && item.status === 'unknown')) return send(record, true, receiptOnly, assertCurrent)
   const durable = await readCommandInteraction(record.accountKey, record.commandId)
+  assertCurrent()
   if (durable?.state === 'rejected' || durable?.state === 'conflict' || durable?.state === 'confirmed' || durable?.state === 'rollback_pending') return
   if (durable) record = durable
   try {
     if (recovery) {
-      const read = await network(record.accountKey, { action: 'receipt', commandId: record.commandId })
+      const read = await network(record.accountKey, { action: 'receipt', commandId: record.commandId }, assertCurrent)
       if (!read.response.ok) throw new Error('Receipt lookup unavailable.')
       if (read.payload.found) {
         if (read.payload.delta) {
           await reconcile(record, { ...read.payload, outcome: 'ALREADY_APPLIED' }, read.lease.assertCurrent)
           if ((await readCommandInteraction(record.accountKey, record.commandId))?.state === 'confirmed') return
         }
-        const recovered = await network(record.accountKey, { action: 'receipt', commandId: record.commandId, projection: 'snapshot' })
+        const recovered = await network(record.accountKey, { action: 'receipt', commandId: record.commandId, projection: 'snapshot' }, assertCurrent)
         return reconcile(record, { ...recovered.payload, outcome: 'ALREADY_APPLIED' }, recovered.lease.assertCurrent)
       }
       if (record.state === 'projection_pending' || record.noOpRevision !== undefined) {
-        const readback = await network(record.accountKey, { action: 'read', projection: 'snapshot' })
+        const readback = await network(record.accountKey, { action: 'read', projection: 'snapshot' }, assertCurrent)
         if (readback.response.ok) return reconcile(record, { ...readback.payload, outcome: 'ALREADY_APPLIED' }, readback.lease.assertCurrent)
         return
       }
     }
+    // A preceding recovery failure must not prevent receipt convergence, but
+    // it also must not let a later unconfirmed command overtake that failure.
+    if (receiptOnly) return
     const mirrors = listAccountPendingOperations(record.accountKey)
     const predecessors = (await Promise.all((record.predecessors ?? []).map(async id => {
       const prior = await readCommandInteraction(record.accountKey, id)
       return prior && mirrors.some(item => item.commandId === id && ['conflict', 'rollback_pending'].includes(item.status))
         ? { ...prior, state: 'conflict' as const } : prior
     }))).filter((item): item is CommandInteractionRecord => Boolean(item))
+    assertCurrent()
     if (predecessors.some(item => item.state === 'conflict' || item.state === 'rejected')) return reject(record, '先前相关操作未被接受；已恢复这次修改。', 'rejected')
     if (predecessors.some(item => item.state === 'active' || item.state === 'projection_pending')) return
     const baseRevision = Math.max(record.delta.baseRevision, ...predecessors.map(item => item.serverRevision ?? record.delta.baseRevision))
     const request = await network(record.accountKey, record.targetCommandId
       ? { action: 'undo', commandId: record.commandId, targetCommandId: record.targetCommandId }
-      : { action: 'command', commandId: record.commandId, baseRevision, command: { type: 'domain', value: record.command } })
+      : { action: 'command', commandId: record.commandId, baseRevision, command: { type: 'domain', value: record.command } }, assertCurrent)
     if (request.response.status === 409 && request.payload.outcome === 'CONFLICT') return reconcile(record, request.payload, request.lease.assertCurrent)
     if (!request.response.ok) {
+      if (request.payload.code === 'WORKSPACE_RECOVERY_TERMINAL' && request.payload.retryable === false)
+        return reject(record, '这次修改已确认未保存；本机草稿仍保留，请检查冲突后重新操作。', 'conflict')
       if ([401, 403].includes(request.response.status)) {
         const message = request.response.status === 401
           ? '登录已过期；修改保留在本机，重新登录后会先核对原操作。'
-          : '账号访问暂不可用；修改保留在本机，访问恢复后会先核对原操作。'
+          : '当前权限或账号访问不足，暂时无法确认原操作结果；修改保留在本机，权限恢复后先核对回执。'
         settleConnectedInteraction(record.accountKey, record.commandId, 'pending', message)
         emit(record, undefined, message)
         return
@@ -533,6 +546,7 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
     }
     await reconcile(record, request.payload, request.lease.assertCurrent)
   } catch {
+    assertCurrent()
     const message = '修改已保存在本机，恢复连接后会先核对回执。'
     settleConnectedInteraction(record.accountKey, record.commandId, record.state === 'projection_pending' ? 'projection_pending' : 'unknown', message)
     emit(record, undefined, message)
@@ -540,31 +554,39 @@ async function send(record: CommandInteractionRecord, recovery: boolean) {
     if (!recovery && navigator.onLine) setTimeout(() => { void dispatch(record, true).catch(() => undefined) }, 0)
   }
 }
-export async function recoverInstantInteraction(accountKey: string, commandId: string) {
+export async function recoverInstantInteraction(accountKey: string, commandId: string, options: { receiptOnly?: boolean } = {}) {
+  const lease = captureAccountCacheLease(accountKey)
   const id = recordId(accountKey, commandId)
   if (localPreparations.has(id)) return
   const prepared = preparedDispatches.get(id)
-  if (prepared) return dispatch(prepared)
+  if (prepared) return dispatch(prepared, Boolean(options.receiptOnly), Boolean(options.receiptOnly))
   const flight = flights.get(id)
   if (flight) return flight
   const pending = listAccountPendingOperations(accountKey).find(item => item.commandId === commandId)
   let record = await readCommandInteraction(accountKey, commandId)
+  lease.assertCurrent()
   if (pending?.interaction && pending.status === 'conflict' && (!record || !['confirmed', 'rejected', 'conflict'].includes(record.state))) return
   if (navigator.onLine && getAccountCheckpoint(accountKey).clearedCacheFingerprint) {
     const local = await exportLocalSnapshot()
-    if (workspaceIsEffectivelyEmpty(local) && getAccountCheckpoint(accountKey).clearedCacheFingerprint === await fingerprintWorkspace(local)) {
+    const fingerprint = workspaceIsEffectivelyEmpty(local) ? await fingerprintWorkspace(local) : undefined
+    lease.assertCurrent()
+    if (fingerprint && getAccountCheckpoint(accountKey).clearedCacheFingerprint === fingerprint) {
       await recoverAuthoritativeProjection(accountKey, local)
       record = await readCommandInteraction(accountKey, commandId)
+      lease.assertCurrent()
     }
   }
   // The IDB transaction can finish before its localStorage mirror is retired.
   // Terminal facts need metadata reconciliation only, never another inverse.
   if (record && await reconcileTerminalJournal(record)) return
+  lease.assertCurrent()
   if (pending?.interaction && pending.status === 'rollback_pending') {
     const root = await readCommandInteraction(accountKey, pending.rejectionRoot ?? commandId)
+    lease.assertCurrent()
     if (root && ['rejected', 'conflict'].includes(root.state)) {
       await reconcileTerminalJournal(root)
-      return recoverInstantInteraction(accountKey, commandId)
+      lease.assertCurrent()
+      return recoverInstantInteraction(accountKey, commandId, options)
     }
     if (root?.state === 'confirmed') {
       settleConnectedInteraction(accountKey, commandId, 'conflict', '先前操作已确认，本机状态待安全刷新。')
@@ -577,19 +599,25 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
     // A failed local preparation may retain its original mirror when even the
     // archive store is unavailable. It is closed to replay, never a queued click.
     if (!pending?.interaction || pending.status === 'conflict') return
-    const receipt = navigator.onLine ? await network(accountKey, { action: 'receipt', commandId }) : undefined
+    const receipt = navigator.onLine ? await network(accountKey, { action: 'receipt', commandId }, lease.assertCurrent) : undefined
     let local = await exportLocalSnapshot()
+    lease.assertCurrent()
     if (receipt?.response.ok && receipt.payload.found) {
       record = { id: recordId(accountKey, commandId), accountKey, commandId,
         command: pending.command?.type === 'domain' ? pending.command.value : undefined, targetCommandId: pending.targetCommandId,
         delta: { contract: 'delta-v1', baseRevision: pending.baseRevision ?? version(accountKey), changes: [] },
         state: 'active', createdAt: pending.createdAt }
       await saveCommandInteraction(record)
-      return dispatch(record, true)
+      lease.assertCurrent()
+      return dispatch(record, true, options.receiptOnly)
     }
     if (receipt && !receipt.response.ok) throw new Error('暂时无法核对操作回执；原操作已保留。')
+    // An absent receipt is not permission to reconstruct/replay a missing
+    // journal during a receipt-only sweep. Preserve the original mirror.
+    if (options.receiptOnly) return
     const predecessorIds = [...new Set([...(pending.interactionPredecessors ?? []), ...(pending.targetCommandId ? [pending.targetCommandId] : [])])]
     const predecessors = await Promise.all(predecessorIds.map(id => readCommandInteraction(accountKey, id)))
+    lease.assertCurrent()
     const mirrors = listAccountPendingOperations(accountKey)
     if (predecessors.some(prior => prior && ['rejected', 'conflict', 'rollback_pending'].includes(prior.state))
       || mirrors.some(prior => predecessorIds.includes(prior.commandId) && ['conflict', 'rollback_pending'].includes(prior.status))) {
@@ -600,11 +628,14 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
         predecessors: predecessorIds, delta: pending.interactionDelta ?? { contract: 'delta-v1', baseRevision: pending.baseRevision ?? version(accountKey), changes: [] },
         compensation: pending.interactionCompensation, state: 'active', createdAt: pending.createdAt }
       await archiveFailedPreparation(refused)
+      lease.assertCurrent()
       emit({ ...refused, state: 'rejected' }, undefined, '先前操作未被接受，这次操作尚未提交。')
       return
     }
     const target = predecessors.find(prior => prior?.commandId === pending.targetCommandId)
-    if (!await isRecordedAccountProjection(accountKey, local)) {
+    const recorded = await isRecordedAccountProjection(accountKey, local)
+    lease.assertCurrent()
+    if (!recorded) {
       settleConnectedInteraction(accountKey, commandId, 'conflict', '本机记录已变化，原操作已保留，请在设置中核对。')
       return
     }
@@ -615,14 +646,17 @@ export async function recoverInstantInteraction(accountKey: string, commandId: s
     if (!delta) return
     const priorRecords = (await Promise.all((pending.interactionPredecessors ?? []).map(id => readCommandInteraction(accountKey, id))))
       .filter((prior): prior is CommandInteractionRecord => prior?.state === 'confirmed')
+    lease.assertCurrent()
     delta = rebaseDelta(delta, priorRecords)
     record = { id: recordId(accountKey, commandId), accountKey, commandId, command: pending.command?.type === 'domain' ? pending.command.value : undefined,
       targetCommandId: pending.targetCommandId, predecessors: pending.interactionPredecessors ?? (target ? [target.commandId] : []),
       delta, compensation: pending.interactionCompensation ?? projected?.compensation, state: 'active', createdAt: pending.createdAt }
-    await persistInteractionProjection(record, captureAccountCacheLease(accountKey).assertCurrent)
+    await persistInteractionProjection(record, lease.assertCurrent)
+    lease.assertCurrent()
     emit(record, delta)
   }
   if (record && await reconcileTerminalJournal(record)) return
+  lease.assertCurrent()
   if (!record || !['active', 'projection_pending'].includes(record.state)) return
-  await dispatch(record, true)
+  await dispatch(record, true, options.receiptOnly)
 }

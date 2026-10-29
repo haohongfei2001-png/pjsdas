@@ -12,8 +12,8 @@ function fixture(){const s=unknownDeadlineWorkspace(1);s.data.scheduleNodes!.pus
 async function command(s=fixture()){return{commandId:'private-reminder-command',baseRevision:0,command:{type:'private_reminder_management',value:{operations:[{kind:'create_private_reminder',scheduleNodeId:'private-target',expectedNodeFingerprint:await fp(s.data.scheduleNodes!.at(-1)),purpose:'custom',triggerAt:'2026-10-03T01:00:00Z'}]}}}}
 function storeFixture(){let snapshot=fixture(),revision=0;const records:any[]=[],posts:any[]=[];const fetchImpl=vi.fn<typeof fetch>(async(input,init)=>{
  const u=new URL(String(input));if(init?.method==='POST'){const b=JSON.parse(String(init.body));posts.push({path:u.pathname,body:b});snapshot=b.target_snapshot;revision++;const receipt=b.target_receipt_context;records.push({command_id:b.target_command_id,operation:b.target_operation,payload_hash:b.target_payload_hash,resulting_revision:revision,receipt,compensation:b.target_compensation});return Response.json([{outcome:'COMMITTED',workspace_id:'fixture',revision,receipt}])}
- expect(u.searchParams.get('user_id')).toBe(`eq.${owner}`)
- if(u.pathname.endsWith('pjsdas_workspaces'))return Response.json([{id:'fixture',user_id:owner,revision,snapshot,schema_version:4}])
+ expect(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? u.searchParams.get('target_user_id') : u.searchParams.get('user_id')).toBe(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1') ? owner : `eq.${owner}`)
+ if(u.pathname.endsWith('pjsdas_read_legacy_workspace_v1'))return Response.json([{id:'fixture',user_id:owner,revision,snapshot,schema_version:4}])
  const selector=u.searchParams.get('command_id'),after=u.searchParams.get('resulting_revision');return Response.json(records.filter(r=>(!selector||selector===`eq.${r.command_id}`)&&(!after||r.resulting_revision>Number(after.slice(3)))))
  });return{records,posts,fetchImpl,snapshot:()=>snapshot,options:{supabaseUrl:'https://fixture.invalid',serviceRoleKey:'fixture-only',fetchImpl}}}
 describe('v6 private reminder admission and atomic store',()=>{

@@ -1,0 +1,23 @@
+import type { TransactionalWorkspaceStoreOptions } from './transactionalWorkspaceStore.js'
+import { createWorkspaceRowsStoreBridge } from './workspaceRowsStoreBridge.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+
+/** Dormant shared backend wiring. Flags are not an activation/migration API:
+ * per-owner layout markers still gate all row operations in SQL and the store.
+ * Never cache a fetch closure: controlled workers supply a deadline-bound one.
+ * An activated layout requires a row-compatible release and reads kept enabled. */
+export function withWorkspaceRowsRuntime<T extends TransactionalWorkspaceStoreOptions>(options: T,
+  env: { PJSDAS_WORKSPACE_ROWS_READS?: string; PJSDAS_WORKSPACE_ROWS_WRITES?: string } = process.env): T {
+  // Explicit server/test injections are one complete adapter, not composable
+  // with unrelated ambient writers or credentials.
+  if (options.rowLayoutReader || options.rowLayoutWriter) return options
+  const reads = env.PJSDAS_WORKSPACE_ROWS_READS === '1'
+  const writes = env.PJSDAS_WORKSPACE_ROWS_WRITES === '1'
+  if (writes && !reads) throw new WorkspaceSourceError('INVALID_SOURCE_CONFIG', 'Row writers require row-compatible reads.', false)
+  if (!reads) return options
+  const bridge = createWorkspaceRowsStoreBridge({ supabaseUrl: options.supabaseUrl,
+    serviceRoleKey: options.serviceRoleKey, fetchImpl: options.fetchImpl,
+    readsEnabled: true, writesEnabled: writes, rpcTransport: 'public-v1' })
+  return { ...options, rowLayoutReader: bridge.rowLayoutReader,
+    ...(writes ? { rowLayoutWriter: bridge.rowLayoutWriter } : {}) }
+}

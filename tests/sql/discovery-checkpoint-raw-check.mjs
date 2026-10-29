@@ -27,7 +27,10 @@ try {
    catch(e) { sqlError={code:e.code,message:e.message};return Response.json(sqlError,{status:e.code==='42501'?403:500}) }
    finally {await db.exec('reset role')}
   }
-  if(url.pathname==='/rest/v1/pjsdas_workspaces')return Response.json((await db.query('select * from public.pjsdas_workspaces where user_id=$1',[owner])).rows)
+  if(url.pathname==='/rest/v1/rpc/pjsdas_read_legacy_workspace_v1'){
+   assert.equal(init?.method,'GET');assert.equal(url.searchParams.get('target_user_id'),owner)
+   return Response.json((await db.query('select * from public.pjsdas_workspaces where user_id=$1',[owner])).rows)
+  }
   if(url.pathname==='/rest/v1/pjsdas_command_ledger')return Response.json((await db.query('select * from public.pjsdas_command_ledger where user_id=$1 and command_id=$2',[owner,url.searchParams.get('command_id')?.slice(3)])).rows)
   throw new Error('unexpected URL')
  }

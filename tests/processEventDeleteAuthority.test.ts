@@ -96,7 +96,7 @@ describe('CGR-05 first-party process event deletion', () => {
     expect(applyUserCommandSchema.safeParse({ kind: 'process_event_delete', eventId }).success).toBe(false)
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
-      if (url.pathname === '/rest/v1/pjsdas_workspaces') {
+      if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
         return Response.json([{ id: 'ws-1', user_id: 'account-a', snapshot: current, revision,
           schema_version: current.version }])
       }

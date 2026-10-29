@@ -38,7 +38,7 @@ describe('AI-operated mutation kernel foundation', () => {
       const headers = new Headers(init?.headers)
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ url, body, auth: headers.get('authorization') })
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: initial, revision: 3, schema_version: 1 }])
       }
       if (url.endsWith('/rest/v1/rpc/pjsdas_commit_workspace')) {
@@ -88,7 +88,7 @@ describe('AI-operated mutation kernel foundation', () => {
     const initial = snapshot()
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: initial, revision: 4, schema_version: 1 }])
       }
       if (url.includes('/rest/v1/pjsdas_command_ledger?')) {
@@ -124,7 +124,7 @@ describe('AI-operated mutation kernel foundation', () => {
   it('returns conflict before mutation when the requested revision is stale', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{
           id: 'ws-1',
           user_id: 'user-a',
@@ -159,7 +159,7 @@ describe('AI-operated mutation kernel foundation', () => {
   it('prepares automatic undo only when the target command is still the latest revision', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: snapshot(), revision: 4, schema_version: 1 }])
       }
       if (url.includes('/rest/v1/pjsdas_command_ledger?')) {
@@ -191,7 +191,7 @@ describe('AI-operated mutation kernel foundation', () => {
   it('refuses automatic undo after later dependent revisions exist', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.includes('/rest/v1/pjsdas_workspaces?')) {
+      if (url.includes('/rest/v1/rpc/pjsdas_read_legacy_workspace_v1?')) {
         return json([{ id: 'ws-1', user_id: 'user-a', snapshot: snapshot(), revision: 6, schema_version: 1 }])
       }
       if (url.includes('/rest/v1/pjsdas_command_ledger?')) {

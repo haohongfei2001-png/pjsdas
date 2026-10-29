@@ -114,9 +114,9 @@ export class LedgerHarness {
     const method = init?.method ?? 'GET'
     const body = init?.body ? JSON.parse(String(init.body)) as RpcBody : undefined
     this.calls.push({ url, method, body: body && clone(body) })
-    if (url.pathname === '/rest/v1/pjsdas_workspaces' && method === 'GET') {
+    if (url.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1' && method === 'GET') {
       if (this.failWorkspaceAfterCommit && this.writes.length) return json({ error: 'offline readback unavailable' }, 503)
-      if (url.searchParams.get('user_id') !== `eq.${USER}`) throw new Error('Fixture requires the exact account query')
+      if (url.searchParams.get('target_user_id') !== USER) throw new Error('Fixture requires the exact account query')
       return json([{ id: 'rebuilt-workspace', user_id: USER, revision: this.revision, schema_version: this.snapshot.version, snapshot: clone(this.snapshot) }])
     }
     if (url.pathname === '/rest/v1/pjsdas_command_ledger' && method === 'GET') {

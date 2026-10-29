@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": { "allowJs": true, "checkJs": false },
+  "include": ["main.tsx", "stopFollowing.browser.ts", "playwright.config.mts", "../../src/vite-env.d.ts"]
+}

@@ -167,7 +167,7 @@ describe('authority remains current through final scope validation', () => {
     let count = 0, beforeFirstSearch = 0
     const originalBase = baseline.fetchImpl.getMockImplementation()!
     baseline.fetchImpl.mockImplementation(async (url, init) => {
-      if (new URL(String(url)).pathname === '/rest/v1/pjsdas_workspaces') count++
+      if (new URL(String(url)).pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') count++
       return originalBase(url, init)
     })
     const originalPaid = baseline.providerFetch.getMockImplementation()!
@@ -181,7 +181,7 @@ describe('authority remains current through final scope validation', () => {
     let reads = 0, changed = false
     f.fetchImpl.mockImplementation(async (url, init) => {
       const response = await original(url, init)
-      if (new URL(String(url)).pathname === '/rest/v1/pjsdas_workspaces' && ++reads === beforeFirstSearch) {
+      if (new URL(String(url)).pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1' && ++reads === beforeFirstSearch) {
         changed = true
         if (failure === 'review-expiry') f.db.now = new Date(f.approval.fundingReview.expiresAt)
         else f.binding.discovery_consent_generation = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'

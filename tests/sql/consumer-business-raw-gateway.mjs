@@ -58,8 +58,13 @@ try {
         try { return Response.json((await db.query(`select * from public.pjsdas_commit_consumer_business_workspace_v1(${keys.map((k, i) => `${k}=>$${i + 1}`).join(',')})`, keys.map(k => typeof b[k] === 'object' && b[k] !== null ? JSON.stringify(b[k]) : b[k]))).rows) }
         catch (e) { return Response.json({ code: e.code, message: e.message }, { status: e.code === '42501' ? 403 : 500 }) }
       }
+      if (u.pathname === '/rest/v1/rpc/pjsdas_read_legacy_workspace_v1') {
+        assert.equal(init?.method, 'GET')
+        assert.equal(u.searchParams.get('target_user_id'), owner)
+        return Response.json((await db.query('select * from public.pjsdas_workspaces where user_id=$1', [owner])).rows)
+      }
       assert.equal(u.searchParams.get('user_id'), `eq.${owner}`)
-      const table = u.pathname.split('/').at(-1); assert.ok(['pjsdas_workspaces', 'pjsdas_business_management_grants', 'pjsdas_command_ledger'].includes(table))
+      const table = u.pathname.split('/').at(-1); assert.ok(['pjsdas_business_management_grants', 'pjsdas_command_ledger'].includes(table))
       let rows = (await db.query(`select * from public.${table} where user_id=$1`, [owner])).rows
       for (const key of ['client_id', 'capability', 'consent_version', 'command_id']) { const filter = u.searchParams.get(key); if (filter?.startsWith('eq.')) rows = rows.filter(row => String(row[key]) === filter.slice(3)) }
       if (u.searchParams.get('revoked_at') === 'is.null') rows = rows.filter(row => row.revoked_at === null)

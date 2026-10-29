@@ -1,0 +1,77 @@
+/** Default-off capability, not a quota or a production storage policy. A complete
+ * original prepared input must fit the EXISTING bounded RPC after lossless
+ * compression. No partial intent is admitted and no reducer is run on recovery. */
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { gzipSync, gunzipSync } from 'node:zlib'
+import type { ConnectedAuthoritativeCommitInput, ConnectedWorkspaceRecord } from './transactionalWorkspaceStore.js'
+import { WorkspaceSourceError } from './workspaceSource.js'
+import { prepareStagedRequestDocuments, type StagedRequestBinding, type StagedDocumentManifest } from './workspaceRowsStagedDocumentsPrototype.js'
+
+export interface DurablePreparedIntent {
+  protocol: 'workspace-prepared-intent-v1'
+  before: ConnectedWorkspaceRecord
+  input: Omit<ConnectedAuthoritativeCommitInput, 'rowPreimage'>
+  manifestSha256: string
+  deadlineAt: number
+}
+export type DurablePreparedIntentV2 = Omit<DurablePreparedIntent, 'protocol' | 'deadlineAt'> & { protocol: 'workspace-prepared-intent-v2'; deadlineAt?: never }
+export type AnyPreparedIntent = DurablePreparedIntent | DurablePreparedIntentV2
+export interface EncodedPreparedIntent { encoding: 'gzip-v1'; base64: string; sha256: string; bytes: number; compressedSha256: string }
+const sha = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
+const fail = () => { throw new WorkspaceSourceError('WORKSPACE_INVALID', 'Invalid durable prepared intent; original outcome must be resolved without re-evaluation.', false) }
+export function encodePreparedIntent(value: AnyPreparedIntent): EncodedPreparedIntent {
+  const raw = Buffer.from(JSON.stringify(value)), compressed = gzipSync(raw)
+  return { encoding: 'gzip-v1', base64: compressed.toString('base64'), sha256: sha(raw), bytes: raw.length, compressedSha256: sha(compressed) }
+}
+export function decodePreparedIntent(encoded: EncodedPreparedIntent, reservedBytes: number): AnyPreparedIntent {
+  if (encoded?.encoding !== 'gzip-v1' || !Number.isSafeInteger(encoded.bytes) || encoded.bytes < 1
+    || !Number.isSafeInteger(reservedBytes) || reservedBytes < encoded.bytes || typeof encoded.base64 !== 'string'
+    || Buffer.byteLength(encoded.base64) > 2_097_152) return fail()
+  const compressed = Buffer.from(encoded.base64, 'base64')
+  if (compressed.toString('base64') !== encoded.base64 || sha(compressed) !== encoded.compressedSha256) return fail()
+  let raw: Buffer
+  try { raw = gunzipSync(compressed, { maxOutputLength: encoded.bytes }) } catch { return fail() }
+  // A canonical single gzip member rejects concatenated streams, trailing data,
+  // alternate headers and ambiguous encodings as well as decompression bombs.
+  if (raw.length !== encoded.bytes || sha(raw) !== encoded.sha256 || !gzipSync(raw).equals(compressed)) return fail()
+  let value: AnyPreparedIntent
+  try { value = JSON.parse(raw.toString('utf8')) } catch { return fail() }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Buffer.from(JSON.stringify(value)).equals(raw)) return fail()
+  if (!(value.protocol === 'workspace-prepared-intent-v1' && Number.isSafeInteger(value.deadlineAt)
+      || value.protocol === 'workspace-prepared-intent-v2' && !Object.hasOwn(value, 'deadlineAt'))
+    || !value.before || !value.input || !/^[a-f0-9]{64}$/.test(value.manifestSha256)
+    || Object.hasOwn(value.input, 'rowPreimage')) return fail()
+  return value
+}
+
+/** These are the only v1 metadata shapes this compiled release can recover.
+ * They are not caller-provided capabilities, protocol guesses or SQL fallbacks. */
+export type WorkspaceRowsAuditMode = 'legacy-inline-v1' | 'fragments-v1' | 'pages-v1'
+const recoveryModes: readonly WorkspaceRowsAuditMode[] = Object.freeze(['legacy-inline-v1', 'fragments-v1', 'pages-v1'])
+export function prepareAuditModeDocuments(metadata: Record<string, unknown>, binding: StagedRequestBinding,
+  effects: StagedDocumentManifest['effects'], mode: WorkspaceRowsAuditMode) {
+  if (!recoveryModes.includes(mode) || Object.hasOwn(metadata, 'auditReadProtocol') || Object.hasOwn(metadata, 'auditReadPageProtocol')) return fail()
+  return prepareStagedRequestDocuments({ ...metadata,
+    ...(mode !== 'legacy-inline-v1' ? { auditReadProtocol: 'workspace-audit-bytes-v1',
+      ...(mode === 'pages-v1' ? { auditReadPageProtocol: 'workspace-audit-page-v1' } : {}) } : {}),
+  }, binding, effects)
+}
+/** Compatibility only, never authorization. Called only AFTER the complete
+ * original v1 intent has passed the guarded RPC, deadline and decode/binding
+ * checks. Try a fixed set of known local metadata shapes and require EXACTLY
+ * one original manifest hash. No upload, new admission, protocol fallback or
+ * reducer runs here. All original prepared bytes and binding remain unchanged. */
+export function selectDurableAuditDocuments(metadata: Record<string, unknown>, binding: StagedRequestBinding,
+  effects: StagedDocumentManifest['effects'], manifestSha256: string) {
+  let selected: { mode: WorkspaceRowsAuditMode; prepared: ReturnType<typeof prepareStagedRequestDocuments> } | undefined
+  for (const mode of recoveryModes) {
+    const prepared = prepareAuditModeDocuments(metadata, binding, effects, mode)
+    if (prepared.manifest.sha256 === manifestSha256) {
+      if (selected) return fail()
+      selected = { mode, prepared }
+    }
+  }
+  if (!selected) return fail()
+  return selected
+}
