@@ -38,6 +38,9 @@ const put = (suffix: string, value: any) => localStorage.setItem(key(suffix), JS
 const errors: string[] = []
 const readDiagnostics: Array<{ action: string; at: string }> = []
 let receiptInflight = 0
+let scenarioGeneration = 0
+let setupInFlight = false
+let setupFailure = ''
 let onObserve: (() => void) | undefined
 let holdNext = false
 let releaseHeld: (() => void) | undefined
@@ -165,25 +168,32 @@ function Harness() {
     const nativeLockHeld = locks.held?.filter(lock => lock.name === exactLock).length ?? 0
     const nativeLockPending = locks.pending?.filter(lock => lock.name === exactLock).length ?? 0
     const localLocator = readAccountDraft(viewAccount, 'stop-following:' + JOB)
-    setObservations({ boundary: 'real component + native IDB/Web Locks; synthetic full-snapshot HTTP projection, NOT exact delta-v1 API/AppV8/PostgreSQL', nativeIndexedDB: Object.prototype.toString.call(indexedDB), nativeLocks: Object.prototype.toString.call(navigator.locks), mode: localMode ? 'local-only' : 'connected-synthetic', account: viewAccount === A ? 'A' : 'B', held, holdNext, nativeLockHeld, nativeLockPending,
+    setObservations({ boundary: 'real asPage job-detail component + native IDB/Web Locks; synthetic full-snapshot HTTP projection, NOT exact delta-v1 API/AppV8/PostgreSQL', nativeIndexedDB: Object.prototype.toString.call(indexedDB), nativeLocks: Object.prototype.toString.call(navigator.locks), mode: localMode ? 'local-only' : 'connected-synthetic', account: viewAccount === A ? 'A' : 'B', held, holdNext, nativeLockHeld, nativeLockPending, scenarioGeneration, setupInFlight, setupFailure, sharedGovernance: current.data.applicationGroups.some(group => group.id === 'shared-synthetic' && group.locked === true),
       localParticipation: current.data.opportunities.find((x: any) => x.id === JOB)?.participationStatus, localActionStates: current.data.actions.map((x: any) => x.status), serverRevision: server.revision,
       serverParticipation: server.snapshot.data.opportunities[0]?.participationStatus, committedCommands: Object.keys(server.receipts), allWrites: requests.filter((x: any) => ['command', 'undo'].includes(x.action)), receiptReads: readDiagnostics.filter(x => x.action === 'receipt').length, receiptInflight,
       pending: listAccountPendingOperations(viewAccount).map(x => ({ action: x.action, status: x.status, commandId: x.commandId, targetCommandId: x.targetCommandId })), locator: localLocator ? JSON.parse(localLocator) : null, errors })
   }
   useEffect(() => { onObserve = () => { void observe() }; const poll = setInterval(() => { void observe() }, 500); const pop = () => setOpen(location.hash === '#detail'); window.addEventListener('popstate', pop); window.addEventListener('storage', onObserve); void observe(); return () => { clearInterval(poll); window.removeEventListener('popstate', pop); window.removeEventListener('storage', onObserve!); onObserve = undefined } }, [])
   const close = () => { history.pushState({}, '', location.pathname); setOpen(false) }
-  async function setup(mode: boolean, governed = false) { setBusy(true); setOpen(false); try { await reset(mode, governed); setMode(mode); setAccount(A); setBlocked(false); setReadOnly(false); setNotice('Synthetic scenario reset; no command seeded.'); await observe() } catch (error) { setNotice(String(error)) } finally { setBusy(false) } }
+  async function setup(mode: boolean, governed = false) {
+    setupInFlight = true; setupFailure = ''; setBusy(true); setOpen(false)
+    try {
+      await reset(mode, governed); setMode(mode); setAccount(A); setBlocked(false); setReadOnly(false)
+      scenarioGeneration += 1; setNotice('Synthetic scenario reset; no command seeded.')
+    } catch (error) { setupFailure = String(error); setNotice(setupFailure) }
+    finally { setupInFlight = false; setBusy(false); await observe() }
+  }
   async function changeAccount(next: string) { setBusy(true); setAccountCacheSession(mode ? undefined : next); setAccount(next); try { await bind(next, mode, true); setNotice('Synthetic account boundary applied.'); await observe() } catch (error) { setNotice(String(error)) } finally { setBusy(false) } }
   const opportunity = snapshot?.data.opportunities.find((x: any) => x.id === JOB)
-  return <><header><h1>Synthetic stop-following browser harness</h1><p><strong>Exact product component; synthetic identity/full-snapshot backend. Not exact delta-v1 API, full AppV8, or PG acceptance. Dedicated guarded test origin only.</strong></p>
+  return <><header className="harness-header"><h1>Synthetic stop-following browser harness</h1><p><strong>Exact product component; synthetic identity/full-snapshot backend. Not exact delta-v1 API, full AppV8, or PG acceptance. Dedicated guarded test origin only.</strong></p>
     <div className="controls"><button disabled={busy} onClick={() => void setup(false)}>Reset connected synthetic</button><button disabled={busy} onClick={() => void setup(true)}>Reset local-only</button><button disabled={busy} onClick={() => void setup(false, true)}>Reset shared governance</button>
-      <button disabled={busy} onClick={() => { history.pushState({}, '', '#detail'); setOpen(true) }}>Open actual job drawer</button>
+      <button disabled={busy} onClick={() => { history.pushState({}, '', '#detail'); setOpen(true) }}>Open actual job page</button>
       <button disabled={busy} onClick={() => { holdNext = true; void observe() }}>Hold next command before synthetic commit</button><button onClick={() => { releaseHeld?.(); void observe() }}>Release held request</button>
       <button disabled={busy} onClick={() => void changeAccount(A)}>Use account A</button><button disabled={busy} onClick={() => void changeAccount(B)}>Use account B</button>
       <button onClick={() => setBlocked(x => !x)}>Toggle write blocked ({String(blocked)})</button><button onClick={() => setReadOnly(x => !x)}>Toggle read only ({String(readOnly)})</button><button onClick={() => void observe()}>Refresh observations</button></div>
     <p role="status">{notice}</p><p>Scenario account: {account === A ? 'A' : 'B'} · {mode ? 'local-only' : 'connected synthetic'} · no clock mocking</p></header>
-    <main><section><h2>Sanitized observations</h2><pre data-testid="observations">{JSON.stringify(observations, null, 2)}</pre></section></main>
-    {open && opportunity && <OpportunityDetailDrawer key={account + ':' + mode} opportunity={opportunity} actions={snapshot.data.actions} applicationGroup={snapshot.data.applicationGroups[0]} decisionRequests={snapshot.data.decisionRequests ?? []} timeline={snapshot.data.timeline ?? []} accountKey={mode ? undefined : account} writeBlocked={blocked || busy} readOnly={readOnly} onClose={close} onCapture={() => setNotice('Tell callback reached; no command submitted by the synthetic parent.')} onNavigate={close} onOpenDecision={() => setNotice('Decision callback reached.')} onMarkAction={async () => { throw Error('Out of scope task action') }} onStopFollowingChanged={observe} />}
+    {open && opportunity && <OpportunityDetailDrawer asPage key={account + ':' + mode} opportunity={opportunity} actions={snapshot.data.actions} applicationGroup={snapshot.data.applicationGroups[0]} decisionRequests={snapshot.data.decisionRequests ?? []} timeline={snapshot.data.timeline ?? []} accountKey={mode ? undefined : account} writeBlocked={blocked || busy} readOnly={readOnly} onClose={close} onCapture={() => setNotice('Tell callback reached; no command submitted by the synthetic parent.')} onNavigate={close} onOpenDecision={() => setNotice('Decision callback reached.')} onMarkAction={async () => { throw Error('Out of scope task action') }} onStopFollowingChanged={observe} />}
+    <main className="harness-observations"><section><h2>Sanitized observations</h2><pre data-testid="observations">{JSON.stringify(observations, null, 2)}</pre></section></main>
   </>
 }
 createRoot(document.getElementById('root')!).render(<UiLanguageProvider><Harness /></UiLanguageProvider>)

@@ -44,13 +44,24 @@ function manifest(): SourceManifest {
   return { contract: 'stop-following-synthetic-browser-source-v1', commit, tree, prHeadSha, parents, files }
 }
 async function observe(page: Page): Promise<any> { return JSON.parse(await page.getByTestId('observations').innerText()) }
-async function open(page: Page) { await page.getByRole('button', { name: 'Open actual job drawer', exact: true }).click(); await expect(page.getByRole('button', { name: '不再跟进', exact: true })).toBeVisible() }
+async function open(page: Page) { await page.getByRole('button', { name: 'Open actual job page', exact: true }).click(); await expect(page.locator('.job-detail-page .job-detail-surface')).toBeVisible(); await expect(page.getByRole('button', { name: '不再跟进', exact: true })).toBeVisible() }
 async function fresh(page: Page, mode = 'Reset connected synthetic') {
-  await page.goto(URL); await page.getByRole('button', { name: mode, exact: true }).click()
+  await page.goto(URL)
+  await expect.poll(async () => Number.isInteger((await observe(page)).scenarioGeneration)).toBe(true)
+  const generation = (await observe(page)).scenarioGeneration
+  const reset = page.getByRole('button', { name: mode, exact: true })
+  await reset.click()
+  await expect.poll(async () => (await observe(page)).scenarioGeneration).toBe(generation + 1)
+  await expect.poll(async () => (await observe(page)).setupInFlight).toBe(false)
+  expect((await observe(page)).setupFailure).toBe('')
+  await expect(page.getByText('Synthetic scenario reset; no command seeded.', { exact: true })).toBeVisible()
+  await expect(reset).toBeEnabled()
+  await expect.poll(async () => (await observe(page)).mode).toBe(mode === 'Reset local-only' ? 'local-only' : 'connected-synthetic')
+  await expect.poll(async () => (await observe(page)).sharedGovernance).toBe(mode === 'Reset shared governance')
   await expect.poll(async () => (await observe(page)).serverRevision).toBe(0)
   await expect.poll(async () => (await observe(page)).localActionStates).toEqual(['todo', 'todo'])
 }
-async function close(page: Page) { await page.locator('.opportunity-detail-close').click(); await expect(page.locator('.opportunity-detail-drawer')).toHaveCount(0) }
+async function leavePage(page: Page) { await page.locator('.job-detail-back').click(); await expect(page.locator('.job-detail-page')).toHaveCount(0) }
 test.beforeAll(() => { source = manifest() })
 test.afterAll(() => { expect(manifest()).toEqual(source) })
 test.beforeEach(async ({ context }) => { guards.set(context, await guardMockApplicationRequests(context)) })
@@ -58,10 +69,10 @@ test.afterEach(async ({ page, context }, info) => {
   const guard = guards.get(context)
   await info.attach('application-egress-guard', { body: JSON.stringify({ status: guard ? 'OBSERVED' : 'NOT_RUN', blocked: guard?.blocked, serviceWorkers: context.serviceWorkers().length }), contentType: 'application/json' })
   if (guard) { guard.assertNoUnexpectedRequests(); expect(context.serviceWorkers()).toEqual([]) }
-  await info.attach('source-bound-synthetic-browser-observations', { body: JSON.stringify({ source, syntheticHttp: true, projection: 'synthetic-full-snapshot-not-exact-delta-v1', realPostgres: false, fullAppMounted: false, observation: await observe(page).catch(() => null) }, null, 2), contentType: 'application/json' })
+  await info.attach('source-bound-synthetic-browser-observations', { body: JSON.stringify({ source, syntheticHttp: true, projection: 'synthetic-full-snapshot-not-exact-delta-v1', realPostgres: false, fullAppMounted: false, surface: 'OpportunityDetailDrawer-asPage', observation: await observe(page).catch(() => null) }, null, 2), contentType: 'application/json' })
 })
 
-test('native connected stop, receipt-only reload, original Undo, close and history', async ({ page }) => {
+test('native connected stop, receipt-only reload, original Undo, page back and history', async ({ page }) => {
   await fresh(page); await open(page)
   await page.getByRole('button', { name: '不再跟进', exact: true }).press('Enter')
   await expect(page.getByRole('button', { name: '撤销不再跟进', exact: true })).toBeVisible()
@@ -75,7 +86,7 @@ test('native connected stop, receipt-only reload, original Undo, close and histo
   await expect.poll(async () => (await observe(page)).serverRevision).toBe(2)
   await expect.poll(async () => (await observe(page)).localActionStates).toEqual(['todo', 'todo'])
   const undone = await observe(page); expect(undone.allWrites).toHaveLength(2); expect(undone.allWrites[1].targetCommandId).toBe(id); expect(undone.pending).toEqual([]); expect(undone.errors).toEqual([])
-  await close(page); await page.goBack(); await expect(page.locator('.opportunity-detail-drawer')).toBeVisible(); await page.goForward(); await expect(page.locator('.opportunity-detail-drawer')).toHaveCount(0)
+  await leavePage(page); await page.goBack(); await expect(page.locator('.job-detail-page .job-detail-surface')).toBeVisible(); await page.goForward(); await expect(page.locator('.job-detail-page')).toHaveCount(0)
   expect((await observe(page)).allWrites).toHaveLength(2)
 })
 

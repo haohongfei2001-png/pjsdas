@@ -10,7 +10,8 @@ VITE_PJSDAS_CLOUD_MODE=mock VITE_PJSDAS_CONNECTED_AUTHORITY=transactional npm ru
 
 Open `/pjsdas/tests/stop-following-browser-private/index.html`.
 
-This imports the exact public `OpportunityDetailDrawer` and `StopFollowingAction`,
+This imports the exact public `OpportunityDetailDrawer` with its production `asPage` prop
+and `StopFollowingAction`,
 real connected client/outbox/receipt-locator modules, native IndexedDB and native
 Web Locks. Fetch is intercepted in this test document: only same-origin module
 loads and synthetic `.invalid` origins are admitted. Synthetic backend changes
@@ -24,12 +25,14 @@ UI setup buttons never invoke stopFollowing/Undo. Only actual product buttons
 create those commands. Observations poll read-only product state and are shown
 in the DOM so the supported CUA browser can inspect without runtime injection.
 
-- Reset connected synthetic → Open actual job drawer → click 不再跟进 → check
+- Reset connected synthetic → Open actual job page → click 不再跟进 → check
   native storage, 1 command/commit, abandoned + skipped; click 撤销不再跟进 →
   check original target and revision 2. Reload between stop and Undo to test the
-  real locator/receipt path. Opening/closing/reloading must not add a write.
-- Automated cases use Enter/Space on product controls. Escape/Tab/focus are
-  additional manual checks only; they are NOT_RUN and not certified by the five cases.
+  real locator/receipt path. Opening/leaving/reloading must not add a write.
+- Automated cases use Enter/Space on product controls and the actual page-back
+  button plus browser Back/Forward. Tab/focus checks remain manual NOT_RUN.
+  The production page is not a modal, so no Escape-dismissal or focus-trap
+  behavior is claimed.
 - Hold next command before synthetic commit, click product stop, then activate
   the same product control in a second same-origin tab. Release in first tab;
   native Web Locks should yield one command identity/one business commit. The
@@ -57,7 +60,7 @@ runtime/SQL/permission change is made; no full durable-v2 acceptance is claimed.
 npx playwright test --config=tests/stop-following-browser-private/playwright.config.mts
 ```
 
-Five serial retry=0 cases cover connected save/reload/original Undo/history,
+Five serial retry=0 cases cover connected save/reload/original Undo/page-back/history,
 native two-tab locks, blocked/read-only/governance no-dispatch, local-only Undo,
 and an A→B→A stale completion. They record the exact checkout commit/tree and
 PR head separately, require the PR head to be the checkout or a raw commit
@@ -65,7 +68,7 @@ parent, and verify every tracked file against its Git blob before/after. All
 seven fixture files must be tracked. They attach synthetic observations,
 and retain failures. No network routing/init-script/evaluate shortcut drives the
 product controls. The synthetic console is explicitly positioned outside the
-product modal for test setup; its focus topology is not the full AppV8 topology.
+product page for test setup; its focus topology is not the full AppV8 topology.
 
 **Evidence policy:** static TypeScript/bundling/discovery checks do not execute
 the five browser cases. Browser acceptance requires actual case results on the
@@ -107,3 +110,12 @@ Results and failure-only trace/screenshot evidence are written beneath the
 dedicated root `stop-following-browser-results/` artifact boundary. Source
 attachments contain exact public tracked hashes and synthetic observations only.
 There is no automatic retry. Existing UI gates and budgets are unchanged.
+
+## Retained first hosted failure
+
+The first published fixture mounted the component's dialog variant without
+`asPage`. All five hosted cases failed at the missing “不再跟进” entry before
+reaching their action assertions. The production entry in `AppV8` uses `asPage`,
+and the control exists only in that branch. This fixture repair selects that
+unchanged production page branch and its `.job-detail-back` control; it does not
+move the product control, relax an assertion, or certify the failed run.
