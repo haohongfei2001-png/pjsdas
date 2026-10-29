@@ -1,3 +1,4 @@
+import { applicationGroupGoverned } from '../src/applicationGovernance.js'
 import { createAiCaptureLedger } from './aiCaptureLedger.js'
 import { applyJobViewedCommand } from '../src/jobReadState.js'
 import { observationFromVerifiedOpportunity } from '../src/verifiedOpportunityCommand.js'
@@ -621,6 +622,15 @@ export function createAuthoritativeCommandExecutor(options: AuthoritativeCommand
       } else if (parsed.command.type === 'business_management') {
         evaluated = applyBusinessManagement(current.snapshot, parsed.command.value, parsed.commandId, now)
       } else if (parsed.command.type === 'domain') {
+        // Fresh admission only: original receipts and immutable prepared intents
+        // have already been resolved above. Re-evaluate on every CAS retry.
+        const domainCommand = parsed.command.value
+        const target = domainCommand.kind === 'abandon_opportunity'
+          ? current.snapshot.data.opportunities.find(item => item.id === domainCommand.opportunityId) : undefined
+        if (principal.kind === 'first_party_web' && target && applicationGroupGoverned(current.snapshot, target)) {
+          throw new WorkspaceSourceError('SHARED_GOVERNANCE_REQUIRED',
+            'This job requires a shared-governance decision. No change was saved. Use Tell TodayAction to review and confirm it.', false)
+        }
         evaluated = applyUserDomainCommand(current.snapshot, parsed.command.value as UserDomainCommand, now)
       } else if (parsed.command.type === 'discovery_status') {
         evaluated = applyDiscoveryStatusCommand(current.snapshot, parsed.command.value, now)

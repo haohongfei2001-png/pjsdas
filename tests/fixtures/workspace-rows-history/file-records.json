@@ -1604,7 +1604,7 @@
   "5327fa6574353a7ee2069179d7250bcb31a72cd51177bfb34927f26a9c8ceb42": {
     "gitBlob": "787988673489020c636ef2e05ab59301dcb7824f",
     "bytes": 68821,
-    "storage": "repository",
+    "storage": "blob",
     "imports": [
       {
         "specifier": "./aiCaptureLedger.js",
@@ -3139,7 +3139,7 @@
   "a934e7cf34595ec02ef52e8e6621d06e35f5e853349c2a5bf126cdae852072dd": {
     "gitBlob": "3687564256e006b119a60ab5b81ab61a88c33f00",
     "bytes": 88540,
-    "storage": "repository",
+    "storage": "blob",
     "imports": [
       {
         "specifier": "./semanticCompletionContext.js",

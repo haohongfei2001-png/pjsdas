@@ -1712,6 +1712,36 @@
       "acceptedSha256": "9599455de6b72409386d5237c47985d2ebd380b6db7e1ef57ec218f03b1fca8d",
       "sourceCommit": "776b19387f52d7198badb6d539cfef67c9015c49",
       "reason": "Exact server JSONB text comparison and source-derived dense-loop coverage; original oracle hash, original cases and expected errors remain unchanged."
+    },
+    "gateway/authoritativeCommands.ts": {
+      "originalSha256": "5327fa6574353a7ee2069179d7250bcb31a72cd51177bfb34927f26a9c8ceb42",
+      "acceptedSha256": "116edb00e78b7ff9cf0b8c6a634ffaf5c2d9dbb3fffbe39b36b5c9aa7c5edbc7",
+      "sourceCommit": "e4fa4679d269ed7d50d9b89bdf5c3520e232fa36",
+      "reason": "Approved single-job stop-following: contextual internal action, shared governance predicate and fresh first-party admission guard; original prepared recovery, authorization, receipts and Undo preserved. No SQL, allowlist, resource-policy or production activation change."
+    },
+    "src/semanticIntake.ts": {
+      "originalSha256": "a934e7cf34595ec02ef52e8e6621d06e35f5e853349c2a5bf126cdae852072dd",
+      "acceptedSha256": "5163752149a305db31b88af1a6b814749aeecc0891d3dedf0a6f087796ca6b8e",
+      "sourceCommit": "e4fa4679d269ed7d50d9b89bdf5c3520e232fa36",
+      "reason": "Approved single-job stop-following: contextual internal action, shared governance predicate and fresh first-party admission guard; original prepared recovery, authorization, receipts and Undo preserved. No SQL, allowlist, resource-policy or production activation change."
+    },
+    "src/AppV8.tsx": {
+      "originalSha256": "e83caf2b23d712072e195bfc0cff91f039cbf68c87b164af8a5ac19cf508d45d",
+      "acceptedSha256": "c0f00b7b97bd6d501f5aa4a82ab974804d6e1620ba6125fdfb9de5e834675c99",
+      "sourceCommit": "e4fa4679d269ed7d50d9b89bdf5c3520e232fa36",
+      "reason": "Approved single-job stop-following: contextual internal action, shared governance predicate and fresh first-party admission guard; original prepared recovery, authorization, receipts and Undo preserved. No SQL, allowlist, resource-policy or production activation change."
+    },
+    "src/OpportunityDetailDrawer.tsx": {
+      "originalSha256": "529bc8f62c1dc777629a13b7a40e0a03f84ef9f2d6539d5072045317d8ee10ef",
+      "acceptedSha256": "50c61598fe6a80b708601705d6104298a8f9b3e45b3fedd8f15500ef0bbec477",
+      "sourceCommit": "e4fa4679d269ed7d50d9b89bdf5c3520e232fa36",
+      "reason": "Approved single-job stop-following: contextual internal action, shared governance predicate and fresh first-party admission guard; original prepared recovery, authorization, receipts and Undo preserved. No SQL, allowlist, resource-policy or production activation change."
+    },
+    "src/jobs/jobDetail.css": {
+      "originalSha256": "0361908f0460005f3f5f4a596eb2bd1e4dd19786958f6a932412647ae835d372",
+      "acceptedSha256": "4c0c0694ce703ef5d9734a9643a8f61f42416964ae7a76a26154b500d719d01d",
+      "sourceCommit": "e4fa4679d269ed7d50d9b89bdf5c3520e232fa36",
+      "reason": "Approved single-job stop-following: contextual internal action, shared governance predicate and fresh first-party admission guard; original prepared recovery, authorization, receipts and Undo preserved. No SQL, allowlist, resource-policy or production activation change."
     }
   },
   "resourceImports": {

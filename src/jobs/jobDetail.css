@@ -27,3 +27,5 @@
 .job-detail-page :is(button,a,summary):focus-visible{outline:3px solid #315ec5;outline-offset:3px}
 .job-detail-actions :is(a,button){box-sizing:border-box;max-width:100%;white-space:normal;overflow-wrap:anywhere;padding-block:8px;line-height:1.4}
 .job-detail-page .opportunity-detail-header-badges{flex-wrap:wrap}
+
+.job-stop-following{margin-top:8px;font-size:.8125rem;color:#647084}.job-stop-following p{margin:8px 0;line-height:1.55}.job-stop-following button{min-height:44px;border:0;background:transparent;padding:8px 10px;color:#355dd7;font:inherit;cursor:pointer}.job-stop-following .job-detail-stop{padding-left:0;font-size:.875rem}.job-stop-following button:disabled{opacity:.55;cursor:default}

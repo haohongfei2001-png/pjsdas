@@ -1,3 +1,4 @@
+import StopFollowingAction from './jobs/StopFollowingAction.js'
 import { isPreparationAction } from './preparationRetirement.js'
 import type { WebSemanticCaptureResult, LocalSemanticUndoToken } from './webSemanticIntake.js'
 import { useEffect, useRef, useState } from 'react'
@@ -40,6 +41,8 @@ interface OpportunityDetailDrawerProps {
   onMarkAction: (id: string, status: Action['status'], intent?: 'application_submission') => Promise<void>
   onJobAction?: (id: string, kind: 'today' | 'submission') => Promise<WebSemanticCaptureResult | void>
   onUndoJobAction?: (token: LocalSemanticUndoToken) => Promise<void>
+  accountKey?: string
+  onStopFollowingChanged?: () => Promise<void>
   writeBlocked?: boolean
   readOnly?: boolean
   asPage?: boolean
@@ -108,6 +111,8 @@ export default function OpportunityDetailDrawer({
   onMarkAction,
   onJobAction,
   onUndoJobAction,
+  accountKey,
+  onStopFollowingChanged,
   readOnly = false,
   writeBlocked = false,
   asPage = false,
@@ -235,6 +240,9 @@ export default function OpportunityDetailDrawer({
             {eligibleToApply && !confirmedApplicationUrl ? <span className="job-detail-no-link">{zh ? '暂无已确认的申请入口' : 'No confirmed application link'}</span> : null}
             <button type="button" className="job-detail-capture" disabled={readOnly} onClick={onCapture}>{zh ? '告诉 TodayAction' : 'Tell TodayAction'}</button>
           </div>
+          {!readOnly && onStopFollowingChanged ? <StopFollowingAction key={`${accountKey ?? 'local'}:${opportunity.id}`}
+            opportunity={opportunity} applicationGroup={applicationGroup} accountKey={accountKey}
+            blocked={writeBlocked || Boolean(pendingActionId)} onCapture={onCapture} onChanged={onStopFollowingChanged} /> : null}
           {writeBlocked && !readOnly ? <p role="status">{zh ? '账号尚未确认，确认后可记录投递或加入今天。' : 'Account not confirmed. Recording submission and adding to today will be available after account confirmation.'}</p> : null}
           {jobReceipt ? <p role={jobReceipt.error ? 'alert' : 'status'}>{jobReceipt.message} {jobReceipt.undo && onUndoJobAction ? <button type="button" disabled={Boolean(pendingActionId)} onClick={() => {
             setPendingActionId('undo')

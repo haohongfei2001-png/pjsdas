@@ -15,3 +15,5 @@ No repository LICENSE file was present in the historical source trees. These are
 same-repository fixtures and make no new license grant. External dependencies
 are not vendored and retain their own licensing. No production/runtime evidence,
 private Git history, credentials or real user data is included.
+
+Approved stop-following preservation: two formerly repository-backed historical inputs (authoritativeCommands and semanticIntake) are now original-byte content-addressed blobs. The original 15 blobs remain unchanged (17 total); four manifest catalog digests change, while all historical file maps, provenance, Git blob IDs, bytes and import records remain unchanged. This preserves old behavior rather than substituting the new UI/admission code.
