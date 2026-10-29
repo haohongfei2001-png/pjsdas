@@ -220,7 +220,7 @@ async function stopState(page: Page, account: string) {
 }
 const jsonValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 const byId = (rows: ReadonlyArray<{ id: string }>) => [...rows].sort((a, b) => a.id.localeCompare(b.id))
-function assertStopBusiness(actual: PJSDASSnapshot, initial: PJSDASSnapshot, abandoned: boolean) {
+function assertStopBusiness(actual: PJSDASSnapshot, initial: PJSDASSnapshot, abandoned: boolean, expectedProcesses: PJSDASSnapshot['data']['processes']) {
   const job = actual.data.opportunities.find(item => item.id === 'consumer-stop-job')!
   expect(job.participationStatus).toBe(abandoned ? 'abandoned' : 'active')
   expect(job.processStage).toBe('screening'); expect(job.currentStageLabel).toBe('筛选中')
@@ -230,7 +230,7 @@ function assertStopBusiness(actual: PJSDASSnapshot, initial: PJSDASSnapshot, aba
     expect(actual.data.actions.find(item => item.id === id)).toEqual(initial.data.actions.find(item => item.id === id))
   }
   expect(actual.data.opportunities.find(item => item.id === 'consumer-other-job')).toEqual(initial.data.opportunities.find(item => item.id === 'consumer-other-job'))
-  expect(actual.data.processes).toEqual(initial.data.processes)
+  expect(actual.data.processes).toEqual(expectedProcesses)
   expect(actual.data.processEvents).toEqual(initial.data.processEvents)
   for (const record of initial.data.timeline ?? []) expect(actual.data.timeline?.find(item => item.id === record.id)).toEqual(record)
 }
@@ -271,6 +271,7 @@ test(consumerStopFollowingCase, async ({ page, context, browserName }) => {
     const guard = await bridge(context, h)
     const { applyUserDomainCommand, applyDomainCompensation } = await sourceImport('src/domainCommands.ts')
     const { upgradeSnapshotToLatest } = await sourceImport('src/snapshot.ts')
+    const { expectedConsumerStopProcesses } = await sourceImport('tests/fixtures/consumerPostgresWorkspace.ts')
     const normalized = (value: PJSDASSnapshot) => jsonValue(upgradeSnapshotToLatest(value))
     await mount(page, h, value => { report.phase = value })
     report.mountedConsumer = true
@@ -311,7 +312,7 @@ test(consumerStopFollowingCase, async ({ page, context, browserName }) => {
     expect(forwardRecord).toMatchObject({ state: 'confirmed', serverRevision: 1,
       command: { commandId: originalId, kind: 'abandon_opportunity', opportunityId: 'consumer-stop-job' }, delta: original.receipt.projectionDelta })
     expect(forwardRecord.delta).toEqual(original.receipt.projectionDelta)
-    assertStopBusiness(saved.snapshot, h.snapshot, true); assertStopProjection(forwardLocal.snapshot, saved.snapshot)
+    assertStopBusiness(saved.snapshot, h.snapshot, true, expectedConsumerStopProcesses(h.snapshot, true)); assertStopProjection(forwardLocal.snapshot, saved.snapshot)
     await h.assertNoLargeResources()
     report.realDeltaForward = true; report.forwardRevision = 1; report.uiCreatedCommands = true
     report.phase = 'reload-original-snapshot-receipt'
@@ -345,7 +346,7 @@ test(consumerStopFollowingCase, async ({ page, context, browserName }) => {
     expect(finalLocal.records.find(item => item.commandId === undoId)).toMatchObject({ state: 'confirmed', serverRevision: 2, targetCommandId: originalId, delta: undo.receipt.projectionDelta })
     expect(finalLocal.records.find(item => item.commandId === undoId)?.delta).toEqual(undo.receipt.projectionDelta)
     expect(JSON.parse(finalLocal.locator)).toEqual({ version: 1, opportunityId: 'consumer-stop-job', commandId: originalId, undoCommandId: undoId })
-    assertStopBusiness(final.snapshot, h.snapshot, false); assertStopProjection(finalLocal.snapshot, final.snapshot)
+    assertStopBusiness(final.snapshot, h.snapshot, false, expectedConsumerStopProcesses(h.snapshot, false)); assertStopProjection(finalLocal.snapshot, final.snapshot)
     expect(final.snapshot.data.timeline).toEqual(saved.snapshot.data.timeline)
     report.largeResourceCounts = await h.assertNoLargeResources()
     report.realDeltaUndo = true; report.undoRevision = 2; report.originalUndoTarget = true

@@ -4,8 +4,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { consumerCases, consumerStopFollowingCase, consumerProjectionEvidence, observeConsumerProjection, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
-import { consumerAuthClaims, consumerPostgresWorkspace, consumerStopFollowingWorkspace, initializeConsumerStopTimeline } from './fixtures/consumerPostgresWorkspace.js'
+import { consumerAuthClaims, consumerPostgresWorkspace, consumerStopFollowingWorkspace, expectedConsumerStopProcesses, initializeConsumerStopTimeline } from './fixtures/consumerPostgresWorkspace.js'
 import { isUnreadJob } from '../src/jobReadState.js'
+import { applyDomainCompensation, applyUserDomainCommand } from '../src/domainCommands.js'
 import { buildTimelineBackfill, TIMELINE_BACKFILL_MARKER_ID } from '../src/timeline.js'
 import { installConsumerBrowserBootstrap } from './fixtures/consumerBrowserBootstrap.js'
 import { verifyConsumerResults, verifyConsumerRun } from './sql/consumer-pg-results.mjs'
@@ -45,7 +46,7 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(snapshot.data.opportunities.every(job => !isUnreadJob(job) && job.discoveryRead?.viewedAt)).toBe(true)
     expect(snapshot.data.actions).toHaveLength(5)
     expect(snapshot.data.actions.filter(action => action.opportunityId === 'consumer-stop-job').map(action => action.status)).toEqual(['todo', 'doing', 'done'])
-    expect(snapshot.data.processes).toHaveLength(1); expect(snapshot.data.processEvents).toHaveLength(1)
+    expect(snapshot.data.processes).toHaveLength(2); expect(snapshot.data.processEvents).toHaveLength(1)
     const canonical = buildTimelineBackfill({ processEvents: snapshot.data.processEvents, actions: snapshot.data.actions, now: snapshot.exportedAt })
     expect(snapshot.data.timeline).toEqual([expect.objectContaining({ id: 'consumer-retained-history' }), ...canonical])
     expect(snapshot.data.timeline).toHaveLength(4)
@@ -60,7 +61,51 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.consumer-pg.ts', import.meta.url), 'utf8')
     expect(code).toContain("page.locator('.tsui-job-open[data-opportunity-id=\"consumer-stop-job\"]').click()")
     expect(code).toContain("name: '不再跟进'"); expect(code).toContain("name: '撤销不再跟进'")
+    expect(code).toContain('expect(actual.data.processes).toEqual(expectedProcesses)')
+    expect(code).toContain("await sourceImport('tests/fixtures/consumerPostgresWorkspace.ts')")
+    expect(code).toContain('expectedConsumerStopProcesses(h.snapshot, true)')
+    expect(code).toContain('expectedConsumerStopProcesses(h.snapshot, false)')
+    expect(code).toContain('expect(actual.data.processEvents).toEqual(initial.data.processEvents)')
     expect(code).not.toMatch(/\.(?:stopFollowing|undoStopFollowing|inspectStopFollowing)\s*\(/)
+  })
+  it.each([true, false])('keeps exact recruiting facts while participation is abandoned=%s', abandoned => {
+    const initial = consumerStopFollowingWorkspace(new Date('2030-01-01T00:00:00.000Z'))
+    const pristine = structuredClone(initial)
+    const forward = applyUserDomainCommand(initial, { commandId: 'synthetic-stop-oracle', kind: 'abandon_opportunity',
+      opportunityId: 'consumer-stop-job' }, new Date('2030-01-01T01:00:00.000Z'))
+    expect(forward.status).toBe('APPLIED')
+    if (forward.status !== 'APPLIED' || !forward.compensation) throw new Error('Expected reversible Stop')
+    const actual = abandoned ? forward.snapshot : applyDomainCompensation(forward.snapshot, forward.compensation, new Date('2030-01-01T02:00:00.000Z'))
+    const expected = expectedConsumerStopProcesses(initial, abandoned)
+    expect(actual.data.processes).toEqual(expected)
+    expect(expected).toEqual(initial.data.processes.map(process => ({ ...process,
+      participationState: process.id === 'consumer-stop-process' && abandoned ? 'abandoned' : 'active' })))
+    expect(actual.data.processes.find(process => process.id === 'consumer-other-process')).toEqual(initial.data.processes[1])
+    expect(actual.data.processEvents).toEqual(initial.data.processEvents)
+    expect(actual.data.opportunities.find(job => job.id === 'consumer-stop-job')).toMatchObject({
+      participationStatus: abandoned ? 'abandoned' : 'active', processStage: 'screening', currentStageLabel: '筛选中' })
+    expect(actual.data.opportunities.find(job => job.id === 'consumer-other-job')).toEqual(initial.data.opportunities[1])
+    for (const [id, status] of [['consumer-stop-todo', 'todo'], ['consumer-stop-doing', 'doing']]) {
+      expect(actual.data.actions.find(action => action.id === id)?.status).toBe(abandoned ? 'skipped' : status)
+    }
+    for (const id of ['consumer-stop-done', 'consumer-task', 'unrelated-task']) {
+      expect(actual.data.actions.find(action => action.id === id)).toEqual(initial.data.actions.find(action => action.id === id))
+    }
+    for (const record of initial.data.timeline ?? []) expect(actual.data.timeline?.find(item => item.id === record.id)).toEqual(record)
+    expect(actual.data.timeline).toEqual(forward.snapshot.data.timeline)
+    expect(initial).toEqual(pristine)
+
+    // The oracle changes only the target participation projection. Wrong
+    // recruiting facts, extra fields, missing rows and unrelated edits differ.
+    for (const patch of [{ stage: 'closed' }, { stageLabel: '已结束' }, { progress: 'completed' }, { result: 'rejected' },
+      { participationState: abandoned ? 'active' : 'abandoned' }, { unexpectedRecruitingFact: 'must-not-pass' }]) {
+      expect(actual.data.processes.map(process => process.id === 'consumer-stop-process' ? { ...process, ...patch } : process)).not.toEqual(expected)
+    }
+    expect(actual.data.processes.filter(process => process.id !== 'consumer-other-process')).not.toEqual(expected)
+    for (const patch of [{ participationState: 'abandoned' }, { role: 'Changed unrelated role' }]) {
+      expect(actual.data.processes.map(process => process.id === 'consumer-other-process' ? { ...process, ...patch } : process)).not.toEqual(expected)
+    }
+    expect(actual.data.processEvents.map(event => ({ ...event, notes: 'Changed recruiter history' }))).not.toEqual(initial.data.processEvents)
   })
   it('initializes canonical timeline idempotently without overwriting history or seeding operations', () => {
     const at = '2030-01-01T00:00:00.000Z', initialized = consumerStopFollowingWorkspace(new Date(at))

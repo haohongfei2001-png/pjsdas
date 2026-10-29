@@ -27,7 +27,9 @@ export function consumerStopFollowingWorkspace(now = new Date()) {
     locallyManaged: true, importedAt: at, discoveryRead: { version: 1 as const, addedAt: at, viewedAt: at } }
   const initial = createSnapshot({ ...base.data, opportunities: [job, { ...job, id: 'consumer-other-job', company: 'Synthetic retained company' }],
     processes: [{ id: 'consumer-stop-process', opportunityId: job.id, company: job.company, role: job.role,
-      stage: 'screening', stageLabel: '筛选中', progress: 'waiting_result', result: 'pending', participationState: 'active', locallyManaged: true }],
+      stage: 'screening', stageLabel: '筛选中', progress: 'waiting_result', result: 'pending', participationState: 'active', locallyManaged: true },
+      { id: 'consumer-other-process', opportunityId: 'consumer-other-job', company: 'Synthetic retained company', role: job.role,
+        stage: 'screening', stageLabel: '筛选中', progress: 'waiting_result', result: 'pending', participationState: 'active', locallyManaged: true }],
     processEvents: [{ id: 'consumer-retained-event', opportunityId: job.id, company: job.company, role: job.role,
       type: 'status_update', source: 'email', notes: 'Synthetic recruiter screening update', occurredAt: at, createdAt: at, updatedAt: at }],
     actions: [...base.data.actions, ...(['todo', 'doing', 'done'] as const).map(status => ({
@@ -40,6 +42,14 @@ export function consumerStopFollowingWorkspace(now = new Date()) {
       occurredAt: at, recordedAt: at }],
   }, at)
   return initializeConsumerStopTimeline(initial)
+}
+
+/** Test oracle from initial facts only: participation is orthogonal to recruiting
+ * stage/progress/result. Compare every row and field; never normalize actuals. */
+export function expectedConsumerStopProcesses(initial: PJSDASSnapshot, abandoned: boolean): PJSDASSnapshot['data']['processes'] {
+  return initial.data.processes.map(process => process.opportunityId === 'consumer-stop-job'
+    ? { ...process, participationState: abandoned ? 'abandoned' : 'active' }
+    : { ...process })
 }
 
 /** Canonical initial business history, not a browser mutation or command seed.
