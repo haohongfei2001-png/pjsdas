@@ -3,8 +3,9 @@ import { createHmac } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { consumerCases, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
-import { consumerAuthClaims, consumerPostgresWorkspace } from './fixtures/consumerPostgresWorkspace.js'
+import { consumerCases, consumerStopFollowingCase, consumerProjectionEvidence, observeConsumerProjection, createConsumerManifest, extraPaths, safeConsumerRequests, verifyConsumerManifest } from './sql/consumer-pg-source.mjs'
+import { consumerAuthClaims, consumerPostgresWorkspace, consumerStopFollowingWorkspace } from './fixtures/consumerPostgresWorkspace.js'
+import { isUnreadJob } from '../src/jobReadState.js'
 import { installConsumerBrowserBootstrap } from './fixtures/consumerBrowserBootstrap.js'
 import { verifyConsumerResults, verifyConsumerRun } from './sql/consumer-pg-results.mjs'
 import { canMountMockAccountCache, markVerifiedMockCache, MOCK_CACHE_PROVENANCE_KEY } from '../src/cloud/mockCacheBoundary.js'
@@ -35,6 +36,47 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     expect(() => verifyConsumerManifest(manifest, 'b'.repeat(64), { base })).toThrow()
     writeFileSync(join(base, 'index.html'), 'changed')
     expect(() => verifyConsumerManifest(manifest, digest, { base })).toThrow()
+  })
+  it('adds only already-read small business facts for the full-App Stop delta case', () => {
+    expect(consumerStopFollowingCase).toBe('job-stop-following-delta-reload-original-undo')
+    const snapshot = consumerStopFollowingWorkspace(new Date('2030-01-01T00:00:00.000Z'))
+    expect(snapshot.data.opportunities).toHaveLength(2)
+    expect(snapshot.data.opportunities.every(job => !isUnreadJob(job) && job.discoveryRead?.viewedAt)).toBe(true)
+    expect(snapshot.data.actions).toHaveLength(5)
+    expect(snapshot.data.actions.filter(action => action.opportunityId === 'consumer-stop-job').map(action => action.status)).toEqual(['todo', 'doing', 'done'])
+    expect(snapshot.data.processes).toHaveLength(1); expect(snapshot.data.processEvents).toHaveLength(1)
+    expect(snapshot.data.timeline).toHaveLength(1)
+    expect(snapshot.data.timeline?.every(record => !record.commandId)).toBe(true)
+    expect(snapshot.data.semanticReceipts ?? []).toEqual([])
+    expect(selectTodayWeb(snapshot, { availableMinutes: 60 }, { now: new Date('2030-01-01T12:00:00Z'), timezone: 'UTC' }).visibleActions.some(action => action.actionId === 'consumer-task')).toBe(true)
+    const fixture = readFileSync(new URL('./sql/consumer-pg-http-fixture.mjs', import.meta.url), 'utf8')
+    expect(fixture).toContain("PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT_ADMISSION:'0'")
+    expect(fixture).toContain('async assertNoLargeResources()')
+    for (const table of ['large_command_intent', 'large_stage', 'large_document_reservation', 'ta_resource_reservations.reservation', 'ta_resource_reservations.rpc_scope']) expect(fixture).toContain(table)
+    expect(fixture).not.toMatch(/\.reserve\s*\(|insert\s+into/i)
+    const code = readFileSync(new URL('../e2e/consumerPostgresRecovery.consumer-pg.ts', import.meta.url), 'utf8')
+    expect(code).toContain("page.locator('.tsui-job-open[data-opportunity-id=\"consumer-stop-job\"]').click()")
+    expect(code).toContain("name: '不再跟进'"); expect(code).toContain("name: '撤销不再跟进'")
+    expect(code).not.toMatch(/\.(?:stopFollowing|undoStopFollowing|inspectStopFollowing)\s*\(/)
+  })
+  it('observes actual delta metadata without leaking bodies/unknown strings or breaking OPTIONS 204', () => {
+    expect(observeConsumerProjection('OPTIONS', undefined, '')).toBeUndefined()
+    expect(() => observeConsumerProjection('POST', {}, '')).toThrow()
+    expect(() => observeConsumerProjection('POST', {}, '{')).toThrow()
+    const projection = consumerProjectionEvidence({ projection: 'delta-v1' }, { revision: 1,
+      delta: { contract: 'delta-v1', baseRevision: 0, changes: [{ secret: 'do-not-copy' }] },
+      receipt: { operation: 'domain:abandon_opportunity', contractVersion: 5, private: 'do-not-copy' } })
+    expect(projection).toEqual({ requestProjection: 'delta-v1', responseHasSnapshot: false, responseHasDelta: true,
+      responseDeltaContract: 'delta-v1', responseRevision: 1, responseBaseRevision: 0, deltaChangeCount: 1,
+      receiptOperation: 'domain:abandon_opportunity', receiptContractVersion: 5 })
+    const canary = 'synthetic-secret-do-not-copy'
+    const unsafe = { ...projection, requestProjection: canary, responseDeltaContract: canary, receiptOperation: canary,
+      responseRevision: -1, responseBaseRevision: Infinity, deltaChangeCount: canary, receiptContractVersion: canary, private: canary }
+    const safe = safeConsumerRequests([{ path: '/api/workspace', method: 'POST', action: 'command', projection: unsafe }])
+    expect(JSON.stringify(safe)).not.toContain(canary)
+    expect(safe[0]).toEqual({ path: '/api/workspace', method: 'POST', action: 'command', requestProjection: 'other',
+      responseDeltaContract: 'other', receiptOperation: 'other', responseHasSnapshot: false, responseHasDelta: true })
+    expect(consumerProjectionEvidence({ projection: 'snapshot' }, { revision: 1, snapshot: {} })).toMatchObject({ responseHasSnapshot: true, responseHasDelta: false })
   })
   it('rejects reduced coverage, extra unapproved paths and source symlinks', () => {
     const base = source(), digest = 'a'.repeat(64), manifest = createConsumerManifest(digest, { base })
@@ -138,16 +180,28 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
       uiCreatedCommands: true, mountedConsumer: true, httpBridgeClosed: true,
       clockMocked: false, explicitRecoveryCalls: 0, durableV2Admission: false,
       automaticIntervalCertified: true, observedRecoveryElapsedMs: 50_000,
-      newPageAutomaticRecovery: true, commitProvenBeforeAckLoss: true })
+      newPageAutomaticRecovery: true, commitProvenBeforeAckLoss: true,
+      ...(label === consumerStopFollowingCase ? { contract: 'consumer-ui-stop-following-real-pg-v1',
+        initialBusinessOnly: true, realDeltaForward: true, realDeltaUndo: true, reloadOriginalReceipt: true,
+        originalUndoTarget: true, nativeIdbProjection: true, businessAndRetainedFacts: true,
+        reloadWriteCount: 0, forwardRevision: 1, undoRevision: 2,
+        largeResourceCounts: { intents: 0, stages: 0, document_reservations: 0, resource_reservations: 0, resource_owners: 0, resource_enrollments: 0 },
+        pageErrors: [], transportErrors: [], commandIdHashes: ['1'.repeat(64), '2'.repeat(64)],
+        transport: [...[0, 1].map(index => ({ path: '/api/workspace', method: 'POST', status: 200, authorizationMatched: true, originMatched: true,
+          action: index ? 'undo' : 'command', requestProjection: 'delta-v1', responseHasSnapshot: false, responseHasDelta: true,
+          responseDeltaContract: 'delta-v1', responseBaseRevision: index, responseRevision: index + 1, receiptContractVersion: 5,
+          receiptOperation: index ? 'undo_command' : 'domain:abandon_opportunity', deltaChangeCount: 1 })),
+            { path: '/api/workspace', method: 'POST', status: 200, action: 'receipt', requestProjection: 'snapshot', responseHasSnapshot: true }],
+      } : {}) })
     const cleanup = { contract: 'ta-native-owned-cleanup-v1', status: 'PASS', databaseCreated: true, authenticatorCreated: true }
-    for (const label of consumerCases) {
+    for (const label of [...consumerCases, consumerStopFollowingCase]) {
       mkdirSync(join(directory, label))
       writeFileSync(join(directory, label, 'result.json'), JSON.stringify(report(label)))
       writeFileSync(join(directory, label, 'cleanup.json'), JSON.stringify(cleanup))
     }
-    expect(verifyConsumerResults(directory, identity)).toHaveLength(3)
-    expect(verifyConsumerRun(directory, identity, '0')).toHaveLength(3)
-    // Even three passing cases cannot mask a rejecting-proxy/global teardown
+    expect(verifyConsumerResults(directory, identity)).toHaveLength(4)
+    expect(verifyConsumerRun(directory, identity, '0')).toHaveLength(4)
+    // Even four passing cases cannot mask a rejecting-proxy/global teardown
     // failure, an interrupted runner, or a missing overall process result.
     for (const runner of ['1', '130', undefined, '']) expect(() => verifyConsumerRun(directory, identity, runner)).toThrow()
     const label = consumerCases[2], resultPath = join(directory, label, 'result.json')
@@ -164,6 +218,33 @@ describe('consumer browser to native PostgreSQL acceptance contract', () => {
     writeFileSync(cleanupPath, JSON.stringify({ ...cleanup, status: 'FAIL' }))
     expect(() => verifyConsumerResults(directory, identity)).toThrow()
     writeFileSync(cleanupPath, JSON.stringify(cleanup))
+    const stopPath = join(directory, consumerStopFollowingCase, 'result.json'), validStop = report(consumerStopFollowingCase)
+    for (const mutation of [{ status: 'RUNNING' }, { sourceCommit: 'd'.repeat(40) }, { sourceTree: 'd'.repeat(40) }, { prHead: 'd'.repeat(40) },
+      ...['initialBusinessOnly', 'realDeltaForward', 'realDeltaUndo', 'reloadOriginalReceipt', 'originalUndoTarget', 'nativeIdbProjection', 'businessAndRetainedFacts', 'httpBridgeClosed'].map(key => ({ [key]: false })),
+      { reloadWriteCount: 1 }, { forwardRevision: 0 }, { undoRevision: 3 }, { largeResourceCounts: undefined },
+      { pageErrors: ['Error'] }, { transportErrors: [{ name: 'Error' }] }, { commandIdHashes: ['1'.repeat(64), '1'.repeat(64)] },
+      { transport: [] }, { transport: validStop.transport!.slice(0, 2) }]) {
+      writeFileSync(stopPath, JSON.stringify({ ...validStop, ...mutation }))
+      expect(() => verifyConsumerResults(directory, identity), JSON.stringify(mutation)).toThrow()
+    }
+    for (const [key, value] of Object.entries({ requestProjection: 'snapshot', responseHasSnapshot: true, responseHasDelta: false,
+      responseDeltaContract: 'other', responseBaseRevision: 9, responseRevision: 9, receiptContractVersion: 4,
+      receiptOperation: 'other', deltaChangeCount: 0, authorizationMatched: false, originMatched: false, status: 500 })) {
+      for (const index of [0, 1]) {
+        const changed = structuredClone(validStop)
+        Object.assign(changed.transport![index], { [key]: value })
+        writeFileSync(stopPath, JSON.stringify(changed))
+        expect(() => verifyConsumerResults(directory, identity), key).toThrow()
+      }
+    }
+    writeFileSync(stopPath, JSON.stringify(validStop))
+    const stopCleanup = join(directory, consumerStopFollowingCase, 'cleanup.json')
+    writeFileSync(stopCleanup, JSON.stringify({ ...cleanup, status: 'FAIL' }))
+    expect(() => verifyConsumerResults(directory, identity)).toThrow()
+    writeFileSync(stopCleanup, JSON.stringify(cleanup))
+    rmSync(stopPath)
+    expect(() => verifyConsumerResults(directory, identity)).toThrow()
+    writeFileSync(stopPath, JSON.stringify(validStop))
     const newPageLabel = consumerCases[0]
     writeFileSync(join(directory, newPageLabel, 'result.json'), JSON.stringify({ ...report(newPageLabel), newPageAutomaticRecovery: false }))
     expect(() => verifyConsumerResults(directory, identity)).toThrow()

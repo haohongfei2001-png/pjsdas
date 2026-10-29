@@ -13,7 +13,33 @@ export const extraPaths=Object.freeze([
  '.github/workflows/consumer-pg-browser.yml','scripts/verify-installed-runtime-lock.mjs',
 ])
 export const consumerCases=Object.freeze(['offline-ui-done-undo-new-page-auto-recovery','lost-ack-new-page-auto-receipt','lost-ack-real-60s-automatic-receipt'])
+export const consumerStopFollowingCase='job-stop-following-delta-reload-original-undo'
 export const consumerApiPaths=Object.freeze(['/api/health','/api/workspace','/api/automation-settings'])
+function safeProjection(value){
+ const result={}
+ for(const[key,allowed]of Object.entries({requestProjection:['snapshot','delta-v1'],responseDeltaContract:['delta-v1'],
+  receiptOperation:['domain:abandon_opportunity','domain:set_action_status','undo_command']}))result[key]=allowed.includes(value?.[key])?value[key]:'other'
+ for(const key of ['responseHasSnapshot','responseHasDelta'])if(typeof value?.[key]==='boolean')result[key]=value[key]
+ for(const key of ['responseRevision','responseBaseRevision','receiptContractVersion','deltaChangeCount'])if(Number.isSafeInteger(value?.[key])&&value[key]>=0)result[key]=value[key]
+ return result
+}
+/** Only fixed protocol metadata; never expose response bodies or identities. */
+export function consumerProjectionEvidence(body,payload){
+ const result={requestProjection:['snapshot','delta-v1'].includes(body?.projection)?body.projection:'other',
+  responseHasSnapshot:Boolean(payload&&Object.hasOwn(payload,'snapshot')),
+  responseHasDelta:Boolean(payload&&Object.hasOwn(payload,'delta')),
+  responseDeltaContract:payload?.delta?.contract==='delta-v1'?'delta-v1':'other',
+  receiptOperation:['domain:abandon_opportunity','domain:set_action_status','undo_command'].includes(payload?.receipt?.operation)?payload.receipt.operation:'other'}
+ for(const[key,value]of Object.entries({responseRevision:payload?.revision,responseBaseRevision:payload?.delta?.baseRevision,
+  receiptContractVersion:payload?.receipt?.contractVersion,deltaChangeCount:payload?.delta?.changes?.length})){
+  if(Number.isSafeInteger(value)&&value>=0)result[key]=value
+ }
+ return safeProjection(result)
+}
+/** OPTIONS/204 is transparent; malformed POST JSON remains a fixture failure. */
+export function observeConsumerProjection(method,body,rawBody){
+ return method==='POST'?consumerProjectionEvidence(body,JSON.parse(rawBody)):undefined
+}
 /** Fixed metadata only: never serialize headers, tokens, bodies or query text. */
 export function safeConsumerRequests(requests){
  return requests.map(request=>({path:consumerApiPaths.includes(request.path)?request.path:'unapproved',
@@ -22,7 +48,8 @@ export function safeConsumerRequests(requests){
   ...(Number.isSafeInteger(request.status)?{status:request.status}:{}),
   ...(typeof request.authorizationMatched==='boolean'?{authorizationMatched:request.authorizationMatched}:{}),
   ...(typeof request.expectedAncillaryDenial==='boolean'?{expectedAncillaryDenial:request.expectedAncillaryDenial}:{}),
-  ...(typeof request.originMatched==='boolean'?{originMatched:request.originMatched}:{})}))
+  ...(typeof request.originMatched==='boolean'?{originMatched:request.originMatched}:{}),
+  ...(request.projection?safeProjection(request.projection):{})}))
 }
 function extra(path,base=root){
  assert(extraPaths.includes(path),'Unlisted consumer source')

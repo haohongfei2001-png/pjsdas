@@ -4,16 +4,17 @@ import {createServer} from 'node:http'
 import {performance} from 'node:perf_hooks'
 import {fixture} from './workspace-rows-durable-v2-fixture.mjs'
 import {sourceImport,sha,safeError} from './workspace-rows-durable-v2-source.mjs'
-import {verifyConsumerSource,consumerApiPaths,safeConsumerRequests} from './consumer-pg-source.mjs'
+import {verifyConsumerSource,consumerApiPaths,safeConsumerRequests,observeConsumerProjection} from './consumer-pg-source.mjs'
 verifyConsumerSource()
-const {consumerPostgresWorkspace}=await sourceImport('tests/fixtures/consumerPostgresWorkspace.ts')
+const {consumerPostgresWorkspace,consumerStopFollowingWorkspace}=await sourceImport('tests/fixtures/consumerPostgresWorkspace.ts')
 
-export async function consumerHttpFixture(evidence,browserOrigin){
+export async function consumerHttpFixture(evidence,browserOrigin,scenario='recovery'){
+ assert(['recovery','stop-following'].includes(scenario),'Unknown bounded consumer scenario')
  const browser=new URL(browserOrigin)
  assert.equal(browser.hostname,'127.0.0.1');assert.equal(browser.protocol,'http:');assert.equal(browser.origin,browserOrigin)
  const h=await fixture(evidence)
  try{
- const snapshot=consumerPostgresWorkspace(),owner=await h.consumer(snapshot)
+ const snapshot=scenario==='stop-following'?consumerStopFollowingWorkspace():consumerPostgresWorkspace(),owner=await h.consumer(snapshot)
  const requests=[],errors=[],inflight=new Set()
  let dropNext=false,receiptUnavailable=false,lostAck,receiptFailures=0,closed=false
  const server=createServer((req,res)=>{
@@ -24,7 +25,7 @@ export async function consumerHttpFixture(evidence,browserOrigin){
    const chunks=[];for await(const chunk of req)chunks.push(chunk)
    const rawBody=Buffer.concat(chunks).toString(),body=rawBody?JSON.parse(rawBody):undefined
    const headers=Object.fromEntries(Object.entries(req.headers).filter(([,v])=>typeof v==='string'))
-   const entry={path:req.url,method:req.method,action:body?.action,commandId:body?.commandId,
+   const entry={path:req.url,method:req.method,action:body?.action,commandId:body?.commandId,targetCommandId:body?.targetCommandId,
     requestSha256:sha(rawBody),receivedAt:performance.now()};requests.push(entry)
    if(req.url!=='/api/health'&&req.method==='POST'){
     stage='request-authorization';entry.authorizationMatched=headers.authorization==='Bearer '+owner.accessToken
@@ -41,6 +42,7 @@ export async function consumerHttpFixture(evidence,browserOrigin){
     PJSDAS_WORKSPACE_ROWS_DURABLE_INTENT_ADMISSION:'0',
    },'consumer-http')).result
    Object.assign(entry,{status:response.status,responseSha256:sha(response.rawBody),finishedAt:performance.now()})
+   if(req.url==='/api/workspace')entry.projection=observeConsumerProjection(req.method,body,response.rawBody)
    if(req.url==='/api/automation-settings'&&req.method==='POST'){
     stage='ancillary-automation-denial'
     // The original native fixture deliberately grants no authenticated read
@@ -74,6 +76,18 @@ export async function consumerHttpFixture(evidence,browserOrigin){
   restoreReceiptTransport(){assert(lostAck&&receiptFailures>0);receiptUnavailable=false},
   ledger:()=>h.ledger(owner),current:()=>h.current(owner),
   async assertNoLargeIntent(){assert.equal(Number((await h.scalar('select count(*) n from pjsdas_rows_candidate.large_command_intent where user_id=$1',[owner.ids.userId])).n),0)},
+  async assertNoLargeResources(){
+   const row=await h.scalar(`select
+    (select count(*) from pjsdas_rows_candidate.large_command_intent where user_id=$1::uuid) intents,
+    (select count(*) from pjsdas_rows_candidate.large_stage where user_id=$1::uuid) stages,
+    (select count(*) from pjsdas_rows_candidate.large_document_reservation where user_id=$1::uuid) document_reservations,
+    (select count(*) from ta_resource_reservations.reservation where user_id=$1::text) resource_reservations,
+    (select count(*) from ta_resource_reservations.owner where user_id=$1::text) resource_owners,
+    (select count(*) from ta_resource_reservations.rpc_scope where user_id=$1::uuid) resource_enrollments`,[owner.ids.userId])
+   const counts=Object.fromEntries(Object.entries(row).map(([key,value])=>[key,Number(value)]))
+   for(const value of Object.values(counts))assert.equal(value,0,'Small consumer case created large-command resources')
+   return counts
+  },
   async close(){
    if(closed)return;closed=true
    const failures=[]
